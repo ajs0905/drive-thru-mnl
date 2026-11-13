@@ -1,0 +1,518 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "id": "way/1",
+   "properties": {
+    "@id": "way/1",
+    "highway": "primary",
+    "name": "5th Avenue"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      121.0503,
+      14.545
+     ],
+     [
+      121.0503,
+      14.5509
+     ],
+     [
+      121.0503,
+      14.556
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/2",
+   "properties": {
+    "@id": "way/2",
+    "highway": "secondary",
+    "name": "32nd Street"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      121.044,
+      14.5509
+     ],
+     [
+      121.0503,
+      14.5509
+     ],
+     [
+      121.056,
+      14.5509
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/3",
+   "properties": {
+    "@id": "way/3",
+    "highway": "residential",
+    "name": "Lane A"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      121.047,
+      14.553
+     ],
+     [
+      121.047,
+      14.553
+     ],
+     [
+      121.0503,
+      14.553
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/4",
+   "properties": {
+    "@id": "way/4",
+    "highway": "footway"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      121.051,
+      14.549
+     ],
+     [
+      121.054,
+      14.549
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/5",
+   "properties": {
+    "@id": "way/5",
+    "highway": "service"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      121.0503,
+      14.548
+     ],
+     [
+      121.053,
+      14.548
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/6",
+   "properties": {
+    "@id": "way/6",
+    "highway": "construction"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      121.045,
+      14.547
+     ],
+     [
+      121.046,
+      14.547
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/7",
+   "properties": {
+    "@id": "way/7",
+    "highway": "pedestrian",
+    "area": "yes"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       121.05160000000001,
+       14.551599999999999
+      ],
+      [
+       121.05160000000001,
+       14.5524
+      ],
+      [
+       121.0524,
+       14.5524
+      ],
+      [
+       121.0524,
+       14.551599999999999
+      ],
+      [
+       121.05160000000001,
+       14.551599999999999
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/8",
+   "properties": {
+    "@id": "way/8",
+    "building": "office",
+    "name": "Test Tower",
+    "height": "45 m",
+    "building:levels": "12"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       121.05120000000001,
+       14.5517
+      ],
+      [
+       121.05120000000001,
+       14.552299999999999
+      ],
+      [
+       121.0518,
+       14.552299999999999
+      ],
+      [
+       121.0518,
+       14.5517
+      ],
+      [
+       121.05120000000001,
+       14.5517
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "relation/9",
+   "properties": {
+    "@id": "relation/9",
+    "building": "retail",
+    "name": "Test Mall"
+   },
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        121.048,
+        14.548499999999999
+       ],
+       [
+        121.048,
+        14.5495
+       ],
+       [
+        121.049,
+        14.5495
+       ],
+       [
+        121.049,
+        14.548499999999999
+       ],
+       [
+        121.048,
+        14.548499999999999
+       ]
+      ],
+      [
+       [
+        121.0483,
+        14.5488
+       ],
+       [
+        121.0483,
+        14.549199999999999
+       ],
+       [
+        121.04870000000001,
+        14.549199999999999
+       ],
+       [
+        121.04870000000001,
+        14.5488
+       ],
+       [
+        121.0483,
+        14.5488
+       ]
+      ]
+     ],
+     [
+      [
+       [
+        121.04729999999999,
+        14.5473
+       ],
+       [
+        121.04729999999999,
+        14.547699999999999
+       ],
+       [
+        121.0477,
+        14.547699999999999
+       ],
+       [
+        121.0477,
+        14.5473
+       ],
+       [
+        121.04729999999999,
+        14.5473
+       ]
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/10",
+   "properties": {
+    "@id": "way/10",
+    "building": "yes"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       121.05,
+       14.55
+      ],
+      [
+       121.0501,
+       14.55
+      ],
+      [
+       121.05,
+       14.55
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/11",
+   "properties": {
+    "@id": "way/11",
+    "leisure": "park",
+    "name": "Test Park"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       121.0527,
+       14.5527
+      ],
+      [
+       121.0527,
+       14.5543
+      ],
+      [
+       121.0543,
+       14.5543
+      ],
+      [
+       121.0543,
+       14.5527
+      ],
+      [
+       121.0527,
+       14.5527
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/12",
+   "properties": {
+    "@id": "way/12",
+    "natural": "water"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       121.0451,
+       14.5541
+      ],
+      [
+       121.0451,
+       14.554900000000002
+      ],
+      [
+       121.0459,
+       14.554900000000002
+      ],
+      [
+       121.0459,
+       14.5541
+      ],
+      [
+       121.0451,
+       14.5541
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/13",
+   "properties": {
+    "@id": "way/13",
+    "landuse": "commercial"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       121.05080000000001,
+       14.5458
+      ],
+      [
+       121.05080000000001,
+       14.548200000000001
+      ],
+      [
+       121.0532,
+       14.548200000000001
+      ],
+      [
+       121.0532,
+       14.5458
+      ],
+      [
+       121.05080000000001,
+       14.5458
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "node/14",
+   "properties": {
+    "@id": "node/14",
+    "amenity": "cafe"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     121.05,
+     14.55
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/15",
+   "properties": {
+    "@id": "way/15",
+    "highway": "primary"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      121.05,
+      14.55
+     ],
+     [
+      121.05,
+      14.55
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/16",
+   "properties": {
+    "@id": "way/16",
+    "building": "yes"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      121.05,
+      14.55
+     ],
+     [
+      121.051,
+      14.55
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "way/17",
+   "properties": {
+    "id": "way/17",
+    "tags": {
+     "highway": "tertiary",
+     "name": "Old Style Rd"
+    }
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      121.0455,
+      14.5509
+     ],
+     [
+      121.0455,
+      14.556
+     ]
+    ]
+   }
+  }
+ ]
+}

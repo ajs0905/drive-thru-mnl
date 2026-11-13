@@ -1,0 +1,106 @@
+:root {
+  font: 14px/1.4 system-ui, 'Segoe UI', Roboto, sans-serif;
+  color: #e8e8ea;
+  background: #15171c;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root,
+.app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app {
+  position: relative;
+}
+
+.hud {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  max-width: 300px;
+  padding: 12px 14px;
+  background: rgba(15, 16, 20, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.hud h1 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.hud h1 span {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #f5b83d;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.hud p {
+  margin: 6px 0;
+}
+
+.hud .warn {
+  color: #ffcf7a;
+}
+
+.hud code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+
+.hud .stats {
+  color: #a0a4ad;
+  font-size: 12px;
+}
+
+.legend {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 10px;
+  font-size: 12px;
+  color: #c4c7ce;
+}
+
+.legend i {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-radius: 2px;
+}
+
+.attribution {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  font-size: 11px;
+  color: #a0a4ad;
+  background: rgba(15, 16, 20, 0.7);
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-decoration: none;
+}
+
+.attribution:hover {
+  color: #fff;
+}
