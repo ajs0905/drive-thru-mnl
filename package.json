@@ -12,11 +12,12 @@
     "typecheck": "tsc -b",
     "lint": "oxlint",
     "pipeline": "tsx pipeline/build.ts",
-    "pipeline:sample": "tsx pipeline/build.ts pipeline/__fixtures__/sample.geojson public/data/sample.json"
+    "pipeline:sample": "tsx pipeline/build.ts pipeline/__fixtures__/sample.geojson public/data/sample.json --no-playable"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
+    "earcut": "^3.2.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.187.0"

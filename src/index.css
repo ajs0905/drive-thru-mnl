@@ -74,7 +74,7 @@ body,
   margin: 8px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 3px 10px;
   font-size: 12px;
   color: #c4c7ce;
@@ -82,10 +82,10 @@ body,
 
 .legend i {
   display: inline-block;
-  width: 14px;
-  height: 3px;
+  width: 10px;
+  height: 10px;
   margin-right: 6px;
-  vertical-align: middle;
+  vertical-align: -1px;
   border-radius: 2px;
 }
 
@@ -103,4 +103,21 @@ body,
 
 .attribution:hover {
   color: #fff;
+}
+
+.hud .hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #8f939c;
+}
+
+.perf {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font: 11px ui-monospace, Consolas, monospace;
+  color: #e8e8ea;
+  background: rgba(15, 16, 20, 0.7);
+  padding: 2px 6px;
+  border-radius: 4px;
 }

@@ -1,3 +1,4 @@
+// Kept for the minimap (polish milestone). Not used by the 3D view.
 import { useEffect, useMemo } from 'react';
 import { BufferAttribute, BufferGeometry } from 'three';
 import { toSegmentPositions } from '../map/segments';

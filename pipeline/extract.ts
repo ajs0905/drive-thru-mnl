@@ -6,7 +6,10 @@
  */
 import type { Feature, FeatureCollection, Geometry, Position } from 'geojson';
 import { createProjection, type LatLon, type Projection } from '../src/geo/projection';
+import { polygonArea } from '../src/geometry/polygon';
 import type { Area, AreaKind, Building, MapData, Point, Ring, Road, RoadClass } from '../src/map/types';
+import { estimateHeight, LEVEL_HEIGHT } from './heights';
+import { roadWidth } from './roadWidth';
 
 const ROAD_CLASSES: Record<string, RoadClass> = {
   motorway: 'major', motorway_link: 'major',
@@ -122,6 +125,24 @@ function areaKind(t: Tags): { kind: AreaKind; landuse?: string } | null {
   return null;
 }
 
+/** OSM layer as an integer, or undefined. "1", "-1", "1;2" (takes the first). */
+export function parseLayer(v: unknown): number | undefined {
+  const n = typeof v === 'number' ? v : parseInt(String(v ?? ''), 10);
+  return Number.isFinite(n) && n !== 0 && Math.abs(n) <= 5 ? n : undefined;
+}
+
+const BRIDGES = new Set(['yes', 'viaduct', 'cantilever', 'boardwalk', 'movable', 'covered', 'trestle', 'aqueduct']);
+const CANOPIES = new Set(['roof', 'canopy', 'carport']);
+export const CANOPY_HEIGHT = 3.6;
+
+/** Ways inside malls and buildings: drawn as outdoor paths, they look like random lines. */
+function isIndoor(highway: string, t: Tags): boolean {
+  if (highway === 'corridor') return true;
+  if (t.indoor && t.indoor !== 'no') return true;
+  // `level` on a footway without a bridge usually means a mall floor.
+  return t.level != null && t.bridge == null && t.layer == null;
+}
+
 export interface ExtractOptions {
   origin?: LatLon;
 }
@@ -151,16 +172,35 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
     if (t.building != null && t.building !== 'no') {
       const polys = polygonsOf(g);
       if (!polys) return skip('building-not-polygon');
+      const layer = parseLayer(t.layer);
+      if ((layer !== undefined && layer < 0) || t.location === 'underground') return skip('underground-building');
       const height = parseHeight(t.height);
       const levels = parseLevels(t['building:levels']);
+      const btype = str(t.building) ?? 'yes';
+      const minLevel = parseLevels(t['building:min_level']);
+      let minH = parseHeight(t.min_height) ?? (minLevel ? minLevel * LEVEL_HEIGHT : undefined);
+      // Canopies (gas stations, covered walkways) float: a thin slab, not a solid block.
+      if (CANOPIES.has(btype) && minH === undefined) minH = CANOPY_HEIGHT;
       polys.forEach((poly, j) => {
         const rings = projectPolygon(poly, proj);
         if (!rings) return skip('degenerate-polygon');
+        const bid = polys.length > 1 ? `${id}#${j}` : id;
+        const type = btype;
+        const est = estimateHeight({ id: bid, type, height, levels, footprint: polygonArea(rings) });
+        let h = est.h;
+        if (minH !== undefined) {
+          // Without a real height, a raised structure is a slab: canopies 0.6 m, others one level.
+          if (est.hSrc === 'estimate' || h <= minH) h = minH + (CANOPIES.has(type) ? 0.6 : LEVEL_HEIGHT);
+        }
         buildings.push({
-          id: polys.length > 1 ? `${id}#${j}` : id,
+          id: bid,
           ...(name && { name }),
+          type,
           ...(height && { height }),
           ...(levels && { levels }),
+          h: Math.round(h * 10) / 10,
+          ...(minH !== undefined && { minH: Math.round(minH * 10) / 10 }),
+          hSrc: est.hSrc,
           rings,
         });
       });
@@ -172,11 +212,40 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
       const cls = ROAD_CLASSES[highway];
       if (!cls) return skip(`highway:${highway}`);
       const lines = linesOf(g);
-      if (!lines) return skip('highway-area');
+      if (!lines) {
+        // Pedestrian plazas (like High Street) are mapped as highway areas.
+        const polys = polygonsOf(g);
+        if (polys && (highway === 'pedestrian' || highway === 'footway')) {
+          polys.forEach((poly, j) => {
+            const rings = projectPolygon(poly, proj);
+            if (!rings) return skip('degenerate-polygon');
+            areas.push({ id: polys.length > 1 ? `${id}#${j}` : id, kind: 'plaza', rings });
+          });
+          return;
+        }
+        return skip('highway-area');
+      }
+      if (isIndoor(highway, t)) return skip('indoor');
+      const layer = parseLayer(t.layer);
+      const tunnel = t.tunnel != null && t.tunnel !== 'no' && t.tunnel !== 'culvert';
+      // Underground walkways can't be seen and nobody drives on them.
+      if (tunnel && cls === 'path' && t.tunnel !== 'building_passage') return skip('underground');
+      const bridge = typeof t.bridge === 'string' && BRIDGES.has(t.bridge);
+      const w = roadWidth(highway, cls, t);
       lines.forEach((line, j) => {
         const points = projectLine(line, proj);
         if (!points) return skip('degenerate-line');
-        roads.push({ id: lines.length > 1 ? `${id}#${j}` : id, highway, cls, ...(name && { name }), points });
+        roads.push({
+          id: lines.length > 1 ? `${id}#${j}` : id,
+          highway,
+          cls,
+          ...(name && { name }),
+          w,
+          ...(layer !== undefined && { layer }),
+          ...(bridge && { bridge: true as const }),
+          ...(tunnel && { tunnel: true as const }),
+          points,
+        });
       });
       return;
     }
@@ -197,7 +266,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
   });
 
   return {
-    version: 1,
+    version: 3,
     origin: proj.origin,
     bounds: computeBounds(roads, buildings, areas),
     roads,
@@ -213,7 +282,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
   };
 }
 
-function computeBounds(roads: Road[], buildings: Building[], areas: Area[]): MapData['bounds'] {
+export function computeBounds(roads: Road[], buildings: Building[], areas: Area[]): MapData['bounds'] {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const add = ([x, y]: Point) => {
     if (x < minX) minX = x;
