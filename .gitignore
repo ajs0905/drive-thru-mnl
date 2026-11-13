@@ -23,8 +23,3 @@ dist-ssr
 *.sln
 *.sw?
 
-# Raw OSM exports (large, re-downloadable)
-data/raw/*
-!data/raw/.gitkeep
-# Generated real map (rebuilt by npm run pipeline)
-public/data/bgc.json
