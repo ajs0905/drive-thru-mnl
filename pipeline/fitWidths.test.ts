@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Building, Point, Ring, Road } from '../src/map/types';
-import { fitRoadWidths, MIN_WIDTH } from './fitWidths';
+import { dropBuildingsOnRoads, fitRoadWidths, MIN_WIDTH } from './fitWidths';
 
 const box = (x0: number, y0: number, x1: number, y1: number): Ring => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
 const house = (id: string, ring: Ring, extra: Partial<Building> = {}): Building => ({
@@ -50,17 +50,45 @@ describe('fitRoadWidths', () => {
     expect(roads[0].w).toBeLessThanOrEqual(2 * (2.5 - 0.3) + 0.05);
   });
 
-  it('leaves major roads and raised roads alone', () => {
+  it('fits major roads too, but never below 6 m', () => {
     const major: Road = { ...street([[0, 0], [50, 0]]), cls: 'major', highway: 'primary', w: 10 };
+    const { roads } = fitRoadWidths([major], houses);
+    expect(roads[0].w).toBe(MIN_WIDTH.major);
+  });
+
+  it('leaves raised roads and paths alone', () => {
     const raised = street([[0, 0], [50, 0]], 7.4, { z: [7, 7] });
-    const { roads } = fitRoadWidths([major, raised], houses);
-    expect(roads[0].w).toBe(10);
-    expect(roads[1].w).toBe(7.4);
+    const path: Road = { ...street([[0, 0], [50, 0]], 2), cls: 'path', highway: 'footway' };
+    const { roads } = fitRoadWidths([raised, path], houses);
+    expect(roads[0].w).toBe(7.4);
+    expect(roads[1].w).toBe(2);
   });
 
   it('ignores raised canopies', () => {
     const canopy = house('c', box(0, 1, 50, 10), { type: 'roof', minH: 3.6, h: 4.2 });
     const { roads } = fitRoadWidths([street([[0, 0], [50, 0]])], [canopy]);
     expect(roads[0].w).toBe(7.4);
+  });
+});
+
+describe('dropBuildingsOnRoads', () => {
+  const road = street([[0, 0], [100, 0]], 8);
+
+  it('drops a building standing in the middle of a road', () => {
+    const onRoad = house('on', box(40, -2, 44, 2));
+    const beside = house('beside', box(40, 6, 44, 10));
+    const { buildings, dropped } = dropBuildingsOnRoads([onRoad, beside], [road]);
+    expect(buildings.map((b) => b.id)).toEqual(['beside']);
+    expect(dropped).toBe(1);
+  });
+
+  it('keeps buildings over tunnels, under flyovers, and canopies', () => {
+    const over = house('over', box(40, -2, 44, 2));
+    const canopy = house('canopy', box(40, -2, 44, 2), { minH: 3.6, h: 4.2 });
+    const tunnel = { ...road, tunnel: true as const };
+    const flyover = { ...road, z: [7, 7] };
+    expect(dropBuildingsOnRoads([over], [tunnel]).dropped).toBe(0);
+    expect(dropBuildingsOnRoads([over], [flyover]).dropped).toBe(0);
+    expect(dropBuildingsOnRoads([canopy], [road]).dropped).toBe(0);
   });
 });

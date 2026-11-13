@@ -9,8 +9,9 @@
  *     another road. Small bridges over creeks stay at ground level.
  *  3. Raised decks sit at layer x 7 m (drivable) or layer x 6 m (footbridges).
  *  4. Where a deck meets a ground road ("attachment"), the ground road becomes the
- *     ramp: it climbs from 0 to deck height over up to 90 m (20 m for walkways),
- *     stopping early at the first junction so side streets aren't lifted.
+ *     ramp: it climbs from 0 to deck height over up to 90 m, stopping early at the
+ *     first junction so side streets aren't lifted. For footbridges only stairs can
+ *     be the ramp; a sidewalk never rises to meet a footbridge.
  *  5. If there's no room for a ramp on the ground side (a junction right at the foot
  *     of the bridge), the bridge itself slopes down instead.
  *
@@ -137,7 +138,15 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
    * plain joins (nodes with exactly 2 neighbors) into the next road, up to maxDist.
    * Stops at junctions, dead ends, or when the road type (raised or not) changes.
    */
-  function walk(net: Net, startRoad: number, startIdx: number, dir: 1 | -1, maxDist: number, wantRaised: boolean): Step[] {
+  function walk(
+    net: Net,
+    startRoad: number,
+    startIdx: number,
+    dir: 1 | -1,
+    maxDist: number,
+    wantRaised: boolean,
+    allow: (r: Road) => boolean = () => true,
+  ): Step[] {
     const steps: Step[] = [];
     const seen = new Set<string>([keyOf(roads[startRoad].points[startIdx])]);
     let ri = startRoad;
@@ -150,7 +159,7 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
         // End of this way: continue into the next way if this is a plain join.
         const k = keyOf(pts[i]);
         if (neighbors(net, k).size !== 2) break;
-        const next = (at[net].get(k) ?? []).find(([r2]) => r2 !== ri && raised[r2] === wantRaised);
+        const next = (at[net].get(k) ?? []).find(([r2]) => r2 !== ri && raised[r2] === wantRaised && allow(roads[r2]));
         if (!next) break;
         const [r2, i2] = next;
         const len = roads[r2].points.length;
@@ -195,7 +204,10 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
     const { length: R, min: MIN } = RAMP[net];
     for (const [k, list] of at[net]) {
       if (!raisedNode.has(k)) continue;
+      // Walkways come down by stairs, not by lifting the sidewalk they connect to.
+      const canRamp = (r: Road) => net === 'drive' || r.highway === 'steps';
       const groundHere = list.filter(([ri]) => !raised[ri]);
+      const rampable = groundHere.filter(([ri]) => canRamp(roads[ri]));
       const raisedHere = list.filter(([ri]) => raised[ri]);
       if (groundHere.length === 0 || raisedHere.length === 0) continue;
       const h = nodeZ.get(k) ?? 0;
@@ -203,11 +215,11 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
       // Try the ground side: every ground direction leaving this node.
       const plainJoin = neighbors(net, k).size === 2;
       const groundWalks: Step[][] = [];
-      if (plainJoin) {
-        for (const [ri, pi] of groundHere) {
+      if (plainJoin && rampable.length === groundHere.length) {
+        for (const [ri, pi] of rampable) {
           const len = roads[ri].points.length;
-          if (pi > 0) groundWalks.push(walk(net, ri, pi, -1, R, false));
-          if (pi < len - 1) groundWalks.push(walk(net, ri, pi, 1, R, false));
+          if (pi > 0) groundWalks.push(walk(net, ri, pi, -1, R, false, canRamp));
+          if (pi < len - 1) groundWalks.push(walk(net, ri, pi, 1, R, false, canRamp));
         }
       }
       const room = groundWalks.length ? Math.min(...groundWalks.map((w) => (w.length ? w[w.length - 1].d1 : 0))) : 0;
@@ -238,7 +250,7 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
               const pk = keyOf(roads[s.road].points[s.to]);
               nodeCap.set(pk, Math.min(nodeCap.get(pk) ?? Infinity, zAt(s.d1)));
             }
-            sample(steps, [R / 4, R / 2, (3 * R) / 4], zAt);
+            sample(steps, [R / 4, R / 2, (3 * R) / 4, R], zAt);
           }
         }
         stats.rampsOnBridge++;

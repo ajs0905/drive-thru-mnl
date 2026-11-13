@@ -137,6 +137,19 @@ describe('elevateRoads', () => {
     expect(roads[3].z).toBeUndefined();
   });
 
+  it('never lifts a sidewalk to meet a footbridge; the footbridge slopes down instead', () => {
+    const fb = bridge([[0, 0], [60, 0]], {}, 'path');
+    const sidewalkW = road([[-100, 0], [0, 0]], {}, 'path');
+    const sidewalkE = road([[60, 0], [160, 0]], {}, 'path');
+    const avenue = road([[30, -50], [30, 50]]);
+    const { roads } = elevateRoads([fb, sidewalkW, sidewalkE, avenue]);
+    expect(roads[1].z).toBeUndefined();
+    expect(roads[2].z).toBeUndefined();
+    expect(zAtX(roads[0], 0)).toBeCloseTo(0, 6);
+    expect(zAtX(roads[0], 30)).toBe(DECK_HEIGHT.walk); // full height over the avenue
+    expect(zAtX(roads[0], 60)).toBeCloseTo(0, 6);
+  });
+
   it('never raises tunnels', () => {
     const t = road([[0, 0], [100, 0]], { tunnel: true, layer: 1 });
     const { roads } = elevateRoads([t, road([[50, -50], [50, 50]])]);

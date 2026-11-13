@@ -12,7 +12,8 @@
     "typecheck": "tsc -b",
     "lint": "oxlint",
     "pipeline": "tsx pipeline/build.ts",
-    "pipeline:sample": "tsx pipeline/build.ts pipeline/__fixtures__/sample.geojson public/data/sample.json --no-playable"
+    "pipeline:sample": "tsx pipeline/build.ts pipeline/__fixtures__/sample.geojson public/data/sample.json --no-playable",
+    "qa": "tsx pipeline/qa.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

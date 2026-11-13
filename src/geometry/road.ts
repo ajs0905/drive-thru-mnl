@@ -173,7 +173,7 @@ export function addDeckStructure(mb: MeshBuilder, points: Point[], width: number
   const { pts, zs } = dedupeWithZ(points, z);
   const { left, right } = offsetPolyline(pts, width / 2);
   const start = mb.triangleCount;
-  const LIFT = 0.3; // below this the road is basically on the ground
+  const LIFT = 1; // below this a ramp's side walls would just look like lines painted on the road
 
   for (let i = 0; i < left.length - 1; i++) {
     const za = zs[i];

@@ -9,7 +9,8 @@ import { createProjection } from '../src/geo/projection';
 import type { MapData, Point, Ring } from '../src/map/types';
 import { clipToPlayable } from './clip';
 import { elevateRoads } from './elevation';
-import { fitRoadWidths } from './fitWidths';
+import { dropBuildingsOnRoads, fitRoadWidths } from './fitWidths';
+import { settleRaised } from './settleRaised';
 import { extractMap } from './extract';
 
 const args = process.argv.slice(2);
@@ -77,8 +78,19 @@ if (playablePath) {
   map = clipToPlayable(map, ring, margin);
 }
 const elevation = elevateRoads(map.roads);
-const fitted = fitRoadWidths(elevation.roads, map.buildings);
-map = { ...map, roads: fitted.roads };
+const settled = settleRaised(elevation.roads, map.buildings);
+const fitted = fitRoadWidths(settled.roads, map.buildings);
+const cleared = dropBuildingsOnRoads(map.buildings, fitted.roads);
+map = {
+  ...map,
+  roads: fitted.roads,
+  buildings: cleared.buildings,
+  stats: { ...map.stats, roads: fitted.roads.length, buildings: cleared.buildings.length },
+};
+if (map.stats.clip) {
+  const sceneryLeft = cleared.buildings.filter((b) => b.scenery).length;
+  map.stats.clip = { ...map.stats.clip, playableBuildings: cleared.buildings.length - sceneryLeft, sceneryBuildings: sceneryLeft };
+}
 const ms = performance.now() - t0;
 
 mkdirSync(dirname(outPath), { recursive: true });
@@ -106,6 +118,12 @@ console.log(
   `  elevation: ${e.raisedRoads} raised road pieces, ${e.rampsOnGround} ramps on approach roads, ` +
     `${e.rampsOnBridge} on the bridge itself, ${e.bridgesLeftAtGround} small bridges left at ground`,
 );
-console.log(`  road widths: ${fitted.stats.narrowed} of ${fitted.stats.checked} minor/service roads narrowed to fit between buildings`);
+const st = settled.stats;
+console.log(
+  `  raised cleanup: ${st.insideRemovedMeters.toFixed(0)} m of walkway inside buildings removed, ${st.scrapsRemoved} scraps removed, ` +
+    `${st.endsLowered} mid-air ends brought down, ${st.endsAtBuildings} left at building walls`,
+);
+console.log(`  road widths: ${fitted.stats.narrowed} of ${fitted.stats.checked} roads narrowed to fit between buildings`);
+console.log(`  buildings standing on a road removed: ${cleared.dropped}`);
 const skipped = Object.entries(stats.skipped).sort((a, b) => b[1] - a[1]);
 if (skipped.length) console.log(`  skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(', ')}`);
