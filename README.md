@@ -16,7 +16,7 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 
 - **Real city from raw map data.** 25,900 OpenStreetMap features become 12,500 buildings, 4,100 road segments and 366 land-use areas, clipped to a hand-drawn playable area.
 - **Messy data, handled.** Only 3% of buildings have a height in OSM, so heights are estimated by rules. Indoor walkways, basements and skywalks mapped through malls are cleaned up. Roads are narrowed to fit between the houses along them.
-- **Flyovers worked out from tags.** OSM only says "bridge, layer 1". The pipeline decides which bridges are really raised (only those crossing a road), builds ramps on the approach roads that stop at junctions, and adds decks, barriers and pillars.
+- **Flyovers worked out from tags.** OSM only says "bridge, layer 1". The pipeline decides which bridges are really raised (only those crossing a road), builds ramps on the approach roads that stop at junctions and never climb inside another road's lanes, rounds their curves, and places pillars where they don't block a lane below (sliding along the deck, into an avenue's median, or onto an outrigger pier).
 - **Clean intersections, painted roads.** Roads are split into a graph and every junction gets its own polygon, worked out from where the road edges meet; junctions of divided roads merge into one, and leftover gaps are found by rasterizing the road surface and paved. Lane lines, center lines, zebra crossings and curbs are drawn by a shader from per-vertex data: no textures, no extra draw calls.
 - **Windows without textures.** Every building gets windows from its type and height (glass towers, offices, apartments, houses, parking decks), drawn by a shader; roofs get stair housings, AC units and water tanks.
 - **Walls and trees that respect the streets.** Walls, fences and hedges from OSM are cut open wherever a road or path passes, street trees mapped a meter into the road are moved to the curb, and gates and parking booms turn to span the road they sit on. 900+ trees (palms where the species says so) and 300 street fixtures, drawn as GPU instances; trees are low-poly models built in code (three broadleaf shapes and palms with drooping fronds).
@@ -24,7 +24,7 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - **Lighting that scales with the device.** Sun shadows that follow the camera on Medium and High; tone mapping and baked contact shading everywhere. A Low / Medium / High switch plus resolution that adapts to the frame rate keeps phones smooth, and nothing is drawn while nothing moves.
 - **Drive it.** Press Drive (or Enter) and a car appears on the nearest road. Arcade handling on real physics (Rapier): speed-sensitive steering, handbrake drifts with a drift assist that keeps them controllable, a body that squats, dips and leans, a kick at every gear change, glowing brake lights, and a chase camera that swings around corners, reacts to acceleration and braking, and shakes on a crash. Buildings, walls and posts are solid, and the flyovers are drivable. The physics engine only downloads when you start driving.
 - **Fast to render.** The city is merged into a few big meshes per layer and grid cell (about 50 to 80 draw calls), cells off screen are skipped, and an idle view costs nothing. Built in about 300 ms.
-- **Tested and checked.** 470+ unit tests (the car's handling runs in the real physics engine in tests), an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
+- **Tested and checked.** 500+ unit tests (the car's handling runs in the real physics engine in tests), an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
 
 ![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags](docs/images/flyover.png)
 
@@ -46,6 +46,7 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - [x] Drivable car, first step: Rapier physics with arcade handling, chase camera, brake lights
 - [x] Solid buildings, walls, posts and the playable edge
 - [x] Drivable flyovers and ramps; a steadier camera in crashes
+- [x] Flyover fixes: ramps out of other lanes, pillars off the roads, no flickering lane lines
 - [ ] Touch controls and respawn
 - [ ] Time trials and races through real streets
 - [ ] Tile streaming and quality tiers for phones

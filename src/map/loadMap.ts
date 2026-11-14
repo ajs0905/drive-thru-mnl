@@ -2,7 +2,7 @@ import type { MapData } from './types';
 
 export type MapSource = 'bgc' | 'sample';
 
-export const MAP_VERSION = 6;
+export const MAP_VERSION = 7;
 
 type FetchResult = { ok: true; map: MapData } | { ok: false; outdated: boolean };
 

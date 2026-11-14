@@ -12,6 +12,7 @@ import { distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../s
 import { SegmentGrid } from '../src/geometry/spatialGrid';
 import type { Building, MapData, Point, Road } from '../src/map/types';
 import { roadIssues } from './qaRoads';
+import { structureIssues } from './qaStructures';
 
 export interface Issue {
   kind: string;
@@ -129,6 +130,7 @@ export function runQa(map: MapData): Issue[] {
 
   issues.push(...roadIssues(map));
   issues.push(...extrasIssues(map, ground, inside));
+  issues.push(...structureIssues(map));
   return issues;
 }
 
@@ -191,7 +193,7 @@ if (process.argv[1]?.endsWith('qa.ts')) {
   const args = process.argv.slice(2);
   const checkAt = args.indexOf('--check');
   const baselinePath = checkAt >= 0 ? args[checkAt + 1] : undefined;
-  const file = args.find((a, i) => a.endsWith('.json') && i !== checkAt + 1 && !a.startsWith('--')) ?? 'public/data/bgc.json';
+  const file = args.find((a, i) => a.endsWith('.json') && (checkAt < 0 || i !== checkAt + 1) && !a.startsWith('--')) ?? 'public/data/bgc.json';
   const map = JSON.parse(readFileSync(file, 'utf8')) as MapData;
   const issues = runQa(map);
   const counts = countByKind(issues);

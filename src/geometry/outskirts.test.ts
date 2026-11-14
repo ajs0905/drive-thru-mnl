@@ -5,7 +5,7 @@ import { distanceToRing, pointInRing } from './polygon';
 
 const playable: [number, number][] = [[-500, -500], [500, -500], [500, 500], [-500, 500]];
 const map = {
-  version: 6,
+  version: 7,
   origin: { lat: 14.5509, lon: 121.0503 },
   bounds: { minX: -800, minY: -800, maxX: 800, maxY: 800 },
   playable,

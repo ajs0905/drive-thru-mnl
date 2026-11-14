@@ -9,6 +9,7 @@ import {
   placeExtras,
   pointsAlong,
   pushOff,
+  TREE_ROOM,
   treeShape,
   WALL_GATE_WIDTH,
   type RawExtras,
@@ -23,7 +24,7 @@ const ll = ([x, y]: Point): [number, number] => {
 };
 
 const map = (roads: Road[], buildings: Building[] = []): MapData => ({
-  version: 6,
+  version: 7,
   origin,
   bounds: { minX: -100, minY: -100, maxX: 100, maxY: 100 },
   roads,
@@ -154,6 +155,29 @@ describe('placeExtras', () => {
     expect(trees.map((t) => t.p)).toEqual([[0, 5.61], [50, 20]]);
     expect(stats.treesMoved).toBe(1);
     expect(stats.dropped).toEqual({ 'tree-on-road': 1, 'tree-in-building': 1, 'tree-duplicate': 1 });
+  });
+
+  it("keeps tree crowns clear of flyovers: moves trees beside a deck away, drops ones it can't, keeps ones that fit under", () => {
+    const flyover: Road = { id: 'f', highway: 'primary', cls: 'major', w: 8, points: [[-100, 50], [100, 50]], z: [7, 7] };
+    const low: Road = { id: 'l', highway: 'footway', cls: 'path', w: 3, points: [[-100, -50], [100, -50]], z: [3, 3] };
+    const { trees, stats } = placeExtras(
+      raw({
+        trees: [
+          { p: [0, 57], shape: 'broad', s: 1 }, // crown into the deck's barrier: moved out
+          { p: [20, 51], shape: 'palm', s: 1 }, // right under the deck, too tall: can't move far enough, dropped
+          { p: [40, 51], shape: 'broad', s: 0.6 }, // small, fits under the 7 m deck: kept
+          { p: [0, -45], shape: 'broad', s: 1 }, // next to a 3 m footbridge: moved out
+          { p: [60, 70], shape: 'broad', s: 1 }, // well clear: kept
+        ],
+      }),
+      map([road, flyover, low]),
+    );
+    expect(stats.dropped).toEqual({ 'tree-by-deck': 1 });
+    expect(stats.treesClearedOfDecks).toBe(2);
+    const moved = trees.find((t) => t.p[0] === 0 && t.p[1] > 0)!;
+    expect(moved.p[1]).toBeGreaterThanOrEqual(50 + 4 + 1 + TREE_ROOM.broad.radius + TREE_ROOM.clearance);
+    expect(trees.find((t) => t.p[0] === 40)).toBeDefined();
+    expect(trees.find((t) => t.p[0] === 0 && t.p[1] < 0)!.p[1]).toBeGreaterThanOrEqual(-50 + 1.5 + 1 + TREE_ROOM.broad.radius + TREE_ROOM.clearance - 0.01);
   });
 
   it('drops what is outside the playable area and its scenery ring', () => {

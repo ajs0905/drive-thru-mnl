@@ -14,20 +14,36 @@
  *     ramp: it climbs from 0 to deck height over up to 90 m, stopping early at the
  *     first junction so side streets aren't lifted. For footbridges only stairs can
  *     be the ramp; a sidewalk never rises to meet a footbridge.
- *  5. If there's no room for a ramp on the ground side (a junction right at the foot
- *     of the bridge), the bridge itself slopes down instead.
+ *  5. A ramp never rises inside another road's lanes: wherever its surface overlaps a
+ *     ground road (a gore where it splits from a frontage road, a main road running
+ *     close alongside, a street passing under), it's either still at ground level or
+ *     already high enough to pass over (`RAMP_OVER`). The climb is shortened until that
+ *     holds.
+ *  6. If there's no room for a ramp on the ground side (a junction right at the foot
+ *     of the bridge, or a long gore), the bridge itself slopes down instead.
  *
  * Ramp heights follow a smoothstep curve, and extra points are inserted along ramps so
  * the slope isn't one long straight line.
  */
 import type { Point, Road } from '../src/map/types';
+import { distanceToSegment } from '../src/geometry/polygon';
 import { SegmentGrid, segmentsCross } from '../src/geometry/spatialGrid';
 
 export const DECK_HEIGHT = { drive: 7, walk: 6 } as const;
+/**
+ * Ramp lengths (m): up to `length`; at least `min` (steepest point about 23% for a 7 m
+ * deck), or `hardMin` when the bridge can't take the slope either.
+ */
 export const RAMP = {
-  drive: { length: 90, min: 25 },
-  walk: { length: 20, min: 3 },
+  drive: { length: 90, min: 45, hardMin: 25 },
+  walk: { length: 20, min: 3, hardMin: 3 },
 } as const;
+/** Height (m) at which a ramp clears a road it overlaps: deck underside about 2.8 m up (rule 5). */
+export const RAMP_OVER = 4;
+/** Ribbons closer than this (m) don't count as overlapping (edges just touching). */
+const OVERLAP_SLACK = 0.3;
+/** Longest stretch (m) a sloping bridge stays at ground level before climbing (rule 5). */
+const MAX_FLAT = 150;
 
 type Net = 'drive' | 'walk';
 const netOf = (r: Road): Net => (r.cls === 'path' ? 'walk' : 'drive');
@@ -62,6 +78,10 @@ export interface ElevationStats {
   raisedRoads: number;
   rampsOnGround: number;
   rampsOnBridge: number;
+  /** Ramps whose climb was moved to stay out of another road's lanes (rule 5). */
+  goresKeptLow: number;
+  /** Ramps that still overlap another road's lanes: no way to avoid it found. */
+  overlapsLeft: number;
   bridgesLeftAtGround: number;
 }
 
@@ -200,12 +220,43 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
     }
   }
 
-  const stats: ElevationStats = { raisedRoads: raised.filter(Boolean).length, rampsOnGround: 0, rampsOnBridge: 0, bridgesLeftAtGround: 0 };
+  // Ground drive roads, for rule 5.
+  const groundGrid = new SegmentGrid<number>(40);
+  roads.forEach((r, ri) => {
+    if (raised[ri] || netOf(r) !== 'drive') return;
+    for (let i = 0; i < r.points.length - 1; i++) groundGrid.insert(r.points[i], r.points[i + 1], ri);
+  });
+
+  /**
+   * Distances (every 2 m from the walk's start) where a ramp's or sloping bridge's
+   * surface overlaps another ground road (rule 5). `crossing` when that road passes
+   * under it, not alongside.
+   */
+  function overlaps(steps: Step[]): { d: number; crossing: boolean }[] {
+    const own = new Set(steps.map((s) => s.road));
+    const out: { d: number; crossing: boolean }[] = [];
+    for (const s of steps) {
+      const r = roads[s.road];
+      const [a, b] = [r.points[s.from], r.points[s.to]];
+      for (let d = Math.ceil(s.d0 / 2) * 2; d <= s.d1; d += 2) {
+        const t = (d - s.d0) / Math.max(1e-9, s.d1 - s.d0);
+        const p: Point = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+        const reach = r.w / 2 + 15;
+        const hits = groundGrid
+          .query([p[0] - reach, p[1] - reach], [p[0] + reach, p[1] + reach])
+          .filter((e) => !own.has(e.item) && distanceToSegment(p, e.a, e.b) < (r.w + roads[e.item].w) / 2 - OVERLAP_SLACK);
+        if (hits.length) out.push({ d, crossing: hits.some((e) => segmentsCross(a, b, e.a, e.b)) });
+      }
+    }
+    return out;
+  }
+
+  const stats: ElevationStats = { raisedRoads: raised.filter(Boolean).length, rampsOnGround: 0, rampsOnBridge: 0, bridgesLeftAtGround: 0, goresKeptLow: 0, overlapsLeft: 0 };
   stats.bridgesLeftAtGround = candidate.filter((c, i) => c && !raised[i]).length;
 
   // --- 4 & 5. Ramps at each attachment ---------------------------------------------------
   for (const net of ['drive', 'walk'] as Net[]) {
-    const { length: R, min: MIN } = RAMP[net];
+    const { length: R, min: MIN, hardMin: HARD_MIN } = RAMP[net];
     for (const [k, list] of at[net]) {
       const zk = `${net}:${k}`;
       if (!raisedNode.has(zk)) continue;
@@ -227,10 +278,55 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
           if (pi < len - 1) groundWalks.push(walk(net, ri, pi, 1, R, false, canRamp));
         }
       }
-      const room = groundWalks.length ? Math.min(...groundWalks.map((w) => (w.length ? w[w.length - 1].d1 : 0))) : 0;
+      // Room to climb: up to the first junction (the full room), and shortened so the
+      // ramp is at ground or clear overhead wherever it overlaps another road (rule 5).
+      const fullRoom = groundWalks.length ? Math.min(...groundWalks.map((w) => (w.length ? Math.min(w[w.length - 1].d1, R) : 0))) : 0;
+      const shortRoom = (w: Step[]) => {
+        let L = w.length ? Math.min(w[w.length - 1].d1, R) : 0;
+        if (net !== 'drive') return L;
+        const over = overlaps(w);
+        while (L >= HARD_MIN && over.some(({ d }) => d < L && h * smooth(1 - d / L) < RAMP_OVER)) L -= 1;
+        return L;
+      };
+      const room = groundWalks.length ? Math.min(...groundWalks.map(shortRoom)) : 0;
 
-      if (plainJoin && room >= MIN) {
-        const L = Math.min(room, R);
+      // The bridge-side slope (rule 6), staying at ground for the first `g` meters where
+      // that keeps it out of a road it overlaps (rule 5). `ok` when that fully works.
+      const bridgeSlopes = raisedHere.flatMap(([ri, pi]) => {
+        const dirs: (1 | -1)[] = [];
+        if (pi > 0) dirs.push(-1);
+        if (pi < roads[ri].points.length - 1) dirs.push(1);
+        return dirs.map((dir) => {
+          const steps = walk(net, ri, pi, dir, R + MAX_FLAT, true);
+          const over = net === 'drive' ? overlaps(steps) : [];
+          const zFrom = (g: number) => (d: number) => round2(h * smooth((d - g) / R));
+          // Roads alongside: at ground or clear overhead. Roads it crosses: always clear
+          // overhead (staying flat across them would turn the flyover into a crossing).
+          const clear = (g: number) => !over.some(({ d, crossing }) => (crossing || d > g) && zFrom(g)(d) < RAMP_OVER);
+          let g = 0;
+          while (g < MAX_FLAT && !clear(g)) g += 1;
+          return { steps, g, ok: clear(g) };
+        });
+      });
+
+      // Prefer a gentle ground ramp that stays out of other lanes, then a bridge slope
+      // that does, then a steeper ground ramp that does, then the full ground ramp (some
+      // overlap is better than a low deck over a road), and last the plain bridge slope.
+      const bridgeOk = bridgeSlopes.every((b) => b.ok);
+      const plan =
+        plainJoin && room >= MIN
+          ? { ground: room }
+          : bridgeOk
+            ? { ground: 0 }
+            : plainJoin && room >= HARD_MIN
+              ? { ground: room }
+              : plainJoin && fullRoom >= HARD_MIN
+                ? { ground: fullRoom }
+                : { ground: 0 };
+      if (plan.ground > 0) {
+        const L = plan.ground;
+        if (L < fullRoom) stats.goresKeptLow++;
+        if (L === fullRoom && room < HARD_MIN) stats.overlapsLeft++;
         const zAt = (d: number) => round2(h * smooth(1 - d / L));
         for (const steps of groundWalks) {
           for (const s of steps) {
@@ -243,20 +339,15 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
       } else {
         // No room on the ground: slope the bridge down to this node instead.
         nodeCap.set(zk, 0);
-        for (const [ri, pi] of raisedHere) {
-          const len = roads[ri].points.length;
-          const dirs: (1 | -1)[] = [];
-          if (pi > 0) dirs.push(-1);
-          if (pi < len - 1) dirs.push(1);
-          for (const dir of dirs) {
-            const steps = walk(net, ri, pi, dir, R, true);
-            const zAt = (d: number) => round2(h * smooth(d / R));
-            for (const s of steps) {
-              const pk = zKey(net, roads[s.road].points[s.to]);
-              nodeCap.set(pk, Math.min(nodeCap.get(pk) ?? Infinity, zAt(s.d1)));
-            }
-            sample(steps, [R / 4, R / 2, (3 * R) / 4, R], zAt);
+        for (const b of bridgeSlopes) {
+          const g = bridgeOk ? b.g : 0;
+          if (g > 0) stats.goresKeptLow++;
+          const zAt = (d: number) => round2(h * smooth((d - g) / R));
+          for (const s of b.steps) {
+            const pk = zKey(net, roads[s.road].points[s.to]);
+            nodeCap.set(pk, Math.min(nodeCap.get(pk) ?? Infinity, zAt(s.d1)));
           }
+          sample(b.steps, [g, g + R / 4, g + R / 2, g + (3 * R) / 4, g + R], zAt);
         }
         stats.rampsOnBridge++;
       }

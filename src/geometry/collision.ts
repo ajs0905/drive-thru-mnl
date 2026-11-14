@@ -21,8 +21,9 @@
  *   space. So the car gets onto a flyover by its ramps, the barriers keep it on, and it
  *   drives underneath where there's room.
  * - Footbridges and skywalks aren't drivable: only their sides, the same way.
- * - Posts: flyover and footbridge pillars, tree trunks, bollards, concrete blocks and gate
- *   pillars, as small prisms matching what's drawn. Parking booms are left open (they
+ * - Posts: the pillars and posts the pipeline placed (under decks and raised buildings,
+ *   `pillars` in the data), tree trunks, bollards, concrete blocks and gate pillars, as
+ *   small prisms matching what's drawn. Parking booms are left open (they
  *   don't lift yet), and so are gate openings.
  *
  * Rapier's triangle meshes collide from either side (checked by the physics tests), so
@@ -31,7 +32,7 @@
 import earcut from 'earcut';
 import type { MapData, Point, Road, RoadClass } from '../map/types';
 import { PROP_SHAPE, type Prop, type PropKind } from './props';
-import { DECK_RAIL_FROM, DECK_SIDES_FROM, DECKS, deckPillars, dedupeWithZ, offsetPolyline } from './road';
+import { DECK_SIDES_FROM, DECKS, deckEdges, deckJoins, dedupeWithZ, pillarCorners, railHeight, type DeckJoin } from './road';
 import { fixtureProps, treeProps } from './streetProps';
 
 export const COLLISION = {
@@ -43,7 +44,7 @@ export const COLLISION = {
   /** Room a car needs under a building or deck to drive beneath it (m). */
   clearance: 2.5,
   /** Below this height a ramp is just road on the ground: no side walls. */
-  rampLift: 0.3,
+  rampLift: DECK_SIDES_FROM,
   /**
    * How far a deck joint's rim sits below its middle, per meter out (a slope). Joints are
    * shallow cones, not flat discs, so they stay under the road even where a ramp meets
@@ -142,11 +143,11 @@ export function propFootprint(p: Prop): Point[] {
  * the deck edge), its side barriers where the renderer draws them, and for drivable
  * roads its surface and joint discs. `surface` is the drawn road height above `z`.
  */
-function addDeck(structures: Builder, road: Road, surface: number, drivable: boolean) {
+function addDeck(structures: Builder, road: Road, surface: number, drivable: boolean, join?: DeckJoin) {
   const shape = road.cls === 'path' ? DECKS.walk : DECKS.drive;
   const { pts, zs } = dedupeWithZ(road.points, road.z);
   if (pts.length < 2) return;
-  const { left, right } = offsetPolyline(pts, road.w / 2);
+  const { left, right } = deckEdges(pts, road.w / 2, join);
   const ys = zs.map((z) => z + surface);
 
   for (let k = 0; k < pts.length - 1; k++) {
@@ -156,9 +157,9 @@ function addDeck(structures: Builder, road: Road, surface: number, drivable: boo
     // enough (a wall down to the ground there would be invisible), plus the barrier.
     if (Math.max(za, zb) >= DECK_SIDES_FROM) {
       const [ba, bb] = [Math.max(0, za - shape.depth), Math.max(0, zb - shape.depth)];
-      const rail = shape.barrier > 0 && Math.min(za, zb) >= DECK_RAIL_FROM ? shape.barrier : 0;
-      structures.quad(left[k], left[k + 1], ba, bb, ys[k] + rail, ys[k + 1] + rail);
-      structures.quad(right[k], right[k + 1], ba, bb, ys[k] + rail, ys[k + 1] + rail);
+      const [ra, rb] = [railHeight(za, shape.barrier), railHeight(zb, shape.barrier)];
+      structures.quad(left[k], left[k + 1], ba, bb, ys[k] + ra, ys[k + 1] + rb);
+      structures.quad(right[k], right[k + 1], ba, bb, ys[k] + ra, ys[k + 1] + rb);
     }
     if (drivable) {
       structures.tri(at(left[k], ys[k]), at(right[k], ys[k]), at(right[k + 1], ys[k + 1]));
@@ -181,7 +182,7 @@ function addDeck(structures: Builder, road: Road, surface: number, drivable: boo
 }
 
 /** The parts of the map collisions are built from (the optional ones may be missing). */
-export type CollisionInput = Pick<MapData, 'buildings' | 'roads'> & Partial<Pick<MapData, 'playable' | 'barriers' | 'trees' | 'fixtures' | 'junctions'>>;
+export type CollisionInput = Pick<MapData, 'buildings' | 'roads'> & Partial<Pick<MapData, 'playable' | 'barriers' | 'trees' | 'fixtures' | 'junctions' | 'pillars'>>;
 
 export function buildCollision(map: CollisionInput, opts: CollisionOptions): CollisionWorld {
   const walls = new Builder();
@@ -205,17 +206,19 @@ export function buildCollision(map: CollisionInput, opts: CollisionOptions): Col
     counts.edge = map.playable.length;
   }
 
+  const joins = deckJoins(map.roads);
   for (const road of map.roads) {
     if (!road.z || road.scenery || Math.max(...road.z) < COLLISION.rampLift) continue;
     const drivable = road.cls !== 'path';
-    addDeck(structures, road, opts.surfaceY[road.cls], drivable);
+    addDeck(structures, road, opts.surfaceY[road.cls], drivable, joins.get(road.id));
     if (drivable) counts.decks++;
     else counts.footbridges++;
-    for (const p of deckPillars(road.points, road.z, drivable ? DECKS.drive : DECKS.walk)) {
-      const s = p.size / 2;
-      structures.walls([[p.x - s, p.y - s], [p.x + s, p.y - s], [p.x + s, p.y + s], [p.x - s, p.y + s]], 0, p.top, true);
-      counts.posts++;
-    }
+  }
+  // Pillars and posts, as placed by the pipeline (the renderer draws the same ones).
+  // Cap beams on outrigger pillars are overhead, out of the car's way.
+  for (const p of map.pillars ?? []) {
+    structures.walls(pillarCorners(p), 0, p.top, true);
+    counts.posts++;
   }
   for (const j of map.junctions ?? []) {
     if (j.z >= COLLISION.rampLift && j.cls !== 'path') structures.flat(j.ring, j.z + opts.surfaceY[j.cls]);

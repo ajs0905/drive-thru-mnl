@@ -3,7 +3,7 @@ import type { Crossing, Junction, MapData } from '../src/map/types';
 import { roadIssues } from './qaRoads';
 
 const base: MapData = {
-  version: 6,
+  version: 7,
   origin: { lat: 0, lon: 0 },
   bounds: { minX: -100, minY: -100, maxX: 100, maxY: 100 },
   roads: [

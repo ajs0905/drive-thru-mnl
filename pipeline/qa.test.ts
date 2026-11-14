@@ -3,7 +3,7 @@ import type { Building, MapData, Road } from '../src/map/types';
 import { countByKind, regressions, runQa } from './qa';
 
 const map = (roads: Road[], buildings: Building[] = []): MapData => ({
-  version: 6,
+  version: 7,
   junctions: [],
   crossings: [],
   origin: { lat: 14.55, lon: 121.05 },

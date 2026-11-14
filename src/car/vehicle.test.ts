@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DriveInput } from './controls';
 import { SEDAN } from './spec';
 import { buildCollision } from '../geometry/collision';
-import type { MapData } from '../map/types';
+import type { MapData, Point } from '../map/types';
 import bgc from '../../public/data/bgc.json?raw';
 import { chassisCollider, chassisInertia, downforce, newDriveState, setupWheels, stepVehicle } from './vehicle';
 
@@ -331,26 +331,51 @@ describe('crash detection', () => {
 
 describe('the Sedan on the real map', () => {
   // The Kalayaan Overpass, westbound: the approach road (way/744999969) splits at a gore
-  // into the ramp (way/23240433, 7 m up over 36 m) on the left and a frontage road on the right.
+  // into the ramp road (way/23240433) on the left and a frontage road on the right. The
+  // ramp road stays at ground level through the gore; the bridge (way/671962733) climbs after.
   const map = JSON.parse(bgc) as MapData;
+  const way = (id: string) => map.roads.find((r) => r.id === id)!.points;
   const heading = Math.atan2(501 - 495, -547 - -525); // along the approach road
   const at = { x: -530, z: -496.4, yaw: Math.atan2(Math.cos(heading), -Math.sin(heading)) };
-  const climb = (steer: number) => {
-    const car = makeCar(0, map, at);
-    drive(car, { throttle: 1 }, 1);
-    drive(car, { throttle: 1, steer }, 0.8);
-    drive(car, { throttle: 1 }, 5);
-    return car;
-  };
 
-  it('gets up the Kalayaan Overpass ramp onto the deck', () => {
-    const car = climb(0.1); // a slight left, onto the ramp
+  /** Drives along a path (map points) like a player would: steer toward a point 12 m ahead. */
+  const follow = (car: Car, path: Point[], seconds: number) => {
+    for (let i = 0; i < Math.round(seconds / DT); i++) {
+      const p = car.body.translation();
+      const me: Point = [p.x, -p.z];
+      let k = 0;
+      for (let j = 1; j < path.length; j++) if (Math.hypot(path[j][0] - me[0], path[j][1] - me[1]) < Math.hypot(path[k][0] - me[0], path[k][1] - me[1])) k = j;
+      let target = path[path.length - 1];
+      for (let j = k; j < path.length; j++) if (Math.hypot(path[j][0] - me[0], path[j][1] - me[1]) > 12) { target = path[j]; break; }
+      const r = car.body.rotation();
+      const fwd = { x: 2 * (r.x * r.z + r.w * r.y), z: 1 - 2 * (r.x * r.x + r.y * r.y) }; // the car's +z in the world
+      const facing = Math.atan2(-fwd.z, fwd.x); // map heading
+      let err = Math.atan2(target[1] - me[1], target[0] - me[0]) - facing;
+      err = Math.atan2(Math.sin(err), Math.cos(err));
+      drive(car, { throttle: 1, steer: Math.max(-1, Math.min(1, err * 2.5)) }, DT);
+    }
+  };
+  /** A path densified to a point every meter. */
+  const dense = (pts: Point[]) =>
+    pts.slice(1).flatMap((b, i) => {
+      const a = pts[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])));
+      return Array.from({ length: n }, (_, k): Point => [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+    });
+
+  it('follows the road up the Kalayaan Overpass onto the deck, without a scrape', () => {
+    const car = makeCar(0, map, at);
+    follow(car, dense([[-530, 496.4], ...way('way/744999969').slice(-2), ...way('way/23240433').slice(1), ...way('way/671962733').slice(1), ...way('way/29353931').slice(1)]), 12);
     expect(car.body.translation().y).toBeGreaterThan(6.8);
-    expect(car.maxTilt).toBeLessThan(25);
+    expect(car.state.impacts).toBe(0);
+    expect(car.maxTilt).toBeLessThan(20);
   });
 
-  it('is held on by the ramp barrier even going straight at the gore, where the ramp overlaps the frontage road', () => {
-    const car = climb(0);
-    expect(car.maxTilt).toBeLessThan(45); // no roll off the ramp's edge
+  it('can take the frontage road at the gore instead, at ground level, without catching the ramp', () => {
+    const car = makeCar(0, map, at);
+    follow(car, dense([[-530, 496.4], ...way('way/744999969').slice(-2), ...way('way/1279593466/0').slice(1)]), 4);
+    expect(car.body.translation().y).toBeLessThan(1);
+    expect(car.state.impacts).toBe(0);
+    expect(car.maxTilt).toBeLessThan(10);
   });
 });

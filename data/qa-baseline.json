@@ -7,12 +7,18 @@
   "building-on-service-road (playable)": 59,
   "building-on-service-road (scenery)": 9,
   "building-through-deck": 0,
+  "deck-joint-gap": 0,
+  "flickering-overlap": 0,
   "floating-end": 0,
   "junction-spike": 0,
   "paving-hole": 35,
+  "pillar-in-lanes": 0,
   "raised-fragment": 0,
   "raised-inside-building": 0,
+  "ramp-in-lanes": 3,
+  "tree-by-deck": 0,
   "tree-in-building": 0,
   "tree-on-road": 0,
+  "unsupported-building": 0,
   "zebra-overlap": 0
 }

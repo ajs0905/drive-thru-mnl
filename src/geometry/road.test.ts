@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Point } from '../map/types';
+import type { Point, Road } from '../map/types';
 import { MeshBuilder, triangleNormal } from './meshBuilder';
-import { addDeckStructure, addDisc, addRoadRibbon, addSidewalk, addZebra, decodeMark, dedupe, MARK, markCode, offsetPolyline, trimPolyline } from './road';
+import { addDeckStructure, addDisc, addPillar, addRoadRibbon, addSidewalk, addZebra, DECK_RAIL_FROM, DECK_RAIL_FULL, deckEdges, deckJoins, decodeMark, dedupe, MARK, markCode, offsetPolyline, pillarCorners, railHeight, trimPolyline } from './road';
 
 const dist = (a: Point, b: Point) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
@@ -132,21 +132,12 @@ describe('addDeckStructure', () => {
     expect(addDeckStructure(mb, [[0, 0], [100, 0]], 8, [0, 0], style)).toBe(0);
   });
 
-  it('builds edges, underside, barriers and pillars for a raised deck, all facing the right way', () => {
+  it('builds edges, underside and barriers for a raised deck, all facing the right way (pillars come separately)', () => {
     const mb = new MeshBuilder();
     addDeckStructure(mb, [[0, 0], [100, 0]], 8, [7, 7], style);
-    // per segment: 2 edges x 2 + underside 2 + 4 barrier faces x 2 = 14; pillars at 15, 45, 75 m: 3 x 4 sides x 2 = 24
-    expect(mb.triangleCount).toBe(14 + 24);
+    // per segment: 2 edges x 2 + underside 2 + 4 barrier faces x 2 = 14
+    expect(mb.triangleCount).toBe(14);
     expectFacing(mb);
-  });
-
-  it('puts pillars only where the deck is high enough', () => {
-    const low = new MeshBuilder();
-    addDeckStructure(low, [[0, 0], [100, 0]], 8, [2.5, 2.5], style);
-    const high = new MeshBuilder();
-    addDeckStructure(high, [[0, 0], [100, 0]], 8, [7, 7], style);
-    // A 2.5 m deck still gets barriers, but the space under it is too low for pillars.
-    expect(high.triangleCount - low.triangleCount).toBe(24);
   });
 
   it('never puts structure below the ground', () => {
@@ -241,5 +232,91 @@ describe('addZebra', () => {
 
   it('skips roads too narrow for one', () => {
     expect(addZebra(new MeshBuilder({ aux: true }), [0, 0], [1, 0], 0.8, 3, 0, [1, 1, 1])).toBe(0);
+  });
+});
+
+describe('addPillar', () => {
+  const grey: [number, number, number] = [0.5, 0.5, 0.5];
+  it('builds a square column from the ground to its top, turned, facing out', () => {
+    const mb = new MeshBuilder();
+    expect(addPillar(mb, { p: [10, 20], top: 5.8, size: 1.8, rot: 0.5 }, grey, grey)).toBe(8);
+    expectFacing(mb);
+    const pos = Array.from(mb.build().position);
+    const ys = pos.filter((_, i) => i % 3 === 1);
+    expect(Math.min(...ys)).toBe(0);
+    expect(Math.max(...ys)).toBeCloseTo(5.8);
+  });
+  it('adds a cap beam reaching under the deck for a pillar standing beside it', () => {
+    const mb = new MeshBuilder();
+    // Four sides and a bottom for the beam: 10 more triangles.
+    expect(addPillar(mb, { p: [0, 0], top: 5.8, size: 1.8, rot: 0, cap: [0, 5] }, grey, grey)).toBe(8 + 10);
+    expectFacing(mb);
+    const pos = Array.from(mb.build().position);
+    const zs = pos.filter((_, i) => i % 3 === 2);
+    expect(Math.min(...zs)).toBeCloseTo(-5 - 0.9); // map y 5 (+ half a width) is three.js z -5.9
+  });
+});
+
+describe('pillarCorners', () => {
+  it('gives a square of the right size, turned by rot', () => {
+    const c = pillarCorners({ p: [0, 0], size: 2, rot: Math.PI / 4 });
+    for (const q of c) expect(Math.hypot(q[0], q[1])).toBeCloseTo(Math.SQRT2);
+    expect(c[0][0]).toBeCloseTo(0); // turned 45 degrees: corners on the axes
+  });
+});
+
+describe('deck barriers', () => {
+  it('grow in from nothing where a ramp is a meter up to full height, so they never start blunt', () => {
+    expect(railHeight(DECK_RAIL_FROM - 0.1, 1)).toBe(0);
+    expect(railHeight(DECK_RAIL_FROM, 1)).toBe(0);
+    expect(railHeight((DECK_RAIL_FROM + DECK_RAIL_FULL) / 2, 1)).toBeCloseTo(0.5);
+    expect(railHeight(DECK_RAIL_FULL, 1)).toBe(1);
+    expect(railHeight(7, 1.1)).toBe(1.1);
+  });
+
+  it('start at ground level on a ramp: no blunt end standing up at the first piece', () => {
+    const mb = new MeshBuilder();
+    addDeckStructure(mb, [[0, 0], [10, 0], [20, 0], [30, 0]], 8, [0, 0.5, 2, 7], style);
+    const pos = Array.from(mb.build().position);
+    // At x = 10 (the first post of the climb, 0.5 m up) nothing stands above the road.
+    for (let i = 0; i < pos.length; i += 3) if (Math.abs(pos[i] - 10) < 1e-6) expect(pos[i + 1]).toBeLessThanOrEqual(0.5 + 1e-6);
+  });
+});
+
+describe('deckJoins and deckEdges', () => {
+  const deck = (id: string, points: Point[], z = 7): Road => ({ id, highway: 'primary', cls: 'major', w: 8, points, z: points.map(() => z) });
+
+  it('mitres two deck pieces meeting at an angle so their edges meet exactly, with no gap', () => {
+    const a = deck('a', [[0, 0], [50, 0]]);
+    const b = deck('b', [[50, 0], [90, 30]]);
+    const joins = deckJoins([a, b]);
+    expect(joins.get('a')).toEqual({ after: [90, 30] });
+    expect(joins.get('b')).toEqual({ before: [0, 0] });
+    const ea = deckEdges(a.points, 4, joins.get('a'));
+    const eb = deckEdges(b.points, 4, joins.get('b'));
+    expect(ea.left[1][0]).toBeCloseTo(eb.left[0][0]);
+    expect(ea.left[1][1]).toBeCloseTo(eb.left[0][1]);
+    expect(ea.right[1][0]).toBeCloseTo(eb.right[0][0]);
+    expect(ea.right[1][1]).toBeCloseTo(eb.right[0][1]);
+    // Without the join they'd leave a wedge on the outside of the bend.
+    const plain = offsetPolyline(a.points, 4);
+    expect(Math.hypot(plain.right[1][0] - eb.right[0][0], plain.right[1][1] - eb.right[0][1])).toBeGreaterThan(1);
+  });
+
+  it('joins pieces drawn in opposite directions too', () => {
+    const a = deck('a', [[0, 0], [50, 0]]);
+    const b = deck('b', [[90, 30], [50, 0]]);
+    const joins = deckJoins([a, b]);
+    const ea = deckEdges(a.points, 4, joins.get('a'));
+    const eb = deckEdges(b.points, 4, joins.get('b'));
+    expect(ea.left[1][0]).toBeCloseTo(eb.right[1][0]);
+    expect(ea.left[1][1]).toBeCloseTo(eb.right[1][1]);
+  });
+
+  it('leaves three-way joints, ground roads and footbridge-to-road meetings alone', () => {
+    const three = deckJoins([deck('a', [[0, 0], [50, 0]]), deck('b', [[50, 0], [90, 0]]), deck('c', [[50, 0], [50, 40]])]);
+    expect(three.size).toBe(0);
+    expect(deckJoins([deck('a', [[0, 0], [50, 0]], 0), deck('b', [[50, 0], [90, 0]], 0)]).size).toBe(0);
+    expect(deckJoins([deck('a', [[0, 0], [50, 0]]), { ...deck('b', [[50, 0], [90, 0]]), cls: 'path' }]).size).toBe(0);
   });
 });

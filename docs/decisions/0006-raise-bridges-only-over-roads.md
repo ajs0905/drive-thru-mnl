@@ -1,6 +1,6 @@
 # 0006: Raise a bridge only if it crosses a road
 
-**Status:** Accepted
+**Status:** Accepted. Ramps refined by [0015](0015-flyover-structure-placed-in-the-pipeline.md): they stay out of other roads' lanes.
 
 **Context.** OSM marks bridges (`bridge=yes`, `layer=1`) but not their height or where the slope starts. Small creek bridges in residential streets carry the same tags as flyovers; raising all of them puts 7 m humps in quiet streets. Footbridges were connected to sidewalks, so ramps lifted the sidewalks.
 

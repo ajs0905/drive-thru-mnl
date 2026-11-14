@@ -166,6 +166,8 @@ export interface ExtrasStats {
   trees: number;
   /** Street trees mapped slightly into a road, moved to its edge. */
   treesMoved: number;
+  /** Trees moved so their crowns clear a flyover or footbridge. */
+  treesClearedOfDecks: number;
   fixtures: number;
   dropped: Record<string, number>;
 }
@@ -176,6 +178,13 @@ const SAMPLE_STEP = 0.25;
 /** Shorter barrier pieces left over after cutting are dropped. */
 const MIN_PIECE = 0.6;
 const TREE_SPACING = 2;
+/**
+ * Room a tree needs from a flyover or footbridge: its crown's radius and height, per unit
+ * of its size `s` (the drawn trees, with some slack for the models' spread and palm lean),
+ * and how far it may be moved away from a deck before it's dropped instead.
+ */
+export const TREE_ROOM = { broad: { radius: 2.9, top: 6.6 }, palm: { radius: 3.2, top: 9 }, clearance: 0.3, maxMove: 4 } as const;
+
 /** Trees up to this far into a road surface are street trees mapped a bit off: moved to the curb. */
 export const TREE_NUDGE = 2;
 const treeClearance = (r: Road) => (r.cls === 'path' ? 0.2 : 0.6);
@@ -284,6 +293,32 @@ export function placeExtras(raw: RawExtras, map: MapData, margin = 300): { barri
     }
     widest = Math.max(widest, r.w);
   }
+  // Raised segments (decks and the high part of ramps), for keeping tree crowns clear.
+  const decks = new SegmentGrid<{ road: Road; z: number }>(30);
+  let widestDeck = 0;
+  for (const r of map.roads) {
+    if (!r.z) continue;
+    for (let i = 0; i < r.points.length - 1; i++) {
+      const z = Math.max(r.z[i], r.z[i + 1]);
+      if (z < 1) continue;
+      decks.insert(r.points[i], r.points[i + 1], { road: r, z });
+      widestDeck = Math.max(widestDeck, r.w);
+    }
+  }
+  /** How far a tree's crown reaches into the space of a deck it's next to or under (> 0: it does). */
+  const intoDeck = (t: Tree) => {
+    const room = TREE_ROOM[t.shape];
+    const [radius, top] = [room.radius * t.s, room.top * t.s];
+    let best: { depth: number; a?: Point; b?: Point } = { depth: -Infinity };
+    for (const e of decks.query(t.p, t.p, widestDeck / 2 + radius + 1)) {
+      const under = e.item.z - (e.item.road.cls === 'path' ? 1 : 1.2); // the deck's underside
+      if (under > top) continue; // the tree fits underneath
+      const depth = e.item.road.w / 2 + 1 + radius + TREE_ROOM.clearance - distanceToSegment(t.p, e.a, e.b); // 1 m for the barrier
+      if (depth > best.depth) best = { depth, a: e.a, b: e.b };
+    }
+    return best;
+  };
+
   /** How far inside a road surface a point is (> 0 means on the road), and the deepest road. */
   const onRoad = (q: Point, extra: (r: Road) => number) => {
     let best: { depth: number; road?: Road; dir: number; a?: Point; b?: Point } = { depth: -Infinity, dir: 0 };
@@ -390,6 +425,7 @@ export function placeExtras(raw: RawExtras, map: MapData, margin = 300): { barri
   const kept = new SegmentGrid<Point>(TREE_SPACING * 2);
   const trees: Tree[] = [];
   let nudged = 0;
+  let clearedOfDecks = 0;
   for (const raw0 of raw.trees) {
     let t = raw0;
     if (!inArea(t.p)) {
@@ -405,6 +441,16 @@ export function placeExtras(raw: RawExtras, map: MapData, margin = 300): { barri
       }
       t = { ...t, p: moved };
       nudged++;
+    }
+    const deck = intoDeck(t);
+    if (deck.depth > 0) {
+      const moved = deck.depth <= TREE_ROOM.maxMove && deck.a && deck.b ? pushOff(t.p, deck.a, deck.b, deck.depth) : undefined;
+      if (!moved || onRoad(moved, treeClearance).depth > 0 || intoDeck({ ...t, p: moved }).depth > 0) {
+        drop('tree-by-deck');
+        continue;
+      }
+      t = { ...t, p: moved };
+      clearedOfDecks++;
     }
     if (inBuilding(t.p)) {
       drop('tree-in-building');
@@ -427,6 +473,6 @@ export function placeExtras(raw: RawExtras, map: MapData, margin = 300): { barri
     barriers,
     trees,
     fixtures,
-    stats: { barriers: barriers.length, barrierMeters, gapsCut, trees: trees.length, treesMoved: nudged, fixtures: fixtures.length, dropped },
+    stats: { barriers: barriers.length, barrierMeters, gapsCut, trees: trees.length, treesMoved: nudged, treesClearedOfDecks: clearedOfDecks, fixtures: fixtures.length, dropped },
   };
 }

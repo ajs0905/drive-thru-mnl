@@ -293,7 +293,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
   });
 
   return {
-    version: 6,
+    version: 7,
     origin: proj.origin,
     bounds: computeBounds(roads, buildings, areas),
     roads,

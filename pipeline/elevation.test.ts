@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Point, Road, RoadClass } from '../src/map/types';
-import { DECK_HEIGHT, elevateRoads, RAMP } from './elevation';
+import { DECK_HEIGHT, elevateRoads, RAMP, RAMP_OVER } from './elevation';
 
 let n = 0;
 const road = (points: Point[], extra: Partial<Road> = {}, cls: RoadClass = 'major'): Road => ({
@@ -85,12 +85,12 @@ describe('elevateRoads', () => {
   });
 
   it('stops a ramp at the first junction so side streets are not lifted', () => {
-    const approach = road([[-200, 0], [-40, 0], [0, 0]]);
-    const side = road([[-40, 0], [-40, 100]], { cls: 'minor' });
+    const approach = road([[-200, 0], [-60, 0], [0, 0]]);
+    const side = road([[-60, 0], [-60, 100]], { cls: 'minor' });
     const deck = bridge([[0, 0], [200, 0]]);
     const below = road([[100, -50], [100, 50]]);
     const { roads } = elevateRoads([approach, side, deck, below]);
-    expect(zAtX(roads[0], -40)).toBe(0); // junction stays on the ground
+    expect(zAtX(roads[0], -60)).toBe(0); // junction stays on the ground
     expect(zAtX(roads[0], -20)).toBeGreaterThan(0);
     expect(roads[1].z).toBeUndefined();
   });
@@ -103,7 +103,10 @@ describe('elevateRoads', () => {
     const { roads, stats } = elevateRoads([cross, approach, deck, below]);
     const d = roads[2];
     expect(zAtX(d, 0)).toBe(0);
-    expect(zAtX(d, RAMP.drive.length / 2)).toBeCloseTo(DECK_HEIGHT.drive / 2, 1);
+    // It stays at ground level while it's still inside the cross street (10 m wide, both
+    // 10 m wide: they overlap for about 10 m), then climbs over the usual length.
+    expect(zAtX(d, 8)).toBe(0);
+    expect(zAtX(d, 10 + RAMP.drive.length / 2)).toBeCloseTo(DECK_HEIGHT.drive / 2, 0);
     expect(zAtX(d, 150)).toBe(DECK_HEIGHT.drive);
     expect(roads[1].z).toBeUndefined(); // approach stays flat
     expect(stats.rampsOnBridge).toBeGreaterThanOrEqual(1);
@@ -186,5 +189,56 @@ describe('networks keep their own heights', () => {
     const { roads } = elevateRoads([...f.all, path]);
     expect(roads[4].z).toBeUndefined();
     expect(zAtX(roads[1], 140)).toBe(DECK_HEIGHT.drive);
+  });
+});
+
+describe('ramps stay out of other roads\' lanes', () => {
+  /** Heights along a road's centerline every meter, with the distance from the road's start. */
+  const profile = (r: Road) => {
+    const out: { p: Point; z: number }[] = [];
+    const z = r.z ?? r.points.map(() => 0);
+    for (let i = 0; i < r.points.length - 1; i++) {
+      const [a, b] = [r.points[i], r.points[i + 1]];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      for (let d = 0; d < len; d += 1) out.push({ p: [a[0] + ((b[0] - a[0]) * d) / len, a[1] + ((b[1] - a[1]) * d) / len], z: z[i] + ((z[i + 1] - z[i]) * d) / len });
+    }
+    return out;
+  };
+
+  it('keeps a ramp at ground level through a gore, where it splits from a frontage road, and climbs after', () => {
+    // Approach from the east into a junction at x=0; the ramp goes due west to a deck,
+    // a frontage road leaves the same junction 15 degrees to the north.
+    const a = (15 * Math.PI) / 180;
+    const approach = road([[100, 0], [0, 0]], { oneway: true });
+    const ramp = road([[0, 0], [-100, 0]], { oneway: true });
+    const frontage = road([[0, 0], [-200 * Math.cos(a), 200 * Math.sin(a)]], { oneway: true });
+    const deck = bridge([[-100, 0], [-300, 0]], { oneway: true });
+    const below = road([[-200, -50], [-200, 50]]);
+    const { roads, stats } = elevateRoads([approach, ramp, frontage, deck, below]);
+    const r = roads[1];
+    expect(zAtX(r, -100)).toBe(DECK_HEIGHT.drive);
+    expect(stats.goresKeptLow).toBeGreaterThanOrEqual(1);
+    // Wherever the ramp's ribbon still overlaps the frontage road, it's at ground or clear overhead.
+    const f = roads[2].points;
+    for (const { p, z } of profile(r)) {
+      const across = Math.abs(p[1] * Math.cos(a) + p[0] * Math.sin(a)); // distance from the frontage centerline
+      const alongFrontage = -p[0] * Math.cos(a) + p[1] * Math.sin(a);
+      // (Ramps are stored as straight pieces between a few sample points, so allow a few centimeters.)
+      if (alongFrontage > 0 && alongFrontage < Math.hypot(f[1][0], f[1][1]) && across < 10 - 0.3) expect(z < 0.15 || z >= RAMP_OVER).toBe(true);
+    }
+    expect(zAtX(r, -5)).toBe(0); // right at the split
+  });
+
+  it('never leaves a deck low over a road: when nothing fits, it keeps the plain ramp', () => {
+    // A ground road runs right alongside the whole approach, overlapping it: there's no
+    // ramp that stays out of its lanes, and the bridge is too short to slope. The plain
+    // ramp is kept rather than a deck at car height across the road under the bridge.
+    const approach = road([[-100, 0], [0, 0]]);
+    const alongside = road([[-100, 6], [60, 6]], { cls: 'major' });
+    const deck = bridge([[0, 0], [40, 0]]);
+    const cross = road([[20, -50], [20, 50]]);
+    const { roads } = elevateRoads([approach, alongside, deck, cross]);
+    expect(zAtX(roads[2], 20)).toBe(DECK_HEIGHT.drive); // full height over the cross street
+    expect(zAtX(roads[0], -40)).toBeGreaterThan(0); // the approach is the ramp
   });
 });

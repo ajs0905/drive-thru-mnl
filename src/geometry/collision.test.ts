@@ -81,11 +81,12 @@ describe('buildCollision', () => {
     expect(Math.max(...nearBoom) - Math.min(...nearBoom)).toBeLessThan(1); // just the post, not a 6 m arm
   });
 
-  it('puts pillars under flyovers, none under ground-level roads', () => {
-    const flyover = { id: 'f', highway: 'primary', cls: 'major' as const, w: 8, points: [[0, 0], [100, 0]] as [number, number][], z: [7, 7] };
-    expect(buildCollision({ ...empty, roads: [flyover] }).counts.posts).toBe(3); // every 30 m from 15 m in
-    expect(buildCollision({ ...empty, roads: [{ ...flyover, z: undefined }] }).counts.posts).toBe(0);
-    expect(buildCollision({ ...empty, roads: [{ ...flyover, scenery: true }] }).counts.posts).toBe(0);
+  it("makes the pipeline's pillars and posts solid, from the ground to their tops", () => {
+    const w = build({ ...empty, pillars: [{ p: [0, 0], top: 5.8, size: 1.8, rot: 0.3, cap: [0, 4] }, { p: [20, 0], top: 3.6, size: 0.35, rot: 0 }] }, { surfaceY: SURFACE });
+    expect(w.counts.posts).toBe(2);
+    expect(w.structures.indices.length / 3).toBe(16); // four sides each; cap beams are overhead and left out
+    const ys = Array.from(w.structures.vertices).filter((_, i) => i % 3 === 1);
+    expect(Math.max(...ys)).toBeCloseTo(5.8);
   });
 });
 

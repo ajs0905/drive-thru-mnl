@@ -2,8 +2,8 @@
  * Road surfaces from centerlines: offset the polyline left and right by half the
  * road width, joining segments with miters (clamped so sharp turns don't spike).
  */
-import type { Point } from '../map/types';
-import { MeshBuilder, to3, type RGB, type Vec4 } from './meshBuilder';
+import type { Pillar, Point, Road } from '../map/types';
+import { MeshBuilder, to3, type RGB, type Vec3, type Vec4 } from './meshBuilder';
 
 export const MIN_SEGMENT = 0.05; // meters; shorter steps are treated as duplicate points
 
@@ -326,36 +326,63 @@ export interface DeckStyle extends DeckShape {
   underside: RGB;
 }
 
-/** A square pillar under a deck: center (map), top height, width. */
-export interface DeckPillar {
-  x: number;
-  y: number;
-  top: number;
-  size: number;
+/** The four corners of a pillar's footprint (map space), counter-clockwise. */
+export function pillarCorners({ p, size, rot }: Pick<Pillar, 'p' | 'size' | 'rot'>): Point[] {
+  const [c, sn] = [Math.cos(rot) * (size / 2), Math.sin(rot) * (size / 2)];
+  return [
+    [p[0] - c + sn, p[1] - sn - c],
+    [p[0] + c + sn, p[1] + sn - c],
+    [p[0] + c - sn, p[1] + sn + c],
+    [p[0] - c - sn, p[1] - sn + c],
+  ];
 }
 
+/** How deep (m) the cap beam on an outrigger pillar is. */
+export const CAP_DEPTH = 0.9;
+
 /**
- * Pillars along a raised road's centerline: every `pillarEvery` meters (starting half
- * a spacing in), wherever the deck's underside is more than 2 m up.
+ * A pillar or post (from pipeline/structures.ts): a square column from the ground to
+ * its top, plus, for one standing beside a deck, a cap beam reaching under the deck.
  */
-export function deckPillars(points: Point[], z: number[], shape: DeckShape): DeckPillar[] {
-  const { pts, zs } = dedupeWithZ(points, z);
-  const out: DeckPillar[] = [];
-  let next = shape.pillarEvery / 2;
-  let d = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const seg = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
-    while (next <= d + seg) {
-      const t = (next - d) / seg;
-      const top = zs[i] + (zs[i + 1] - zs[i]) * t - shape.depth;
-      if (top > 2) {
-        out.push({ x: pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, y: pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t, top, size: shape.pillarSize });
-      }
-      next += shape.pillarEvery;
+export function addPillar(mb: MeshBuilder, pillar: Pillar, color: RGB, underside: RGB): number {
+  const start = mb.triangleCount;
+  const box = (ring: Point[], top: number, bottom: number) => {
+    for (let k = 0; k < 4; k++) {
+      const [a, b] = [ring[k], ring[(k + 1) % 4]];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      // Outward for a counter-clockwise ring: to the right of a -> b, in three.js (x, 0, -y).
+      wall(mb, a, b, top, top, bottom, bottom, [(b[1] - a[1]) / len, 0, (b[0] - a[0]) / len], color);
     }
-    d += seg;
+    if (bottom > 0) {
+      const [a, b, c, d] = ring.map(([x, y]) => to3(x, y, bottom));
+      facing(mb, a, b, c, DOWN, underside);
+      facing(mb, a, c, d, DOWN, underside);
+    }
+  };
+  box(pillarCorners(pillar), pillar.top, 0);
+  if (pillar.cap) {
+    // From the far side of the pillar to just past the point under the deck, pillar wide.
+    const [dx, dy] = [pillar.cap[0] - pillar.p[0], pillar.cap[1] - pillar.p[1]];
+    const len = Math.hypot(dx, dy) || 1;
+    const [ux, uy] = [dx / len, dy / len];
+    const [nx, ny] = [-uy * (pillar.size / 2), ux * (pillar.size / 2)];
+    const [a, b]: Point[] = [
+      [pillar.p[0] - ux * (pillar.size / 2), pillar.p[1] - uy * (pillar.size / 2)],
+      [pillar.cap[0] + ux * (pillar.size / 2), pillar.cap[1] + uy * (pillar.size / 2)],
+    ];
+    const beam: Point[] = [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]];
+    box(beam, pillar.top, pillar.top - CAP_DEPTH);
   }
-  return out;
+  return mb.triangleCount - start;
+}
+
+/** A triangle wound to face `n`. */
+function facing(mb: MeshBuilder, a: Vec3, b: Vec3, c: Vec3, n: [number, number, number], color: RGB) {
+  const [ux, uy, uz] = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const [vx, vy, vz] = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const cross = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+  if (cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2] >= 0) mb.triangle(a, b, c, n, color);
+  else mb.triangle(a, c, b, n, color);
 }
 
 /** Quad from a to b (top edge) down to bottom heights, facing `n`. Wound to match n. */
@@ -378,20 +405,83 @@ function wall(mb: MeshBuilder, a: Point, b: Point, topA: number, topB: number, b
 }
 
 /**
- * Concrete structure for a raised road: deck edges, underside, side barriers and
- * pillars. Only drawn where the road is off the ground. Returns triangles added.
+ * From this height (m) up a ramp has side walls (down to the ground while it's low, like
+ * a retaining wall): below it the road is just on the ground. Lower than this, there'd be
+ * a gap under the road's edge a car could wedge itself into.
  */
-/** Below this height (m) a ramp has no side walls: they'd just look like lines painted on the road. */
-export const DECK_SIDES_FROM = 1;
+export const DECK_SIDES_FROM = 0.3;
 /**
- * Barriers go on top of a deck piece once all of it is at least this high (m): along
- * the whole raised part of a ramp, so a car half on a ramp's edge is held on, not rolled off.
+ * Barriers on decks and ramps: they start where a ramp is `DECK_RAIL_FROM` up and grow to
+ * full height by `DECK_RAIL_FULL`, so a barrier never starts as a blunt end a car can hit
+ * head-on, and a car half on a ramp's edge is still held on, not rolled off.
  */
 export const DECK_RAIL_FROM = 1;
+export const DECK_RAIL_FULL = 1.5;
 
-export function addDeckStructure(mb: MeshBuilder, points: Point[], width: number, z: number[], style: DeckStyle): number {
+/** Barrier height on a deck at height z (m), for a full barrier `barrier` tall. */
+export function railHeight(z: number, barrier: number): number {
+  return barrier * Math.max(0, Math.min(1, (z - DECK_RAIL_FROM) / (DECK_RAIL_FULL - DECK_RAIL_FROM)));
+}
+
+/** The points just past each end of a deck piece, on the piece it continues into. */
+export interface DeckJoin {
+  before?: Point;
+  after?: Point;
+}
+
+/**
+ * Where a raised piece of road continues into exactly one other raised piece (OSM splits
+ * flyovers into several ways), the point just past the joint on that other piece, per road
+ * id. Mitring both ends to it makes their edges and barriers meet with no gap or step.
+ */
+export function deckJoins(roads: Road[]): Map<string, DeckJoin> {
+  const ends = new Map<string, { road: Road; atStart: boolean; beyond: Point }[]>();
+  for (const r of roads) {
+    if (!r.z) continue;
+    const { pts, zs } = dedupeWithZ(r.points, r.z);
+    if (pts.length < 2) continue;
+    const net = r.cls === 'path' ? 'w' : 'd';
+    for (const atStart of [true, false]) {
+      const i = atStart ? 0 : pts.length - 1;
+      if (zs[i] < DECK_SIDES_FROM) continue;
+      const key = `${net}${pts[i][0]},${pts[i][1]}`;
+      const list = ends.get(key) ?? [];
+      list.push({ road: r, atStart, beyond: pts[atStart ? 1 : pts.length - 2] });
+      ends.set(key, list);
+    }
+  }
+  const out = new Map<string, DeckJoin>();
+  for (const list of ends.values()) {
+    if (list.length !== 2) continue;
+    const [a, b] = list;
+    if (a.road === b.road) continue;
+    for (const [self, other] of [[a, b], [b, a]]) {
+      const join = out.get(self.road.id) ?? {};
+      if (self.atStart) join.before = other.beyond;
+      else join.after = other.beyond;
+      out.set(self.road.id, join);
+    }
+  }
+  return out;
+}
+
+/** Left and right edges of a deck piece, mitred at its ends to match the pieces it joins. */
+export function deckEdges(pts: Point[], halfWidth: number, join?: DeckJoin): { left: Point[]; right: Point[] } {
+  const ext = [...(join?.before ? [join.before] : []), ...pts, ...(join?.after ? [join.after] : [])];
+  const { left, right } = offsetPolyline(ext, halfWidth);
+  if (left.length !== ext.length) return offsetPolyline(pts, halfWidth); // something deduped: no mitre
+  const from = join?.before ? 1 : 0;
+  return { left: left.slice(from, from + pts.length), right: right.slice(from, from + pts.length) };
+}
+
+/**
+ * Concrete structure for a raised road: deck edges, underside and side barriers (pillars
+ * are placed by the pipeline and drawn with `addPillar`). Only drawn where the road is
+ * off the ground. Returns triangles added.
+ */
+export function addDeckStructure(mb: MeshBuilder, points: Point[], width: number, z: number[], style: DeckStyle, join?: DeckJoin): number {
   const { pts, zs } = dedupeWithZ(points, z);
-  const { left, right } = offsetPolyline(pts, width / 2);
+  const { left, right } = deckEdges(pts, width / 2, join);
   const start = mb.triangleCount;
 
   for (let i = 0; i < left.length - 1; i++) {
@@ -418,24 +508,16 @@ export function addDeckStructure(mb: MeshBuilder, points: Point[], width: number
       mb.triangle(r0, l0, l1, DOWN, style.underside);
     }
 
-    // Barriers, both faces, once the road is clearly up in the air.
-    if (style.barrier > 0 && Math.min(za, zb) >= DECK_RAIL_FROM) {
-      const h = style.barrier;
+    // Barriers, both faces, growing in from where the ramp is a meter up.
+    const [ha, hb] = [railHeight(za, style.barrier), railHeight(zb, style.barrier)];
+    if (ha > 0 || hb > 0) {
       const inl: [number, number, number] = [-nl[0], 0, -nl[2]];
       const inr: [number, number, number] = [-nr[0], 0, -nr[2]];
-      wall(mb, left[i], left[i + 1], za + h, zb + h, za, zb, nl, style.color);
-      wall(mb, left[i], left[i + 1], za + h, zb + h, za, zb, inl, style.color);
-      wall(mb, right[i], right[i + 1], za + h, zb + h, za, zb, nr, style.color);
-      wall(mb, right[i], right[i + 1], za + h, zb + h, za, zb, inr, style.color);
+      wall(mb, left[i], left[i + 1], za + ha, zb + hb, za, zb, nl, style.color);
+      wall(mb, left[i], left[i + 1], za + ha, zb + hb, za, zb, inl, style.color);
+      wall(mb, right[i], right[i + 1], za + ha, zb + hb, za, zb, nr, style.color);
+      wall(mb, right[i], right[i + 1], za + ha, zb + hb, za, zb, inr, style.color);
     }
-  }
-
-  // Pillars along the centerline, wherever the deck is high enough to need one.
-  for (const { x, y, top, size } of deckPillars(points, z, style)) {
-    const s = size / 2;
-    const c: Point[] = [[x - s, y - s], [x + s, y - s], [x + s, y + s], [x - s, y + s]];
-    const normals: [number, number, number][] = [[0, 0, 1], [1, 0, 0], [0, 0, -1], [-1, 0, 0]];
-    for (let k = 0; k < 4; k++) wall(mb, c[k], c[(k + 1) % 4], top, top, 0, 0, normals[k], style.color);
   }
 
   return mb.triangleCount - start;

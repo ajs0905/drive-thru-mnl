@@ -40,6 +40,11 @@ export interface Road {
    * road instead. -1 means that end isn't at a junction polygon. Missing = [-1, -1].
    */
   trim?: [start: number, end: number];
+  /**
+   * Drawing layer among same-class roads that overlap it (pipeline/roadLayers.ts): drawn
+   * a few millimeters higher per layer so overlapping surfaces don't flicker.
+   */
+  lift?: number;
 }
 
 export type SidewalkSides = 'both' | 'left' | 'right' | 'none';
@@ -146,6 +151,20 @@ export interface Fixture {
   span?: number;
 }
 
+/**
+ * A pillar or post standing on the ground: under flyovers and footbridges, or holding
+ * up a raised building or canopy. Square, `size` wide, turned by `rot` (radians).
+ */
+export interface Pillar {
+  p: Point;
+  /** Height of its top (m). */
+  top: number;
+  size: number;
+  rot: number;
+  /** For a pillar beside a deck: the point under the deck its cap beam reaches to. */
+  cap?: Point;
+}
+
 export interface MapStats {
   features: number;
   roads: number;
@@ -162,11 +181,12 @@ export interface MapStats {
     droppedAreas: number;
   };
   /** Filled in when barriers and trees from the second export were added. */
-  extras?: { barriers: number; barrierMeters: number; gapsCut: number; trees: number; treesMoved: number; fixtures: number; dropped: Record<string, number> };
+  extras?: { barriers: number; barrierMeters: number; gapsCut: number; trees: number; treesMoved: number; treesClearedOfDecks?: number; fixtures: number; dropped: Record<string, number> };
+  structures?: { deckPillars: number; moved: number; outriggers: number; skipped: number; raisedBuildings: number; supports: number };
 }
 
 export interface MapData {
-  version: 6;
+  version: 7;
   origin: { lat: number; lon: number };
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   /** Outline of the drivable area, if one was given to the pipeline. */
@@ -181,5 +201,7 @@ export interface MapData {
   barriers?: Barrier[];
   trees?: Tree[];
   fixtures?: Fixture[];
+  /** Pillars under decks and posts under raised buildings (pipeline/structures.ts). */
+  pillars?: Pillar[];
   stats: MapStats;
 }

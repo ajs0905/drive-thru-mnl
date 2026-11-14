@@ -69,10 +69,12 @@ OSM marks bridges (`bridge=yes`, `viaduct`, `layer=1`) but not their height or w
 1. Roads connect where they share a point (the same OSM node), within their own network. A footbridge node that sits on a road (a common OSM shortcut) doesn't lift the road, and a path that touches a flyover isn't lifted either.
 2. Connected bridge pieces form chains (union-find). A chain is raised only if some piece **crosses over another road** (spatial grid crossing test). Small bridges over creeks stay on the ground: 29 of them.
 3. Decks sit at layer x 7 m (roads) or 6 m (footbridges).
-4. The approach road becomes the ramp: it climbs over up to 90 m and stops at the first junction, so side streets don't get lifted. If a junction sits at the foot of the bridge, the bridge itself slopes down instead. Footbridges only come down by stairs or by sloping the bridge; a sidewalk never rises to meet one.
-5. Ramps follow a smoothstep curve, with extra points inserted so the slope is a curve.
+4. The approach road becomes the ramp: it climbs over up to 90 m and stops at the first junction, so side streets don't get lifted. Footbridges only come down by stairs or by sloping the bridge; a sidewalk never rises to meet one.
+5. **A ramp never rises inside another road's lanes.** Wherever its surface overlaps a ground road (a gore where it splits from a frontage road, a main road running close alongside, a street passing under), it's either still at ground level or already 4 m up, high enough to pass over. The climb is shortened until that holds. Found by driving: a ramp splitting from a frontage road at a shallow angle used to climb, barrier and all, inside the frontage road's lanes for up to 25 m.
+6. If the ground side has no room (a junction at the foot of the bridge, or a long overlap), the bridge itself slopes down instead, staying at ground level as long as it overlaps a road alongside, and always clearing roads it crosses. Plans are tried in order: a ramp of at least 45 m on the ground (steepest point about 23%), the bridge slope, a ramp of at least 25 m, and only if none fits, the full ramp even if it overlaps (some overlap beats a deck at car height across a road).
+7. Ramps follow a smoothstep curve, with extra points inserted so the slope is a curve.
 
-Result: 72 raised pieces (Kalayaan Overpass, Lawton Avenue viaduct, East Rembo C5 Overpass, Pamantasan Overpass, link ramps, footbridges), 39 ramps on approach roads, 19 on the bridge itself. Underpasses (`tunnel=yes`) are drawn at ground level for now.
+Result: 72 raised pieces (Kalayaan Overpass, Lawton Avenue viaduct, East Rembo C5 Overpass, Pamantasan Overpass, link ramps, footbridges), 35 ramps on approach roads, 23 on the bridge itself; 8 climbs moved to stay out of other lanes. 3 ramps still overlap a road running right alongside (their mapped widths overlap at any height; map QA counts them). Underpasses (`tunnel=yes`) are drawn at ground level for now.
 
 ### 4. Settle raised ways (`pipeline/settleRaised.ts`)
 
@@ -82,27 +84,33 @@ BGC's malls are linked by skywalks that OSM maps straight through the buildings.
 - Leftover raised scraps under 6 m with a loose end are dropped.
 - Ends left hanging in mid-air slope down to the ground, unless they stop at a building wall, where a skywalk really would connect (13 lowered, 22 left at walls).
 
-### 5. Fit widths (`pipeline/fitWidths.ts`)
+### 5. Round raised curves (`pipeline/smoothRaised.ts`)
 
-- Every road is measured against nearby building walls (exact segment-to-segment distance through the spatial grid) and narrowed to fit, down to 2.8 m for streets and alleys, 2.5 m for service roads and 6 m for major roads. Walls the centerline crosses are ignored (roads going under buildings). 598 of 2,141 roads narrowed.
+- OSM draws curves as a few straight pieces. On a 7 m deck with concrete edges, corners of 25 to 40 degrees read as a cut, faceted shape (a U-turn loop looked like an octagon).
+- Points are added along a Catmull-Rom spline (centripetal) through the existing ones until no corner on a drivable flyover or ramp turns more than 6 degrees. Existing points stay put, so joints with other roads don't move; heights are interpolated. Footbridges keep their square corners.
+- Result: 24 flyovers and ramps rounded, 314 points added.
+
+### 6. Fit widths (`pipeline/fitWidths.ts`)
+
+- Every road is measured against nearby building walls (exact segment-to-segment distance through the spatial grid) and narrowed to fit, down to 2.8 m for streets and alleys, 2.5 m for service roads and 6 m for major roads. Walls the centerline crosses are ignored (roads going under buildings). 598 of 2,146 roads narrowed.
 - Buildings whose center sits on a road surface are removed.
 
-### 6. Close median slivers (`pipeline/medians.ts`)
+### 7. Close median slivers (`pipeline/medians.ts`)
 
-- Divided roads are mapped as two one-way roads. Where their fitted widths leave a gap of under 1.2 m between them (parallel within 12 degrees, along at least 40% of the road), the ground or a sidewalk band shows through as a thin light line. Both carriageways are widened by the gap so they meet. Wider gaps are real medians and stay. 64 carriageways widened.
+- Divided roads are mapped as two one-way roads. Where their fitted widths leave a gap of under 1.2 m between them (parallel within 12 degrees, along at least 40% of the road), the ground or a sidewalk band shows through as a thin light line. Both carriageways are widened by the gap so they meet. Wider gaps are real medians and stay. 63 carriageways widened.
 
-### 7. Junctions (`pipeline/junctions.ts`)
+### 8. Junctions (`pipeline/junctions.ts`)
 
 - OSM ways often run straight through an intersection, so drivable roads are first split at every node where three or more road segments meet (875 splits). Now every junction sits at road ends.
 - At each node where road ends meet, the junction polygon comes from the road edges ([`src/geometry/junction.ts`](../src/geometry/junction.ts)): arms are sorted by angle, the left edge of each arm is intersected with the right edge of the next, and each road is cut back to where its edges meet its neighbours'. The space in the middle becomes one polygon; the cut-back distance per road end is stored as `trim`.
-- Special cases: the outside of a bend gets a straight edge, a straight join where the width changes gets a short taper, sharp merges wrap around both arms, and two pieces of the same road continuing straight need no polygon (359).
+- Special cases: the outside of a bend gets a straight edge, a straight join where the width changes gets a short taper, sharp merges wrap around both arms, and two pieces of the same road continuing straight need no polygon (364).
 - Curved roads: each arm's direction is first taken toward the point 1 m along the road, then re-aimed twice at the point where the road actually gets cut back, so the polygon follows the curve.
 - Divided roads crossing: each carriageway crossing gets its own polygon, and the short pieces between them get cut away from both ends. Junctions joined by a piece with less than 3 m left are merged (union-find) into one convex polygon (Andrew's monotone chain hull), as long as it stays under 80 m across; the pieces inside aren't drawn. 144 merged polygons from 334 junctions.
-- Result: 1,450 junction polygons. 18 knots too tangled for a clean polygon (it would cross itself) fall back to overlapping road ends.
+- Result: 1,447 junction polygons. 18 knots too tangled for a clean polygon (it would cross itself) fall back to overlapping road ends.
 - The renderer also paves each road's cut-back stretch as plain asphalt under the polygon, so a polygon that doesn't follow the road exactly never leaves a gap.
 - Fills in `lanes` for every drivable road: the tag if it fits the (possibly narrowed) width, otherwise width / 3.3 m.
 
-### 8. Crossings (`pipeline/crossings.ts`)
+### 9. Crossings (`pipeline/crossings.ts`)
 
 - Mapped crossing ways often run past the curb, bend around corners, or are drawn along the road instead of across it, so painting stripes along the way itself looks wrong.
 - Instead, each crossing way is intersected with drivable road centerlines (spatial grid). Where it cuts across one at more than 35 degrees, a straight 3 m zebra goes across that road from edge to edge; a divided road gets one per carriageway. Crossings under a flyover don't paint the deck, and footbridges are skipped.
@@ -110,21 +118,35 @@ BGC's malls are linked by skywalks that OSM maps straight through the buildings.
 - The bars are drawn over the crossed road's own asphalt color, so lane lines don't show through.
 - Result: 514 zebras from 405 crossing ways (122 moved out of junctions); 14 ways cross no road and 26 hits were too shallow (ways mapped along the road). The crossing ways themselves are dropped from the map.
 
-### 9. Pave enclosed gaps (`pipeline/paving.ts`)
+### 10. Road layers (`pipeline/roadLayers.ts`)
+
+- Roads of different classes are drawn at slightly different heights already, but two of the same class that overlap (parallel carriageways meeting at a median, a ramp and the road it splits from) were drawn in exactly the same plane. The GPU can't tell which is in front, so their lane lines flickered as the camera moved (z-fighting).
+- Every pair of same-class roads whose surfaces overlap at the same height, away from where they simply meet, is found (sampled every 2 m through the spatial grid). Each road then gets a drawing layer so no two overlapping roads share one (greedy graph coloring, most-connected first), stored as `lift`. The renderer draws each layer 4 mm higher: invisible, but it decides which is on top.
+- Result: 899 roads overlap another of their class; 527 are lifted, in 4 layers.
+
+### 11. Pave enclosed gaps (`pipeline/paving.ts`)
 
 - Even with the steps above, mapping quirks leave small patches of ground fully surrounded by road: tiny triangles between junctions a few meters apart, slivers between roads that almost touch.
 - Found by rasterizing exactly what the renderer paves (road ribbons with their cut-back ends, junction polygons, gap discs) on a 0.5 m grid around every junction, then flood-filling the unpaved cells from the grid's edge. Unpaved cells the fill can't reach are enclosed.
 - Holes up to 10 m², and thin slivers (under 1.2 m thick on average), get patch polygons drawn just under the road surfaces. Long slivers are paved in 8 m chunks so each chunk's convex hull follows curves. A second pass catches crumbs at the patches' edges. Bigger enclosed areas are often real (parking loops, roundabout centers, slip-lane islands) and stay; map QA counts them.
 
-### 10. Walls, trees and street fixtures (`pipeline/barriers.ts`)
+### 12. Walls, trees and street fixtures (`pipeline/barriers.ts`)
 
 From the second export. Kept as a separate step and file so refreshing it never changes the roads or buildings.
 
 - **Walls, fences, hedges, guard rails** (`barrier=*` ways; closed ones like the Manila Golf Club wall come as polygons and are walked as outlines). Heights from `height` tags, else 2.4 m walls, 1.2 m retaining walls, 1.8 m fences, 1.3 m hedges, 0.8 m rails. Clipped like roads.
 - Walls, fences and hedges are **cut open wherever they stand on a road or path** (sampled every 25 cm against the road surface plus 40 cm), so a mapped wall never blocks a street. Guard rails and jersey barriers line roads on purpose and stay whole. A gate in a wall with no road through it opens a 4 m gap.
-- **Trees** from `natural=tree` nodes and `natural=tree_row` lines (one every 8 m). Palms from `leaf_cycle=palm` or the species (royal palms, coconuts and others); broadleaf for other tagged species; untagged ones are 25% palms, seeded per tree. Size from a `height` tag or seeded. Trees up to 2 m into a road are street trees mapped a little off and are moved to the curb; deeper ones, and trees in buildings, in water or on top of another tree, are dropped.
+- **Trees** from `natural=tree` nodes and `natural=tree_row` lines (one every 8 m). Palms from `leaf_cycle=palm` or the species (royal palms, coconuts and others); broadleaf for other tagged species; untagged ones are 25% palms, seeded per tree. Size from a `height` tag or seeded. Trees up to 2 m into a road are street trees mapped a little off and are moved to the curb; deeper ones, and trees in buildings, in water or on top of another tree, are dropped. A tree whose crown would reach into a flyover or footbridge (or its barrier) is moved away by up to 4 m, or dropped; small trees that fit under a high deck stay.
 - **Fixtures**: gates and parking booms are turned across the road they sit on and sized to it; bollards and concrete blocks stay where mapped. Lowered-curb points are ignored; traffic lights and street lamps are kept in the raw export for the polish milestone.
-- Result: 43 barrier pieces (5.9 km, 27 openings), 919 trees (254 palms; 190 moved to the curb), 158 gates, 72 booms, 54 bollards, 12 blocks.
+- Result: 43 barrier pieces (5.9 km, 28 openings), 912 trees (252 palms; 190 moved to the curb, 15 moved away from a flyover, 7 dropped beside one), 158 gates, 72 booms, 54 bollards, 12 blocks.
+
+### 13. Pillars and posts (`pipeline/structures.ts`)
+
+Placed once here, so the renderer and the car's collisions use the same ones (`pillars` in the data).
+
+- **Deck pillars** go along each flyover and footbridge every 30 m (14 m for footbridges), wherever the deck's underside is more than 2 m up, but never in a lane below. A pillar that would land in one slides along the deck (up to half a spacing either way) to the nearest clear spot. A two-way avenue at least 10 m wide running along the deck may have it on its centerline, where its median is (viaducts built over an avenue stand in its median), so the pillar may also shift sideways under the deck to line up with one. If nothing under the deck is clear (a viaduct mapped right over a road), it stands up to 2.5 m beside the deck with a cap beam reaching under it, like a real outrigger pier.
+- **Posts under raised buildings.** Buildings that start above the ground (canopies over driveways, a building over a passage) used to float. They get slim posts (0.35 m for canopies, 0.8 m for whole buildings) along their outline every 10 m at most, except along walls that lean on another building (skybridges, wings) and except on roads.
+- Result: 238 deck pillars (81 moved off a road below, 25 on outrigger piers, 12 spots spanned instead, mostly footbridges over wide roads) and 254 posts under 26 raised buildings and canopies.
 
 ## Projection
 
@@ -167,16 +189,23 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Trees standing on a road | (new) 226 before moving and dropping | 0 |
 | Trees inside a building | (new) | 0 |
 | Walls, fences or hedges across a road or path | (new) | 0 |
+| Pillars or posts standing in a lane below | (new) 55 | 0 |
+| Ramps rising inside another road's lanes | (new) 9 | 3 (mapped widths overlap a road alongside) |
+| Trees with their crown in a flyover | (new) 20 | 0 |
+| Raised buildings with nothing holding them up | (new) 13 | 0 |
+| Gaps where two deck pieces meet | (new) | 0 |
+| Overlapping same-class roads drawn in one plane (flicker) | (new) 758 pairs | 0 |
 
 Most remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs). The rest are houses closer than 2.8 m to the street center, or roads mapped straight through a building.
 
 ## Data format
 
-`public/data/bgc.json` is a `MapData` object (version 6), defined in [`src/map/types.ts`](../src/map/types.ts). Field-by-field summary and the coordinate convention: [ARCHITECTURE.md, Data contract](ARCHITECTURE.md#5-data-contract).
+`public/data/bgc.json` is a `MapData` object (version 7), defined in [`src/map/types.ts`](../src/map/types.ts). Field-by-field summary and the coordinate convention: [ARCHITECTURE.md, Data contract](ARCHITECTURE.md#5-data-contract).
 
 ## Known data issues
 
 - Underpasses are drawn at ground level.
+- Three ramps run so close alongside a main road that their mapped widths overlap it, so their side walls stand a little inside its outer lane: way/25887527, way/139045456, way/671963979 (map QA `ramp-in-lanes`).
 - Thin strips of ground show where carriageways split apart.
 - Zebras are always square to the road, even where the mapped crossing is diagonal.
 - Lane counts are guesses where `lanes` isn't tagged (about half of the roads).

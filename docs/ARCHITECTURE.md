@@ -105,28 +105,34 @@ flowchart TD
   A[extract.ts<br/>tags -> roads, buildings, areas<br/>projection, widths, heights, cleanup] --> B[clip.ts<br/>playable area + 300 m scenery ring]
   B --> C[elevation.ts<br/>raise flyovers and footbridges, build ramps]
   C --> D[settleRaised.ts<br/>skywalks inside buildings, mid-air ends]
-  D --> E[fitWidths.ts<br/>fit roads between buildings,<br/>drop buildings standing on roads]
+  D --> R[smoothRaised.ts<br/>round flyover curves]
+  R --> E[fitWidths.ts<br/>fit roads between buildings,<br/>drop buildings standing on roads]
   E --> M[medians.ts<br/>close slivers between<br/>carriageways]
   M --> G[junctions.ts<br/>split roads at junctions,<br/>junction polygons, merge close ones]
-  G --> P[paving.ts<br/>pave enclosed gaps]
-  P --> H[crossings.ts<br/>zebras where crossing ways<br/>cut across roads]
-  H --> X[barriers.ts<br/>walls cut open at roads,<br/>trees, gates, booms]
-  X --> F[(public/data/bgc.json)]
+  G --> H[crossings.ts<br/>zebras where crossing ways<br/>cut across roads]
+  H --> L[roadLayers.ts<br/>drawing order for<br/>overlapping roads]
+  L --> P[paving.ts<br/>pave enclosed gaps]
+  P --> X[barriers.ts<br/>walls cut open at roads,<br/>trees, gates, booms]
+  X --> S[structures.ts<br/>pillars off the roads below,<br/>posts under raised buildings]
+  S --> F[(public/data/bgc.json)]
 ```
 
 | Step | Responsibility | Key algorithms |
 | --- | --- | --- |
 | `extract.ts` | Classify OSM features, project to meters, drop indoor/underground junk, parse heights and widths | Equirectangular projection, shoelace area, rule tables (`heights.ts`, `roadWidth.ts`) |
 | `clip.ts` | Keep the playable area and a scenery ring, trim the rest | Point-in-polygon, segment-to-polygon distance, Sutherland-Hodgman, Liang-Barsky |
-| `elevation.ts` | Decide which bridges are raised and how ramps reach them | Node snapping by shared coordinates, union-find, spatial grid crossing test, graph walks that stop at junctions, smoothstep |
+| `elevation.ts` | Decide which bridges are raised and how ramps reach them, keeping ramps out of other roads' lanes | Node snapping by shared coordinates (per network), union-find, spatial grid crossing test, graph walks that stop at junctions, smoothstep, overlap sampling with a shrinking climb, ordered fallback plans |
 | `settleRaised.ts` | Clean up raised ways (skywalks through malls, scraps, mid-air ends) | Point-in-polygon, wall distance via spatial grid |
+| `smoothRaised.ts` | Round the curves of flyovers and ramps | Centripetal Catmull-Rom spline, turn-angle subdivision |
 | `fitWidths.ts` | Narrow roads to the space between buildings; remove buildings on road surfaces | Exact segment-to-segment distance via spatial grid |
 | `medians.ts` | Widen carriageways of divided roads that almost touch, so no thin line shows between them | Parallel-segment search via spatial grid, median of sampled gaps |
 | `junctions.ts` | Split roads where they cross, build one polygon per junction, record how far each road end is cut back, merge junctions of divided roads crossing, fill in lane counts | Node degree in the road graph, line-line intersection of road edges, angular sort, iterative re-aiming on curves, self-intersection test (`src/geometry/junction.ts`), union-find, convex hull |
 | `paving.ts` | Find patches of ground enclosed by road and pave the small ones | Triangle rasterization on a 0.5 m grid, flood fill, connected components, convex hulls per chunk |
 | `crossings.ts` | Turn mapped crossing footways into straight zebras across the roads they actually cut, outside junctions, without overlaps | Segment intersection via spatial grid, angle filter, arc-length placement, separating axis test |
-| `barriers.ts` | Walls, fences, trees and street fixtures from the second export: clip, cut barriers open where roads pass, move curbside trees off the road, turn gates and booms across their road | Arc-length sampling against road surfaces via spatial grid, interval merging, polyline slicing, point-to-segment projection, seeded variation |
-| `qa.ts` | Count known kinds of map problems with camera links | Same geometry helpers; runs on the output |
+| `roadLayers.ts` | Give overlapping same-class roads a drawing order so they don't flicker | Overlap graph via spatial grid sampling, greedy graph coloring |
+| `barriers.ts` | Walls, fences, trees and street fixtures from the second export: clip, cut barriers open where roads pass, move curbside trees off the road and away from flyovers, turn gates and booms across their road | Arc-length sampling against road surfaces via spatial grid, interval merging, polyline slicing, point-to-segment projection, seeded variation |
+| `structures.ts` | Place deck pillars clear of the lanes below (sliding, medians, outrigger piers) and posts under raised buildings | Arc-length search along the deck, line-segment intersection for medians, spatial grid, inward normals from ring orientation |
+| `qa.ts` | Count known kinds of map problems with camera links (`qaRoads.ts` for road paving, `qaStructures.ts` for flyovers, pillars and overlaps) | Same geometry helpers; runs on the output |
 
 Rules every step follows:
 
@@ -142,10 +148,10 @@ Details of each step and the data sources: [DATA.md](DATA.md).
 
 | Field | Contents |
 | --- | --- |
-| `version` | Format version, currently **6**. The loader refuses any other version with a clear "run `npm run pipeline`" message. |
+| `version` | Format version, currently **7**. The loader refuses any other version with a clear "run `npm run pipeline`" message. |
 | `origin` | The lat/long of local (0, 0). |
 | `bounds`, `playable` | Extent in meters; outline of the drivable area. |
-| `roads[]` | `points` (meters), `w` (width), `cls` (major/minor/service/path), optional `z[]` (height per point), `lanes`, `oneway`, `sidewalk` (both/left/right/none), `trim` (meters a junction polygon covers at each end), `bridge`, `layer`, `tunnel`, `scenery`. |
+| `roads[]` | `points` (meters), `w` (width), `cls` (major/minor/service/path), optional `z[]` (height per point), `lanes`, `oneway`, `sidewalk` (both/left/right/none), `trim` (meters a junction polygon covers at each end), `lift` (drawing layer among overlapping roads of its class), `bridge`, `layer`, `tunnel`, `scenery`. |
 | `junctions[]` | One polygon per road junction: `ring`, `z` (height, for junctions on flyovers), `cls` (highest road class meeting there), `patch` (fills a small gap; drawn under the roads). |
 | `crossings[]` | Zebra crossings: center on the road's centerline `c`, road direction `dir`, `half` road width, band width `w`, height `z`, `cls` of the road crossed. |
 | `buildings[]` | `rings` (outer + holes), `h` (top), optional `minH` (bottom, for canopies), `hSrc` (tag/levels/estimate), `type`, `scenery`. |
@@ -153,6 +159,7 @@ Details of each step and the data sources: [DATA.md](DATA.md).
 | `barriers[]` | Walls, fences, hedges, rails: `kind`, `h`, `points`, `scenery`. Already cut open where roads pass. Optional (second export). |
 | `trees[]` | `p`, `shape` (broad/palm), `s` (size factor). Optional. |
 | `fixtures[]` | Gates, booms, bollards, blocks: `kind`, `p`, `rot` (direction they span), `span` (opening width). Optional. |
+| `pillars[]` | Pillars under decks and posts under raised buildings: `p`, `top`, `size`, `rot`, and `cap` (the point under the deck an outrigger pillar's cap beam reaches to). Drawn and made solid as given. |
 | `stats` | Counts from the pipeline, shown in the HUD. |
 
 **Coordinates.** Map space is meters with x = east, y = north, rounded to centimeters. three.js space is x = east, y = up, z = south, so a map point `(x, y)` at height `h` becomes `(x, h, -y)`. The conversion lives in one place (`to3` in `src/geometry/meshBuilder.ts`).
@@ -201,7 +208,7 @@ sequenceDiagram
   end
 ```
 
-**Collisions:** `geometry/collision.ts` builds everything the car can hit or drive on as two static triangle meshes in three.js space when driving starts. *Walls*: upright walls along every playable building outline (roof height), along walls, fences, hedges and rails, and along the playable edge (30 m). *Structures*: flyover decks and ramps as drivable surfaces at the height they're drawn (road class height plus `z`, raised junction polygons too), with shallow cones at the joints so the wheels find no cracks; deck edges and barriers exactly as drawn (`DECK_SIDES_FROM`, `DECK_RAIL_FROM` in `geometry/road.ts` are shared), so there are no invisible walls and the car drives under decks where the drawing leaves room; footbridge sides; and small prisms for pillars (placed by the same `deckPillars` the renderer uses), tree trunks, bollards, blocks and gate pillars. Booms stay open and skybridges stay overhead. For BGC that's about 76k triangles (57k walls, 20k structures), built in about 50 to 90 ms plus 50 to 90 ms for Rapier to index it. The chase camera casts a ray from the car's roof to where it wants to be and stops in front of walls only: snapping in front of a tree trunk or under a deck looked worse than passing it. Crashes are spotted in `stepVehicle` (a speed change faster than about 3 g); the camera shakes briefly instead of being yanked, because its distance and field of view follow a smoothed speed and its pull reads no more than hard braking.
+**Collisions:** `geometry/collision.ts` builds everything the car can hit or drive on as two static triangle meshes in three.js space when driving starts. *Walls*: upright walls along every playable building outline (roof height), along walls, fences, hedges and rails, and along the playable edge (30 m). *Structures*: flyover decks and ramps as drivable surfaces at the height they're drawn (road class height plus `z`, raised junction polygons too), with shallow cones at the joints so the wheels find no cracks; deck edges and barriers exactly as drawn (`DECK_SIDES_FROM`, `railHeight`, `deckJoins` and `deckEdges` in `geometry/road.ts` are shared), so there are no invisible walls and the car drives under decks where the drawing leaves room. Side walls start where a ramp is 0.3 m up (lower, a car could wedge itself under the road's edge), barriers grow from nothing at 1 m up to full height at 1.5 m (no blunt end to hit), and where two deck pieces meet end to end both are mitred to the same line (no gap in the barrier). Also footbridge sides, and prisms for the pipeline's pillars and posts (`pillars` in the data, the same ones the renderer draws), tree trunks, bollards, blocks and gate pillars. Booms stay open, skybridges and cap beams stay overhead. For BGC that's about 82k triangles (57k walls, 25k structures), built in about 50 to 75 ms plus 60 to 100 ms for Rapier to index it. The chase camera casts a ray from the car's roof to where it wants to be and stops in front of walls only: snapping in front of a tree trunk or under a deck looked worse than passing it. Crashes are spotted in `stepVehicle` (a speed change faster than about 3 g); the camera shakes briefly instead of being yanked, because its distance and field of view follow a smoothed speed and its pull reads no more than hard braking.
 
 The map controls stay mounted while driving, without input and with their limits opened up so they leave the chase camera alone; their target follows the car, and the sun's shadow area and the prop distance limits follow that target.
 
@@ -329,7 +336,7 @@ One page each in [decisions/](decisions/):
 | Better buildings (done) | Per-wall coordinates in the mesh builder, window shader by building type and height, instanced roof details (housings, AC units, water tanks) |
 | Lighting and surroundings (done) | Tone mapping, wall contact darkening, a low morning sun with shadows around the camera's focus, a manual Low / Medium / High switch with adaptive resolution, reversed depth buffer, grid-cell meshes, render on demand; filler city with real skylines past the map, hills on the horizon |
 | Barrier data (done) | Second Overpass export (`data/barriers.overpassql`), `pipeline/barriers.ts` (walls cut open at roads, curbside trees moved, gates and booms turned across their road), data contract v6, walls in the structures layer, instanced trees and fixtures, three new QA checks. See [ADR 0012](decisions/0012-barriers-and-trees-from-a-second-export.md). Then tree models built in code for Medium and High ([ADR 0013](decisions/0013-tree-models-built-in-code.md)) |
-| Drivable car | In steps. 8a (done): `src/car` (spec, arcade controls, chase camera, spawn, Rapier vehicle), lazy drive mode with the Sedan on flat ground, brake lights, blob shadow. Feel (done): drift assist, hidden automatic gears with a shift kick, body pitch and roll, lamp halos, a camera that reacts to acceleration. 8b (done): `geometry/collision.ts` turns playable buildings, walls and fences, the playable edge and posts (flyover pillars, trunks, bollards, blocks, gate pillars) into one static triangle mesh; the chase camera stays in front of walls. 8c (done): drivable flyover decks and ramps, solid deck edges and barriers as drawn, a camera that shakes on a crash instead of jumping in. 8d: surface grip, curbs, respawn with a fade, touch and gamepad, booms that open. See ADRs 0008 and 0014 |
+| Drivable car | In steps. 8a (done): `src/car` (spec, arcade controls, chase camera, spawn, Rapier vehicle), lazy drive mode with the Sedan on flat ground, brake lights, blob shadow. Feel (done): drift assist, hidden automatic gears with a shift kick, body pitch and roll, lamp halos, a camera that reacts to acceleration. 8b (done): `geometry/collision.ts` turns playable buildings, walls and fences, the playable edge and posts (flyover pillars, trunks, bollards, blocks, gate pillars) into one static triangle mesh; the chase camera stays in front of walls. 8c (done): drivable flyover decks and ramps, solid deck edges and barriers as drawn, a camera that shakes on a crash instead of jumping in. Flyover fixes (done): ramps kept out of other roads' lanes, rounded curves, pillars off the roads below and posts under raised buildings (placed in the pipeline), trees clear of decks, barriers that start soft and join without gaps, a drawing order for overlapping roads (no flicker); six new map QA checks. 8d: surface grip, curbs, respawn with a fade, touch and gamepad, booms that open. See ADRs 0008 and 0014 |
 | Tiles, streaming, tiers | Tile format (section 5), worker build, tile manager, quality manager (section 8), Ramer-Douglas-Peucker simplification for far tiles, billboards for far trees rendered from the tree models |
 | Polish | Minimap (reuses `src/scene/MapLines.tsx`), street names, landmarks, props, day/night |
 | Ship | Vercel deploy, measured budgets in PERFORMANCE.md, README media |

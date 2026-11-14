@@ -11,6 +11,9 @@ import { createProjection } from '../src/geo/projection';
 import type { MapData, Point, Ring } from '../src/map/types';
 import { clipToPlayable } from './clip';
 import { elevateRoads } from './elevation';
+import { layerRoads } from './roadLayers';
+import { smoothRaisedCurves } from './smoothRaised';
+import { placeStructures } from './structures';
 import { dropBuildingsOnRoads, fitRoadWidths } from './fitWidths';
 import { placeCrossings } from './crossings';
 import { buildJunctions } from './junctions';
@@ -89,14 +92,16 @@ if (playablePath) {
 }
 const elevation = elevateRoads(map.roads);
 const settled = settleRaised(elevation.roads, map.buildings);
-const fitted = fitRoadWidths(settled.roads, map.buildings);
+const rounded = smoothRaisedCurves(settled.roads);
+const fitted = fitRoadWidths(rounded.roads, map.buildings);
 const cleared = dropBuildingsOnRoads(map.buildings, fitted.roads);
 const medians = closeMedianGaps(fitted.roads);
 const graph = buildJunctions(medians.roads);
 const zebras = placeCrossings(graph.roads, graph.junctions);
+const layered = layerRoads(zebras.roads);
 map = {
   ...map,
-  roads: zebras.roads,
+  roads: layered.roads,
   junctions: graph.junctions,
   crossings: zebras.crossings,
   buildings: cleared.buildings,
@@ -111,6 +116,8 @@ if (extrasPath) {
   extras = placed.stats;
   map = { ...map, barriers: placed.barriers, trees: placed.trees, fixtures: placed.fixtures, stats: { ...map.stats, extras } };
 }
+const structures = placeStructures(map.roads, map.buildings);
+map = { ...map, pillars: structures.pillars, stats: { ...map.stats, structures: structures.stats } };
 if (map.stats.clip) {
   const sceneryLeft = cleared.buildings.filter((b) => b.scenery).length;
   map.stats.clip = { ...map.stats.clip, playableBuildings: cleared.buildings.length - sceneryLeft, sceneryBuildings: sceneryLeft };
@@ -140,13 +147,14 @@ if (stats.clip) {
 const e = elevation.stats;
 console.log(
   `  elevation: ${e.raisedRoads} raised road pieces, ${e.rampsOnGround} ramps on approach roads, ` +
-    `${e.rampsOnBridge} on the bridge itself, ${e.bridgesLeftAtGround} small bridges left at ground`,
+    `${e.rampsOnBridge} on the bridge itself (${e.goresKeptLow} ramps moved to stay out of other lanes, ${e.overlapsLeft} still overlapping), ${e.bridgesLeftAtGround} small bridges left at ground`,
 );
 const st = settled.stats;
 console.log(
   `  raised cleanup: ${st.insideRemovedMeters.toFixed(0)} m of walkway inside buildings removed, ${st.scrapsRemoved} scraps removed, ` +
     `${st.endsLowered} mid-air ends brought down, ${st.endsAtBuildings} left at building walls`,
 );
+console.log(`  raised curves: ${rounded.smoothed} flyovers and ramps rounded (${rounded.added} points added)`);
 console.log(`  road widths: ${fitted.stats.narrowed} of ${fitted.stats.checked} roads narrowed to fit between buildings`);
 console.log(`  buildings standing on a road removed: ${cleared.dropped}`);
 console.log(`  medians: ${medians.stats.widened} carriageways widened to close slivers under ${1.2} m`);
@@ -163,13 +171,21 @@ console.log(
     `${z.waysWithoutRoad} cross no road, ${z.skippedShallow} hits too shallow, ${z.skippedRaised} under a flyover, ` +
     `${z.droppedOverlap} overlapping, ${z.droppedNoRoom} no room)`,
 );
+console.log(`  road layers: ${layered.stats.overlapping} roads overlap another of their class, ${layered.stats.lifted} drawn a few mm higher (${layered.stats.layers} layers)`);
 if (extras) {
   const dropped = Object.entries(extras.dropped).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
   console.log(
     `  extras from ${extrasPath}: ${extras.barriers} barrier pieces (${extras.barrierMeters} m, ${extras.gapsCut} openings cut), ` +
-      `${extras.trees} trees (${extras.treesMoved} moved off a road), ${extras.fixtures} gates, booms, bollards and blocks`,
+      `${extras.trees} trees (${extras.treesMoved} moved off a road, ${extras.treesClearedOfDecks} away from a flyover), ${extras.fixtures} gates, booms, bollards and blocks`,
   );
   if (dropped) console.log(`    dropped: ${dropped}`);
+}
+{
+  const st = structures.stats;
+  console.log(
+    `  structures: ${st.deckPillars} deck pillars (${st.moved} moved off a road below, ${st.outriggers} beside the deck with a cap beam, ${st.skipped} left out), ` +
+      `${st.supports} posts under ${st.raisedBuildings} raised buildings and canopies`,
+  );
 }
 const skipped = Object.entries(stats.skipped).sort((a, b) => b[1] - a[1]);
 if (skipped.length) console.log(`  skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(', ')}`);

@@ -5,7 +5,7 @@
 import { addFlatPolygon, addWalls, extrudeBuilding, FLOOR_HEIGHT, windowCode, WINDOWS } from '../geometry/extrude';
 import { hexToRgb, MeshBuilder, shade, srgbToLinear, type RGB } from '../geometry/meshBuilder';
 import type { Area, BarrierKind, Building, MapData, Point, Road, RoadClass } from '../map/types';
-import { addDeckStructure, addDisc, addRoadRibbon, addSidewalk, addZebra, cutBackPieces, DECKS, MARK, markCode, type DeckStyle } from '../geometry/road';
+import { addDeckStructure, addDisc, addPillar, addRoadRibbon, addSidewalk, addZebra, cutBackPieces, deckJoins, DECKS, MARK, markCode, type DeckStyle } from '../geometry/road';
 import { laneCount, RANK, sidewalkBands } from '../map/roads';
 import type { Vec4 } from '../geometry/meshBuilder';
 import { ChunkedBuilder, chunkKey, type Chunk } from '../geometry/chunks';
@@ -109,6 +109,8 @@ export const SIDEWALK_Y = 0.1;
 /** Patches filling small gaps between roads: under every road surface, over sidewalks and paths. */
 export const PATCH_Y = 0.14;
 export const CROSSING_Y = 0.28;
+/** How much higher each drawing layer of overlapping same-class roads is (m); 8 layers stay under crossings. */
+export const ROAD_LIFT = 0.004;
 const SIDEWALK_WIDTH: Record<RoadClass, number> = { major: 3, minor: 2, service: 1.5, path: 0 };
 
 const RESIDENTIAL = new Set(['house', 'detached', 'residential', 'apartments', 'terrace', 'semidetached_house', 'bungalow', 'dormitory']);
@@ -320,6 +322,7 @@ function addRoads(roadCells: ChunkedBuilder, structureCells: ChunkedBuilder, map
     if (sides.right) addSidewalk(roads, r.points, r.w, w, 'right', SIDEWALK_Y, sidewalk);
   }
 
+  const joins = deckJoins(map.roads);
   // Paths first so higher classes land on top in the merged buffer too.
   const order: RoadClass[] = ['path', 'service', 'minor', 'major'];
   for (const cls of order) {
@@ -328,9 +331,10 @@ function addRoads(roadCells: ChunkedBuilder, structureCells: ChunkedBuilder, map
       if (r.cls !== cls) continue;
       const roads = roadCells.at(mid(r));
       const mark = cls === 'path' ? 0 : markCode(MARK.lanes, { lanes: laneCount(r), oneway: r.oneway, rank: RANK[cls] });
-      addRoadRibbon(roads, r.points, r.w, ROAD_Y[cls], color, { z: r.z, trim: r.trim, mark });
+      const y = ROAD_Y[cls] + (r.lift ?? 0) * ROAD_LIFT;
+      addRoadRibbon(roads, r.points, r.w, y, color, { z: r.z, trim: r.trim, mark });
       // The cut-back ends as plain asphalt, so curves and merges never leave a gap.
-      for (const piece of cutBackPieces(r.points, r.z, r.trim)) addRoadRibbon(roads, piece.pts, r.w, ROAD_Y[cls], color, { z: piece.zs });
+      for (const piece of cutBackPieces(r.points, r.z, r.trim)) addRoadRibbon(roads, piece.pts, r.w, y, color, { z: piece.zs });
       const net = cls === 'path' ? 'w' : 'd';
       const total = length(r.points);
       for (const atStart of [true, false]) {
@@ -339,11 +343,14 @@ function addRoads(roadCells: ChunkedBuilder, structureCells: ChunkedBuilder, map
         const p = r.points[i];
         if ((shared.get(`${net}${p[0]},${p[1]}`) ?? 0) < 2) continue;
         // A hair below the ribbons, so only the wedge gaps show.
-        addDisc(roads, p, r.w / 2, ROAD_Y[cls] - 0.015 + (r.z?.[i] ?? 0), color, 8, endAux(r, atStart, total, mark));
+        addDisc(roads, p, r.w / 2, y - 0.015 + (r.z?.[i] ?? 0), color, 8, endAux(r, atStart, total, mark));
       }
-      if (r.z) addDeckStructure(structureCells.at(mid(r)), r.points, r.w, r.z, cls === 'path' ? walk : drive);
+      if (r.z) addDeckStructure(structureCells.at(mid(r)), r.points, r.w, r.z, cls === 'path' ? walk : drive, joins.get(r.id));
     }
   }
+
+  // Pillars under decks and posts under raised buildings (placed by pipeline/structures.ts).
+  for (const p of map.pillars ?? []) addPillar(structureCells.at(p.p), p, drive.color, drive.underside);
 
   for (const j of map.junctions ?? []) {
     addFlatPolygon(roadCells.at(j.ring[0]), [j.ring], (j.patch ? PATCH_Y : ROAD_Y[j.cls]) + j.z, col(PALETTE.road[j.cls]));

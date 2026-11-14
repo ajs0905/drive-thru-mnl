@@ -24,7 +24,7 @@ function merged(chunks: LayerChunk[]): LayerArrays {
 }
 
 const sample: MapData = {
-  version: 6,
+  version: 7,
   junctions: [],
   crossings: [],
   origin: { lat: 14.5509, lon: 121.0503 },
