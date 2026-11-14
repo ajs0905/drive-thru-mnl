@@ -5,5 +5,8 @@
     "module": "esnext",
     "moduleResolution": "bundler"
   },
-  "include": ["pipeline"]
+  "include": [
+    "pipeline",
+    "tests"
+  ]
 }

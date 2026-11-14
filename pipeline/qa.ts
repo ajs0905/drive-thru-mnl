@@ -2,8 +2,10 @@
  * Map QA: scans the processed map for known kinds of visual problems and prints
  * how many there are, with a camera link for the worst few of each kind.
  *
- *   npm run qa            (reads public/data/bgc.json)
- *   npm run qa -- --json  (machine-readable, used to compare before/after)
+ *   npm run qa                                      report for public/data/bgc.json
+ *   npm run qa -- other.json                        report for another map file
+ *   npm run qa -- --json                            counts per kind, as JSON
+ *   npm run qa -- --check data/qa-baseline.json     exit 1 if any count is above the baseline (CI)
  */
 import { readFileSync } from 'node:fs';
 import { distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../src/geometry/polygon';
@@ -131,15 +133,48 @@ export function runQa(map: MapData): Issue[] {
 export const camLink = ([x, y]: Point, dist = 120) =>
   `?cam=${(x + dist * 0.6).toFixed(0)},${(dist * 0.5).toFixed(0)},${(-y + dist * 0.8).toFixed(0)},${x.toFixed(0)},0,${(-y).toFixed(0)}`;
 
+export type Counts = Record<string, number>;
+
+export function countByKind(issues: Issue[]): Counts {
+  const counts: Counts = {};
+  for (const i of issues) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
+  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/** Kinds whose count went above the baseline. A kind missing from the baseline counts as 0 allowed. */
+export function regressions(counts: Counts, baseline: Counts): { kind: string; count: number; allowed: number }[] {
+  return Object.entries(counts)
+    .filter(([kind, count]) => count > (baseline[kind] ?? 0))
+    .map(([kind, count]) => ({ kind, count, allowed: baseline[kind] ?? 0 }));
+}
+
 if (process.argv[1]?.endsWith('qa.ts')) {
-  const file = process.argv.find((a) => a.endsWith('.json')) ?? 'public/data/bgc.json';
+  const args = process.argv.slice(2);
+  const checkAt = args.indexOf('--check');
+  const baselinePath = checkAt >= 0 ? args[checkAt + 1] : undefined;
+  const file = args.find((a, i) => a.endsWith('.json') && i !== checkAt + 1 && !a.startsWith('--')) ?? 'public/data/bgc.json';
   const map = JSON.parse(readFileSync(file, 'utf8')) as MapData;
   const issues = runQa(map);
-  const byKind = new Map<string, Issue[]>();
-  for (const i of issues) byKind.set(i.kind, [...(byKind.get(i.kind) ?? []), i]);
-  if (process.argv.includes('--json')) {
-    console.log(JSON.stringify(Object.fromEntries([...byKind].map(([k, v]) => [k, v.length]))));
+  const counts = countByKind(issues);
+
+  if (baselinePath) {
+    const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as Counts;
+    const bad = regressions(counts, baseline);
+    for (const [kind, count] of Object.entries(counts)) {
+      const allowed = baseline[kind] ?? 0;
+      const mark = count > allowed ? 'FAIL' : count < allowed ? 'better' : 'ok';
+      console.log(`${mark.padEnd(6)} ${kind.padEnd(42)} ${String(count).padStart(4)} (baseline ${allowed})`);
+    }
+    if (bad.length) {
+      console.error(`\nMap QA got worse in ${bad.length} check(s). Run \`npm run qa\` to see where.`);
+      process.exit(1);
+    }
+    console.log('\nMap QA: no regressions.');
+  } else if (args.includes('--json')) {
+    console.log(JSON.stringify(counts, null, 2));
   } else {
+    const byKind = new Map<string, Issue[]>();
+    for (const i of issues) byKind.set(i.kind, [...(byKind.get(i.kind) ?? []), i]);
     console.log(`Map QA for ${file}`);
     for (const [kind, list] of [...byKind].sort()) {
       console.log(`\n${kind}: ${list.length}`);

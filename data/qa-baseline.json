@@ -1,0 +1,12 @@
+{
+  "building-on-major-road (playable)": 3,
+  "building-on-major-road (scenery)": 4,
+  "building-on-minor-road (playable)": 44,
+  "building-on-minor-road (scenery)": 36,
+  "building-on-service-road (playable)": 62,
+  "building-on-service-road (scenery)": 9,
+  "building-through-deck": 0,
+  "floating-end": 0,
+  "raised-fragment": 0,
+  "raised-inside-building": 0
+}

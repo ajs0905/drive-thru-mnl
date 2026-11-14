@@ -13,7 +13,10 @@
     "lint": "oxlint",
     "pipeline": "tsx pipeline/build.ts",
     "pipeline:sample": "tsx pipeline/build.ts pipeline/__fixtures__/sample.geojson public/data/sample.json --no-playable",
-    "qa": "tsx pipeline/qa.ts"
+    "qa": "tsx pipeline/qa.ts",
+    "qa:check": "tsx pipeline/qa.ts --check data/qa-baseline.json",
+    "data:check": "tsx pipeline/build.ts && git diff --exit-code -- public/data/bgc.json",
+    "check": "npm run typecheck && npm run lint && npm test && npm run data:check && npm run qa:check"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
@@ -35,5 +38,6 @@
     "typescript": "~7.0.2",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"
-  }
+  },
+  "license": "MIT"
 }
