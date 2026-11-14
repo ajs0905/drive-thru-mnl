@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { MapData } from '../map/types';
 import { decodeMark, MARK } from '../geometry/road';
 import { decodeWindows, WINDOWS } from '../geometry/extrude';
-import { buildCity, buildingColor, CROSSING_Y, landuseHeights, PALETTE, SIDEWALK_Y, windowStyle, type LayerArrays, type LayerChunk } from './cityGeometry';
+import { buildCity, buildingColor, CROSSING_Y, landuseHeights, PALETTE, propColor, propInstanceColor, SIDEWALK_Y, windowStyle, type LayerArrays, type LayerChunk } from './cityGeometry';
+import { hexToRgb, srgbToLinear } from '../geometry/meshBuilder';
+import { LEAF_REFERENCE } from '../geometry/treeShapes';
+import type { Prop } from '../geometry/props';
 
 /** A chunked layer merged back into one set of arrays, for checking totals. */
 function merged(chunks: LayerChunk[]): LayerArrays {
@@ -193,11 +196,32 @@ describe('buildCity with barriers, trees and fixtures', () => {
   });
 
   it('puts trees in their own grid cells and fixtures with the rooftop props', () => {
-    expect(city.trees.map((c) => [c.key, c.arrays.map((p) => p.kind)])).toEqual([
+    expect(city.simpleTrees.map((c) => [c.key, c.arrays.map((p) => p.kind)])).toEqual([
       ['-1,0', ['trunk', 'canopy']],
       ['1,0', ['palmTrunk', 'crown']],
     ]);
+    expect(city.trees.map((c) => c.key)).toEqual(['-1,0', '1,0']);
+    expect(city.trees[1].arrays.map((p) => p.kind)).toEqual(['palm']);
+    expect(['treeRound', 'treeWide', 'treeTall']).toContain(city.trees[0].arrays[0].kind);
     const kinds = city.props.flatMap((c) => c.arrays.map((p) => p.kind));
     expect(kinds.filter((k) => k === 'post' || k === 'boom')).toEqual(['post', 'boom']);
+  });
+});
+
+describe('propInstanceColor', () => {
+  const prop = (kind: Prop['kind'], tone: number): Prop => ({ kind, x: 0, y: 0, base: 0, size: [1, 1, 1], rot: 0, tone });
+
+  it('gives plain shapes their palette color in linear RGB', () => {
+    const p = prop('bollard', 0.5);
+    expect(propInstanceColor(p)).toEqual(srgbToLinear(hexToRgb(propColor(p))));
+  });
+  it('gives tree models the tint that turns their reference green into the palette green', () => {
+    for (const tone of [0, 0.3, 0.99]) {
+      const p = prop('treeWide', tone);
+      const tint = propInstanceColor(p);
+      const ref = srgbToLinear(hexToRgb(LEAF_REFERENCE.treeWide));
+      const want = srgbToLinear(hexToRgb(propColor(p)));
+      for (let c = 0; c < 3; c++) expect(ref[c] * tint[c]).toBeCloseTo(want[c], 6);
+    }
   });
 });

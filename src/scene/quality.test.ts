@@ -24,6 +24,9 @@ describe('QUALITY', () => {
     expect(low.treeDistance).toBeLessThanOrEqual(medium.treeDistance);
     expect(medium.treeDistance).toBeLessThanOrEqual(high.treeDistance);
   });
+  it('keeps the simple trees on low', () => {
+    expect([QUALITY.low.treeModels, QUALITY.medium.treeModels, QUALITY.high.treeModels]).toEqual([false, true, true]);
+  });
 });
 
 describe('dprFor', () => {

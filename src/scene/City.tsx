@@ -66,11 +66,13 @@ export function City({
   onBuilt,
   propsDistance,
   treeDistance,
+  treeModels,
 }: {
   map: MapData;
   onBuilt?: (m: CityMeshes) => void;
   propsDistance: number;
   treeDistance: number;
+  treeModels: boolean;
 }) {
   const meshes = useMemo(() => buildCity(map), [map]);
   const materials = useMaterials();
@@ -106,7 +108,7 @@ export function City({
         <ChunkMesh key={`t${c.key}`} arrays={c.arrays} material={materials.structures} cast />
       ))}
       <Props cells={meshes.props} maxDistance={propsDistance} />
-      <Props cells={meshes.trees} maxDistance={treeDistance} />
+      <Props cells={treeModels ? meshes.trees : meshes.simpleTrees} maxDistance={treeDistance} />
       <Edge arrays={meshes.edge} />
     </group>
   );

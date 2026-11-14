@@ -12,7 +12,8 @@ import { ChunkedBuilder, chunkKey, type Chunk } from '../geometry/chunks';
 import { idUnit } from '../map/hash';
 import { roofProps } from '../geometry/roofProps';
 import type { Prop, PropKind } from '../geometry/props';
-import { fixtureProps, treeProps } from '../geometry/streetProps';
+import { fixtureProps, treeModelProps, treeProps } from '../geometry/streetProps';
+import { treeTint, type TreeModel } from '../geometry/treeShapes';
 import { addBarrier, BARRIER_THICKNESS } from '../geometry/barrier';
 import { polygonArea, vertexCentroid, withWinding } from '../geometry/polygon';
 
@@ -69,12 +70,29 @@ export const PROP_COLORS: Record<PropKind, string[]> = {
   palmTrunk: ['#8f8270', '#9a8d79'],
   canopy: ['#5f8f3f', '#4f7d36', '#6e9b46', '#577f3b', '#66923f'],
   crown: ['#6d9a3a', '#5f8c34', '#78a144'],
+  // Tree models: the leaf color (the bark is part of the model).
+  treeRound: ['#5f8f3f', '#4f7d36', '#6e9b46', '#577f3b', '#66923f'],
+  treeWide: ['#5f8f3f', '#4f7d36', '#6e9b46', '#577f3b', '#66923f'],
+  treeTall: ['#5f8f3f', '#4f7d36', '#6e9b46', '#577f3b', '#66923f'],
+  palm: ['#6d9a3a', '#5f8c34', '#78a144'],
 };
 
 export const propColor = (p: Prop): string => {
   const list = PROP_COLORS[p.kind];
   return list[Math.min(list.length - 1, Math.floor(p.tone * list.length))];
 };
+
+const TREE_MODEL_KINDS = new Set<string>(['treeRound', 'treeWide', 'treeTall', 'palm'] satisfies TreeModel[]);
+
+/**
+ * Instance color for a prop, linear RGB. Plain shapes get their color; tree models,
+ * whose vertex colors already hold bark and a reference green, get the tint that turns
+ * that green into their own.
+ */
+export function propInstanceColor(p: Prop): RGB {
+  const hex = propColor(p);
+  return TREE_MODEL_KINDS.has(p.kind) ? treeTint(p.kind as TreeModel, hex) : srgbToLinear(hexToRgb(hex));
+}
 
 /** Barrier colors: painted concrete walls, dark metal fences, hedges, steel rails. */
 export const BARRIER_COLORS: Record<BarrierKind, { side: string; top: string }> = {
@@ -179,8 +197,10 @@ export interface CityMeshes {
   edge: LayerArrays;
   /** Rooftop details and street fixtures, drawn as instances, grouped by the same grid cells. */
   props: Chunk<Prop[]>[];
-  /** Trees, drawn as instances like props but kept visible farther away. */
+  /** Trees as tree models (Medium and High), drawn as instances like props but kept visible farther away. */
   trees: Chunk<Prop[]>[];
+  /** The same trees as a trunk plus one crown each (Low). */
+  simpleTrees: Chunk<Prop[]>[];
   triangles: number;
   ms: number;
 }
@@ -225,7 +245,10 @@ export function buildCity(map: MapData): CityMeshes {
 
   const out = {
     props: propCells([...map.buildings.flatMap(roofProps), ...(map.fixtures ?? []).flatMap(fixtureProps)]),
-    trees: propCells((map.trees ?? []).flatMap(treeProps)),
+    /** Tree models (Medium and High). */
+    trees: propCells((map.trees ?? []).flatMap(treeModelProps)),
+    /** Trunk plus one crown per tree (Low). */
+    simpleTrees: propCells((map.trees ?? []).flatMap(treeProps)),
     buildings: buildings.build(),
     scenery: scenery.build(),
     roads: roads.build(),

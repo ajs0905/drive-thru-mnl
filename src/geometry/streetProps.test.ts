@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addBarrier } from './barrier';
 import { MeshBuilder } from './meshBuilder';
-import { fixtureProps, treeProps } from './streetProps';
+import { fixtureProps, treeModelProps, treeProps } from './streetProps';
 
 describe('treeProps', () => {
   it('builds a trunk with a crown on top, scaled by the tree size', () => {
@@ -20,6 +20,49 @@ describe('treeProps', () => {
   it('varies with position only', () => {
     expect(treeProps({ p: [1, 2], shape: 'broad', s: 1 })).toEqual(treeProps({ p: [1, 2], shape: 'broad', s: 1 }));
     expect(treeProps({ p: [1, 2], shape: 'broad', s: 1 })[0].tone).not.toBe(treeProps({ p: [2, 1], shape: 'broad', s: 1 })[0].tone);
+  });
+});
+
+describe('treeModelProps', () => {
+  const grid = Array.from({ length: 400 }, (_, i) => ({ p: [(i % 20) * 7.3, Math.floor(i / 20) * 9.1] as [number, number], s: 1 }));
+
+  it('gives every tree one model, scaled by its size, at its position', () => {
+    const [prop] = treeModelProps({ p: [5, 6], shape: 'broad', s: 1.2 });
+    expect(prop).toMatchObject({ x: 5, y: 6, base: 0 });
+    expect(['treeRound', 'treeWide', 'treeTall']).toContain(prop.kind);
+    expect(prop.size[1]).toBeCloseTo(1.2);
+    expect(prop.size[0]).toBeGreaterThanOrEqual(1.2 * 0.9);
+    expect(prop.size[0]).toBeLessThanOrEqual(1.2 * 1.1);
+    expect(prop.size[2]).toBe(prop.size[0]);
+  });
+  it('uses all three broadleaf models, in similar numbers', () => {
+    const kinds = grid.map((t) => treeModelProps({ ...t, shape: 'broad' })[0].kind);
+    for (const k of ['treeRound', 'treeWide', 'treeTall']) {
+      const n = kinds.filter((x) => x === k).length;
+      expect(n).toBeGreaterThan(400 / 3 * 0.7);
+      expect(n).toBeLessThan(400 / 3 * 1.3);
+    }
+  });
+  it("doesn't tie the model to the leaf color", () => {
+    // Colors pick by floor(tone * 5); every color bucket should still see more than one model.
+    const props = grid.map((t) => treeModelProps({ ...t, shape: 'broad' })[0]);
+    for (let bucket = 0; bucket < 5; bucket++) {
+      const models = new Set(props.filter((p) => Math.floor(p.tone * 5) === bucket).map((p) => p.kind));
+      expect(models.size).toBeGreaterThan(1);
+    }
+  });
+  it('leans palms a little, never broadleaf trees', () => {
+    const palms = grid.map((t) => treeModelProps({ ...t, shape: 'palm' })[0]);
+    expect(palms.every((p) => p.kind === 'palm')).toBe(true);
+    const leans = palms.map((p) => p.lean ?? 0);
+    expect(Math.max(...leans)).toBeLessThanOrEqual(0.12);
+    expect(Math.max(...leans)).toBeGreaterThan(0.08);
+    expect(grid.every((t) => treeModelProps({ ...t, shape: 'broad' })[0].lean === undefined)).toBe(true);
+  });
+  it('matches the simple tree in color and turn, so switching tiers keeps each tree the same', () => {
+    const t = { p: [12, -40] as [number, number], shape: 'broad' as const, s: 1 };
+    expect(treeModelProps(t)[0].tone).toBe(treeProps(t)[0].tone);
+    expect(treeModelProps(t)[0].rot).toBe(treeProps(t)[0].rot);
   });
 });
 

@@ -27,8 +27,8 @@ Headless Chrome on a desktop CPU with a software renderer (no GPU), so frame rat
 | JS bundle | 1.21 MB, **338 KB gzipped** (321) | Mostly three.js, React Three Fiber and drei (drei is only used for `MapControls`) |
 | Map data (`bgc.json`) | 3.13 MB, **751 KB gzipped** (657) | Whole map in one JSON file; junction polygons, gap patches, zebras and lane/sidewalk tags added about 80 KB, walls, trees and fixtures 15 KB more |
 | City mesh build | **about 300 ms** (213), main thread | Freezes the page while it runs; sidewalks, junction polygons and roof prop placement (about 15 ms) are new work |
-| Draw calls | **about 50 to 80** (8) | Layers split into 1.2 km grid cells so off-screen cells are skipped; the shadow pass adds a few on Medium and High while the camera moves. Trees and street fixtures added 10 to 17 (two instanced shapes per cell, plus their shadows). |
-| Triangles drawn | Low **about 265k** at street level, **296k** in the overview; Medium and High **about 315k to 350k** | Everything stays on the GPU, but cells off screen are skipped. About 35k are trees (919, 38 triangles each, hidden past 1 to 3 km per tier), about 38k rooftop details (2,800 instances, hidden past a distance per tier); the filler city is 3,300 blocks on Low and 8,200 on Medium and High. Shadow re-renders only draw cells near the shadowed square |
+| Draw calls | **about 50 to 80** (8) | Layers split into 1.2 km grid cells so off-screen cells are skipped; the shadow pass adds a few on Medium and High while the camera moves. Trees and street fixtures added 10 to 17 (two instanced shapes per cell, plus their shadows); the tree models add 6 to 11 more on Medium and High (up to four models per cell). |
+| Triangles drawn | Low **about 265k** at street level, **296k** in the overview; Medium and High **about 315k to 350k** | Everything stays on the GPU, but cells off screen are skipped. Trees are 35k on Low (919, 38 triangles each) and 63k on Medium and High (tree models, 68 on average), hidden past 1 to 3 km per tier; about 38k rooftop details (2,800 instances, hidden past a distance per tier); the filler city is 3,300 blocks on Low and 8,200 on Medium and High. Shadow re-renders only draw cells near the shadowed square |
 | GPU buffers (estimated) | ~30 MB | 213k merged triangles x 3 vertices x 36 bytes (position, normal, color), plus 16 bytes per road and building vertex for markings and windows |
 | JS heap after load | **about 51 MB used** | MapData objects + typed arrays |
 | Pipeline | 2.5 s processing (0.67) | `npm run pipeline`, output byte-identical on re-run. Most of the increase is the 0.5 m paving raster around every junction (run twice); offline, so it doesn't affect players |
@@ -42,6 +42,18 @@ The development laptop measured **23 FPS on High** (46 draw calls, 452k triangle
 ### Second performance pass
 
 After the first pass the development laptop ran Low and Medium at the screen's 144 Hz limit but High at 70 to 85 FPS. Changes: no post-processing chain on High (hardware anti-aliasing instead, pixel ratio capped at 1.25), shadow re-renders throttled while the camera moves, layers split into grid cells for frustum culling, rooftop details hidden by distance, filler city in direction sectors, and frames drawn only when something changes (idle costs nothing). Two libraries removed. Software renderer at 480x300 (vertex-bound stand-in): Low 4 → 7 FPS, Medium 3 → 3, High 3 → 2 to 3. Draw calls 40 to 60 depending on the view; triangles drawn at street level about 230k on Low (was 285k always).
+
+### Tree models
+
+Built-in tree models replace the trunk-plus-crown trees on Medium and High ([ADR 0013](decisions/0013-tree-models-built-in-code.md)). Same headless setup, 1280x720, `?render=always`, main pass only (no shadow re-render in these frames); draw calls / triangles:
+
+| View | Low (unchanged) | Medium before → after | High before → after |
+| --- | --- | --- | --- |
+| Park (`cam=-170,28,-30,-80,2,-90`) | 57 / 280k | 60 / 307k → 70 / 332k | 64 / 312k → 74 / 337k |
+| Palm street (`cam=760,22,-880,840,2,-990`) | 32 / 130k | 32 / 149k → 38 / 165k | 32 / 149k → 38 / 165k |
+| Overview (README hero) | 68 / 305k | 77 / 357k → 88 / 384k | 79 / 360k → 90 / 387k |
+
+Whole map: 34.9k → 62.7k tree triangles, 14 → 26 instanced tree meshes. Medium was already over its 300k budget in the park and overview views (307k, 357k) and is now at 332k and 384k. Distance-based detail in the tiles milestone (billboards for far trees among it) is where that comes back.
 
 ### Desktop with a GPU
 
@@ -91,7 +103,7 @@ To fill in (see below for how).
 | Road shader cost on phones (`fwidth`, a few branches per road pixel) | Simpler marking path on Low (no antialiasing, no dashes in the distance) | Tiles, streaming, tiers |
 | Sky shader with procedural clouds runs on every sky pixel (fbm noise) | Lower cloud detail or a static sky on Low | Tiles, streaming, tiers |
 | Rooftop details (38k triangles) | Hide on Low, or only near the camera | Tiles, streaming, tiers |
-| Trees (35k triangles, 10+ draw calls) | One mesh per tree type with trunk and crown together, fewer and bigger cells | Tiles, streaming, tiers |
+| Trees (35k triangles on Low, 63k and up to 4 instanced meshes per cell on Medium and High) | Billboards for far trees rendered from the tree models, smaller cells | Tiles, streaming, tiers |
 | Filler city past the map (33k to 82k triangles) | Merge far blocks into a few big ones, or a skyline card per direction | Tiles, streaming, tiers |
 | Window shader on every wall pixel | Plain walls or the average color on Low | Tiles, streaming, tiers |
 

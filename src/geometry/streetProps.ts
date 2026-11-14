@@ -6,7 +6,9 @@
 import { idUnit } from '../map/hash';
 import type { Fixture, Tree } from '../map/types';
 import type { Prop } from './props';
+import { BROADLEAF_MODELS } from './treeShapes';
 
+/** Simple trees (Low tier): a trunk and one 20-face crown, 38 triangles. */
 export function treeProps(t: Tree): Prop[] {
   const [x, y] = t.p;
   const s = t.s;
@@ -22,6 +24,27 @@ export function treeProps(t: Tree): Prop[] {
     { kind: 'trunk', x, y, base: 0, size: [0.4 * s, 3.2 * s, 0.4 * s], rot, tone },
     { kind: 'canopy', x, y, base: 2.3 * s, size: [5.2 * s, 4.2 * s, 5.2 * s], rot, tone },
   ];
+}
+
+/**
+ * Detailed trees (Medium and High): one tree model per tree. Broadleaf trees pick one of
+ * the three variants from the same position hash as their color and turn, scrambled so
+ * variant and color don't go together. Palms lean up to 7 degrees; every tree's width
+ * varies by up to 10%.
+ */
+export function treeModelProps(t: Tree): Prop[] {
+  const [x, y] = t.p;
+  const s = t.s;
+  const tone = idUnit(`${x},${y}`);
+  const rot = tone * Math.PI * 2;
+  const spread = (Math.floor(tone * 7919) % 1000) / 1000;
+  const w = s * (0.9 + 0.2 * spread);
+  if (t.shape === 'palm') {
+    const lean = ((Math.floor(tone * 104729) % 1000) / 1000) * 0.12;
+    return [{ kind: 'palm', x, y, base: 0, size: [w, s, w], rot, tone, lean }];
+  }
+  const kind = BROADLEAF_MODELS[Math.floor(tone * 997) % BROADLEAF_MODELS.length];
+  return [{ kind, x, y, base: 0, size: [w, s, w], rot, tone }];
 }
 
 export function fixtureProps(f: Fixture): Prop[] {

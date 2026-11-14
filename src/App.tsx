@@ -192,7 +192,7 @@ export default function App() {
             maxDistance={6000}
             dampingFactor={0.12}
           />
-          {state.status === 'ready' && <City map={state.map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} />}
+          {state.status === 'ready' && <City map={state.map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} treeModels={settings.treeModels} />}
           {state.status === 'ready' && <Surroundings map={state.map} density={settings.filler} />}
           <FrameProbe onFrame={onFrame} />
         </Canvas>
