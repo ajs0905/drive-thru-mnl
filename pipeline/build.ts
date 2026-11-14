@@ -1,6 +1,8 @@
 /**
  * CLI: npm run pipeline [-- <input.geojson> <output.json>] [--playable <file> | --no-playable] [--margin <m>]
- * Defaults: data/raw/bgc.geojson -> public/data/bgc.json, playable area from data/playable-area.geojson
+ *                        [--extras <file> | --no-extras]
+ * Defaults: data/raw/bgc.geojson -> public/data/bgc.json, playable area from data/playable-area.geojson,
+ * barriers and trees from data/raw/bgc-barriers.geojson when it exists.
  */
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -16,6 +18,7 @@ import { closeMedianGaps } from './medians';
 import { patchHoles } from './paving';
 import { settleRaised } from './settleRaised';
 import { extractMap } from './extract';
+import { extractExtras, placeExtras, type ExtrasStats } from './barriers';
 
 const args = process.argv.slice(2);
 const flag = (name: string) => {
@@ -27,6 +30,9 @@ const flag = (name: string) => {
 };
 const noPlayable = args.includes('--no-playable');
 if (noPlayable) args.splice(args.indexOf('--no-playable'), 1);
+const noExtras = args.includes('--no-extras');
+if (noExtras) args.splice(args.indexOf('--no-extras'), 1);
+const extrasArg = flag('--extras');
 const playableArg = flag('--playable');
 const margin = Number(flag('--margin') ?? 300);
 const [input = 'data/raw/bgc.geojson', output = 'public/data/bgc.json'] = args;
@@ -98,6 +104,13 @@ map = {
 };
 const paved = patchHoles(map);
 map = { ...map, junctions: paved.junctions };
+const extrasPath = noExtras ? undefined : (extrasArg ?? (existsSync('data/raw/bgc-barriers.geojson') ? 'data/raw/bgc-barriers.geojson' : undefined));
+let extras: ExtrasStats | undefined;
+if (extrasPath) {
+  const placed = placeExtras(extractExtras(readJson<FeatureCollection>(resolve(extrasPath)), map.origin), map, margin);
+  extras = placed.stats;
+  map = { ...map, barriers: placed.barriers, trees: placed.trees, fixtures: placed.fixtures, stats: { ...map.stats, extras } };
+}
 if (map.stats.clip) {
   const sceneryLeft = cleared.buildings.filter((b) => b.scenery).length;
   map.stats.clip = { ...map.stats.clip, playableBuildings: cleared.buildings.length - sceneryLeft, sceneryBuildings: sceneryLeft };
@@ -150,5 +163,13 @@ console.log(
     `${z.waysWithoutRoad} cross no road, ${z.skippedShallow} hits too shallow, ${z.skippedRaised} under a flyover, ` +
     `${z.droppedOverlap} overlapping, ${z.droppedNoRoom} no room)`,
 );
+if (extras) {
+  const dropped = Object.entries(extras.dropped).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
+  console.log(
+    `  extras from ${extrasPath}: ${extras.barriers} barrier pieces (${extras.barrierMeters} m, ${extras.gapsCut} openings cut), ` +
+      `${extras.trees} trees (${extras.treesMoved} moved off a road), ${extras.fixtures} gates, booms, bollards and blocks`,
+  );
+  if (dropped) console.log(`    dropped: ${dropped}`);
+}
 const skipped = Object.entries(stats.skipped).sort((a, b) => b[1] - a[1]);
 if (skipped.length) console.log(`  skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(', ')}`);

@@ -19,10 +19,11 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - **Flyovers worked out from tags.** OSM only says "bridge, layer 1". The pipeline decides which bridges are really raised (only those crossing a road), builds ramps on the approach roads that stop at junctions, and adds decks, barriers and pillars.
 - **Clean intersections, painted roads.** Roads are split into a graph and every junction gets its own polygon, worked out from where the road edges meet; junctions of divided roads merge into one, and leftover gaps are found by rasterizing the road surface and paved. Lane lines, center lines, zebra crossings and curbs are drawn by a shader from per-vertex data: no textures, no extra draw calls.
 - **Windows without textures.** Every building gets windows from its type and height (glass towers, offices, apartments, houses, parking decks), drawn by a shader; roofs get stair housings, AC units and water tanks.
+- **Walls and trees that respect the streets.** Walls, fences and hedges from OSM are cut open wherever a road or path passes, street trees mapped a meter into the road are moved to the curb, and gates and parking booms turn to span the road they sit on. 900+ trees (palms where the species says so) and 300 street fixtures, drawn as GPU instances.
 - **No edge of the world.** Past the mapped area the city continues as filler blocks out to the haze, with the real skylines of Makati and Ortigas where they actually are, and the Rizal hills on the eastern horizon.
-- **Lighting that scales with the device.** Sun shadows that follow the camera and bloom on desktops; tone mapping and baked contact shading everywhere. A Low / Medium / High switch plus resolution that adapts to the frame rate keeps phones smooth, and phones never download the post-effects code.
-- **Fast to render.** On Low the whole city, surroundings and sky draw in 13 draw calls (about 285k triangles), built in about 300 ms.
-- **Tested and checked.** 260+ unit tests, an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
+- **Lighting that scales with the device.** Sun shadows that follow the camera on Medium and High; tone mapping and baked contact shading everywhere. A Low / Medium / High switch plus resolution that adapts to the frame rate keeps phones smooth, and nothing is drawn while nothing moves.
+- **Fast to render.** The city is merged into a few big meshes per layer and grid cell (about 50 to 80 draw calls), cells off screen are skipped, and an idle view costs nothing. Built in about 300 ms.
+- **Tested and checked.** 330+ unit tests, an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
 
 ![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags](docs/images/flyover.png)
 
@@ -38,8 +39,9 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - [x] Map QA, architecture docs, CI
 - [x] Better roads: lane markings, clean intersections, zebra crossings, sidewalks and curbs; physically based sky with clouds
 - [x] Better buildings: windows, roof details
-- [x] Lighting and surroundings: shadows, tone mapping, bloom, Low / Medium / High switch with adaptive resolution; filler city, real skylines and hills past the map
-- [ ] Walls and fences from OSM
+- [x] Lighting and surroundings: shadows, tone mapping, Low / Medium / High switch with adaptive resolution; filler city, real skylines and hills past the map
+- [x] Performance: reversed depth, grid-cell culling, render on demand
+- [x] Walls, fences, trees, gates and parking booms from OSM
 - [ ] Drivable car with NFS-style limits (solid buildings, barriers, surface grip, respawn)
 - [ ] Tile streaming and quality tiers for phones
 - [ ] Minimap, landmarks, polish

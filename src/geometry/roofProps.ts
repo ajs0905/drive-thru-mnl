@@ -6,37 +6,15 @@
  * building's longest wall, and only accepted where the whole prop fits on the roof.
  * The renderer draws all of them with two instanced meshes (boxes and cylinders).
  */
-import { idUnit } from '../map/hash';
+import { seeded } from '../map/hash';
 import type { Building, Point } from '../map/types';
+import type { Prop } from './props';
 import { distanceToRing, pointInRing, ringArea, ringBounds } from './polygon';
 
 export type RoofPropKind = 'housing' | 'ac' | 'tank';
 
-export interface RoofProp {
-  kind: RoofPropKind;
-  /** Center on the roof, map space. */
-  x: number;
-  y: number;
-  /** Height of the bottom (the roof). */
-  base: number;
-  /** Size: across, up, along (for tanks: diameter, height, diameter). */
-  size: [number, number, number];
-  /** Rotation around the vertical axis, radians (map space, counter-clockwise). */
-  rot: number;
-  /** 0..1, for picking a color variant. */
-  tone: number;
-}
-
-/** Small seeded generator (mulberry32), so each building always gets the same props. */
-function seeded(id: string) {
-  let a = Math.floor(idUnit(id) * 4294967296);
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+/** A rooftop prop: `base` is the roof height; tanks are sized diameter, height, diameter. */
+export type RoofProp = Prop & { kind: RoofPropKind };
 
 /** Direction of the longest edge, so props line up with the walls. */
 function mainAngle(ring: Point[]): number {

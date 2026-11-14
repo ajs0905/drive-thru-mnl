@@ -1,10 +1,10 @@
 import { useEffect, useMemo } from 'react';
-import { BufferAttribute, BufferGeometry, DoubleSide } from 'three';
+import { BufferAttribute, BufferGeometry, DoubleSide, MeshLambertMaterial, type Material } from 'three';
 import type { MapData } from '../map/types';
 import { buildCity, PALETTE, type CityMeshes, type LayerArrays } from './cityGeometry';
 import { createBuildingMaterial } from './buildingMaterial';
 import { createRoadMaterial } from './roadMaterial';
-import { RoofProps } from './RoofProps';
+import { Props } from './Props';
 
 function toGeometry(arrays: LayerArrays, auxName = 'roadAux'): BufferGeometry {
   const g = new BufferGeometry();
@@ -16,36 +16,20 @@ function toGeometry(arrays: LayerArrays, auxName = 'roadAux'): BufferGeometry {
   return g;
 }
 
-function Layer({ arrays, offset = 0, cast = false }: { arrays: LayerArrays; offset?: number; cast?: boolean }) {
-  const geometry = useMemo(() => toGeometry(arrays), [arrays]);
+/** One chunk of a layer, with the layer's shared material. */
+function ChunkMesh({
+  arrays,
+  material,
+  auxName,
+  cast = false,
+}: {
+  arrays: LayerArrays;
+  material: Material;
+  auxName?: string;
+  cast?: boolean;
+}) {
+  const geometry = useMemo(() => toGeometry(arrays, auxName), [arrays, auxName]);
   useEffect(() => () => geometry.dispose(), [geometry]);
-  if (arrays.position.length === 0) return null;
-  return (
-    <mesh geometry={geometry} receiveShadow castShadow={cast}>
-      <meshLambertMaterial
-        vertexColors
-        polygonOffset={offset !== 0}
-        polygonOffsetFactor={offset}
-        polygonOffsetUnits={offset}
-      />
-    </mesh>
-  );
-}
-
-function Roads({ arrays }: { arrays: LayerArrays }) {
-  const geometry = useMemo(() => toGeometry(arrays), [arrays]);
-  const material = useMemo(() => createRoadMaterial(), []);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  useEffect(() => () => material.dispose(), [material]);
-  if (arrays.position.length === 0) return null;
-  return <mesh geometry={geometry} material={material} receiveShadow />;
-}
-
-function Buildings({ arrays, cast = true }: { arrays: LayerArrays; cast?: boolean }) {
-  const geometry = useMemo(() => toGeometry(arrays, 'wallAux'), [arrays]);
-  const material = useMemo(() => createBuildingMaterial(), []);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  useEffect(() => () => material.dispose(), [material]);
   if (arrays.position.length === 0) return null;
   return <mesh geometry={geometry} material={material} castShadow={cast} receiveShadow />;
 }
@@ -61,8 +45,35 @@ function Edge({ arrays }: { arrays: LayerArrays }) {
   );
 }
 
-export function City({ map, onBuilt }: { map: MapData; onBuilt?: (m: CityMeshes) => void }) {
+/** One material per layer, shared by all of its chunks. */
+function useMaterials() {
+  const materials = useMemo(
+    () => ({
+      buildings: createBuildingMaterial(),
+      roads: createRoadMaterial(),
+      // Small polygon offsets so land use never flickers against roads drawn over it.
+      ground: new MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
+      structures: new MeshLambertMaterial({ vertexColors: true }),
+    }),
+    [],
+  );
+  useEffect(() => () => Object.values(materials).forEach((m) => m.dispose()), [materials]);
+  return materials;
+}
+
+export function City({
+  map,
+  onBuilt,
+  propsDistance,
+  treeDistance,
+}: {
+  map: MapData;
+  onBuilt?: (m: CityMeshes) => void;
+  propsDistance: number;
+  treeDistance: number;
+}) {
   const meshes = useMemo(() => buildCity(map), [map]);
+  const materials = useMaterials();
   useEffect(() => onBuilt?.(meshes), [meshes, onBuilt]);
 
   const b = map.bounds;
@@ -78,13 +89,24 @@ export function City({ map, onBuilt }: { map: MapData; onBuilt?: (m: CityMeshes)
         <planeGeometry args={[size, size]} />
         <meshLambertMaterial color={PALETTE.baseGround} />
       </mesh>
-      <Layer arrays={meshes.ground} offset={-1} />
-      <Roads arrays={meshes.roads} />
-      <Buildings arrays={meshes.buildings} />
+      {meshes.ground.map((c) => (
+        <ChunkMesh key={`g${c.key}`} arrays={c.arrays} material={materials.ground} />
+      ))}
+      {meshes.roads.map((c) => (
+        <ChunkMesh key={`r${c.key}`} arrays={c.arrays} material={materials.roads} auxName="roadAux" />
+      ))}
+      {meshes.buildings.map((c) => (
+        <ChunkMesh key={`b${c.key}`} arrays={c.arrays} material={materials.buildings} auxName="wallAux" cast />
+      ))}
       {/* The scenery ring is far outside the shadowed area around the camera's focus. */}
-      <Buildings arrays={meshes.scenery} cast={false} />
-      <RoofProps props={meshes.props} />
-      <Layer arrays={meshes.structures} cast />
+      {meshes.scenery.map((c) => (
+        <ChunkMesh key={`s${c.key}`} arrays={c.arrays} material={materials.buildings} auxName="wallAux" />
+      ))}
+      {meshes.structures.map((c) => (
+        <ChunkMesh key={`t${c.key}`} arrays={c.arrays} material={materials.structures} cast />
+      ))}
+      <Props cells={meshes.props} maxDistance={propsDistance} />
+      <Props cells={meshes.trees} maxDistance={treeDistance} />
       <Edge arrays={meshes.edge} />
     </group>
   );

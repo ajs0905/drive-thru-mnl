@@ -1,4 +1,5 @@
 {
+  "barrier-on-road": 0,
   "building-on-major-road (playable)": 3,
   "building-on-major-road (scenery)": 5,
   "building-on-minor-road (playable)": 44,
@@ -11,5 +12,7 @@
   "paving-hole": 37,
   "raised-fragment": 0,
   "raised-inside-building": 0,
+  "tree-in-building": 0,
+  "tree-on-road": 0,
   "zebra-overlap": 0
 }

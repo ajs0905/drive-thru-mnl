@@ -11,3 +11,5 @@
 - Mesh building is pure and renderer-agnostic, so it can move to a Web Worker.
 - Frustum culling and unloading are all-or-nothing per layer. Accepted for BGC; tile streaming splits layers per tile, which restores culling and unloading.
 - Per-object effects (highlighting one building) need vertex attributes or a separate mesh.
+
+**Update (performance pass).** Each layer is now split into 1.2 km grid cells (`src/geometry/chunks.ts`), still one mesh per layer per cell with a shared material. That brings back frustum culling (and culling for the shadow map) at the cost of about 40 to 60 draw calls instead of 13, well within budget.

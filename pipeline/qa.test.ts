@@ -3,7 +3,7 @@ import type { Building, MapData, Road } from '../src/map/types';
 import { countByKind, regressions, runQa } from './qa';
 
 const map = (roads: Road[], buildings: Building[] = []): MapData => ({
-  version: 5,
+  version: 6,
   junctions: [],
   crossings: [],
   origin: { lat: 14.55, lon: 121.05 },
@@ -34,6 +34,19 @@ describe('runQa', () => {
     const deck = road({ z: [7, 7] });
     const kinds = countByKind(runQa(map([deck])));
     expect(kinds['floating-end']).toBe(2);
+  });
+
+  it('finds trees on roads and in buildings, and walls across roads', () => {
+    const m: MapData = {
+      ...map([road({})], [box(40, 20, 50, 30)]),
+      trees: [{ p: [10, 2], shape: 'broad', s: 1 }, { p: [45, 25], shape: 'palm', s: 1 }, { p: [10, 30], shape: 'broad', s: 1 }],
+      barriers: [
+        { id: 'w', kind: 'wall', h: 2, points: [[60, -20], [60, 20]] },
+        { id: 'g', kind: 'rail', h: 1, points: [[0, 4], [100, 4]] },
+      ],
+    };
+    const kinds = countByKind(runQa(m));
+    expect(kinds).toEqual({ 'tree-on-road': 1, 'tree-in-building': 1, 'barrier-on-road': 1 });
   });
 
   it('reports nothing for a clean map', () => {

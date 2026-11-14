@@ -1,5 +1,5 @@
 /**
- * What's around the map: filler city out to the haze (one instanced mesh) and hill
+ * What's around the map: filler city out to the haze (instanced, in direction sectors) and hill
  * ridges on the eastern horizon (one mesh). The hills follow the camera like the sky,
  * so they always sit on the horizon; their colors are already mixed with the haze
  * (aerial perspective), so they skip fog and tone mapping and fade out at the bottom
@@ -21,45 +21,60 @@ import {
   Vector3,
   type Camera,
 } from 'three';
-import { outskirts, RIDGES, ridgeHeights } from '../geometry/outskirts';
+import { outskirts, RIDGES, ridgeHeights, type FillerBox } from '../geometry/outskirts';
 import type { MapData } from '../map/types';
 import { dropGroup } from './meshUtils';
 import { SKY, SURROUNDINGS } from './skyConfig';
 
+/** Filler is split into this many direction sectors around the map, so the ones behind the camera are skipped. */
+const SECTORS = 8;
+
 function useFiller(map: MapData, density: number) {
-  const mesh = useMemo(() => {
+  const meshes = useMemo(() => {
     const boxes = outskirts(map, { density });
     const geometry = dropGroup(new BoxGeometry(1, 1, 1), 3).translate(0, 0.5, 0);
-    const m = new InstancedMesh(geometry, new MeshLambertMaterial(), Math.max(1, boxes.length));
-    m.count = boxes.length;
+    const material = new MeshLambertMaterial();
+    const b = map.bounds;
+    const [cx, cy] = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+    const sectors: FillerBox[][] = Array.from({ length: SECTORS }, () => []);
+    for (const box of boxes) {
+      const a = Math.atan2(box.y - cy, box.x - cx) + Math.PI; // 0..2π
+      sectors[Math.min(SECTORS - 1, Math.floor((a / (2 * Math.PI)) * SECTORS))].push(box);
+    }
     const mat = new Matrix4();
     const q = new Quaternion();
     const up = new Vector3(0, 1, 0);
     const pos = new Vector3();
     const scale = new Vector3();
     const color = new Color();
-    boxes.forEach((b, i) => {
-      q.setFromAxisAngle(up, b.rot);
-      mat.compose(pos.set(b.x, 0, -b.y), q, scale.set(b.w, b.h, b.d));
-      m.setMatrixAt(i, mat);
-      const palette = b.tower ? SURROUNDINGS.towers : SURROUNDINGS.blocks;
-      m.setColorAt(i, color.set(palette[Math.floor(b.tone * palette.length)]));
-    });
-    m.instanceMatrix.needsUpdate = true;
-    if (m.instanceColor) m.instanceColor.needsUpdate = true;
-    m.computeBoundingSphere();
-    m.receiveShadow = true;
-    return m;
+    return sectors
+      .filter((list) => list.length > 0)
+      .map((list) => {
+        const m = new InstancedMesh(geometry, material, list.length);
+        list.forEach((box, i) => {
+          q.setFromAxisAngle(up, box.rot);
+          mat.compose(pos.set(box.x, 0, -box.y), q, scale.set(box.w, box.h, box.d));
+          m.setMatrixAt(i, mat);
+          const palette = box.tower ? SURROUNDINGS.towers : SURROUNDINGS.blocks;
+          m.setColorAt(i, color.set(palette[Math.floor(box.tone * palette.length)]));
+        });
+        m.instanceMatrix.needsUpdate = true;
+        if (m.instanceColor) m.instanceColor.needsUpdate = true;
+        m.computeBoundingSphere();
+        m.receiveShadow = true;
+        return m;
+      });
   }, [map, density]);
   useEffect(
     () => () => {
-      mesh.geometry.dispose();
-      (mesh.material as MeshLambertMaterial).dispose();
-      mesh.dispose();
+      if (meshes.length === 0) return;
+      meshes[0].geometry.dispose();
+      (meshes[0].material as MeshLambertMaterial).dispose();
+      for (const m of meshes) m.dispose();
     },
-    [mesh],
+    [meshes],
   );
-  return mesh;
+  return meshes;
 }
 
 /** Ridge strips around the origin (the camera, at run time), colored into the haze. */
@@ -112,7 +127,9 @@ export function Surroundings({ map, density }: { map: MapData; density: number }
   useFrame(({ camera }) => hills.update(camera));
   return (
     <>
-      <primitive object={filler} />
+      {filler.map((m, i) => (
+        <primitive key={i} object={m} />
+      ))}
       <primitive object={hills.mesh} />
     </>
   );

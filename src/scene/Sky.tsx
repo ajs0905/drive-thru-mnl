@@ -42,10 +42,13 @@ function useSkyMesh(clouds: boolean) {
     u.cloudElevation.value = SKY.clouds.elevation;
     u.cloudScale.value = SKY.clouds.scale;
     u.cloudSpeed.value = SKY.clouds.speed;
-    /** Per frame: stay centered on the camera (so the sky never gets closer) and drift the clouds. */
-    const update = (camera: Camera, time: number) => {
+    /**
+     * Per frame: stay centered on the camera (so the sky never gets closer) and drift the
+     * clouds. Cloud time only advances while frames are drawn, so they don't jump after idle.
+     */
+    const update = (camera: Camera, delta: number) => {
       mesh.position.copy(camera.position);
-      u.time.value = time;
+      u.time.value += Math.min(delta, 0.1);
     };
     return { mesh, update };
   }, [clouds]);
@@ -55,6 +58,6 @@ function useSkyMesh(clouds: boolean) {
 
 export function Sky({ clouds = true }: { clouds?: boolean }) {
   const sky = useSkyMesh(clouds);
-  useFrame(({ camera, clock }) => sky.update(camera, clock.elapsedTime));
+  useFrame(({ camera }, delta) => sky.update(camera, delta));
   return <primitive object={sky.mesh} />;
 }

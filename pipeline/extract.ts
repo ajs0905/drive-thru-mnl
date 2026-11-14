@@ -23,22 +23,22 @@ const ROAD_CLASSES: Record<string, RoadClass> = {
   pedestrian: 'path', track: 'path', corridor: 'path', bridleway: 'path',
 };
 
-type Tags = Record<string, unknown>;
+export type Tags = Record<string, unknown>;
 
 /** overpass-turbo puts tags directly on properties; older exports nest them under `tags`. */
-function getTags(f: Feature): Tags {
+export function getTags(f: Feature): Tags {
   const props = (f.properties ?? {}) as Tags;
   const nested = props.tags;
   return nested && typeof nested === 'object' ? (nested as Tags) : props;
 }
 
-function getId(f: Feature, i: number): string {
+export function getId(f: Feature, i: number): string {
   const props = (f.properties ?? {}) as Tags;
   const raw = f.id ?? props['@id'] ?? props.id;
   return raw != null ? String(raw) : `feature/${i}`;
 }
 
-function str(v: unknown): string | undefined {
+export function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
 }
 
@@ -62,7 +62,7 @@ export function parseLevels(v: unknown): number | undefined {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function projectPositions(positions: Position[], proj: Projection): Point[] | null {
+export function projectPositions(positions: Position[], proj: Projection): Point[] | null {
   const out: Point[] = [];
   for (const pos of positions) {
     const [lon, lat] = pos;
@@ -100,13 +100,13 @@ function projectPolygon(rings: Position[][], proj: Projection): Ring[] | null {
   return [outer, ...holes];
 }
 
-function polygonsOf(g: Geometry): Position[][][] | null {
+export function polygonsOf(g: Geometry): Position[][][] | null {
   if (g.type === 'Polygon') return [g.coordinates];
   if (g.type === 'MultiPolygon') return g.coordinates;
   return null;
 }
 
-function linesOf(g: Geometry): Position[][] | null {
+export function linesOf(g: Geometry): Position[][] | null {
   if (g.type === 'LineString') return [g.coordinates];
   if (g.type === 'MultiLineString') return g.coordinates;
   return null;
@@ -293,7 +293,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
   });
 
   return {
-    version: 5,
+    version: 6,
     origin: proj.origin,
     bounds: computeBounds(roads, buildings, areas),
     roads,

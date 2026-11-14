@@ -1,11 +1,21 @@
-import { MapControls, PerformanceMonitor } from '@react-three/drei';
+import { MapControls } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadMap, type MapSource } from './map/loadMap';
 import type { MapData } from './map/types';
 import { City } from './scene/City';
 import { PALETTE, type CityMeshes } from './scene/cityGeometry';
-import { dprFor, initialQuality, QUALITIES, QUALITY, saveQuality, supportsReversedDepth, type Quality } from './scene/quality';
+import {
+  alwaysRender,
+  dprFor,
+  initialQuality,
+  nextFactor,
+  QUALITIES,
+  QUALITY,
+  saveQuality,
+  supportsReversedDepth,
+  type Quality,
+} from './scene/quality';
 import { Sky } from './scene/Sky';
 import { Sun } from './scene/Sun';
 import { Surroundings } from './scene/Surroundings';
@@ -13,9 +23,8 @@ import { SKY } from './scene/skyConfig';
 
 // Checked once: reversed depth if the GPU has it, otherwise a logarithmic depth buffer.
 const REVERSED_DEPTH = supportsReversedDepth();
-
-// High tier only, so the post-processing code is a separate download.
-const Effects = lazy(() => import('./scene/Effects'));
+// Frames are drawn only when something changes (camera moves, shadows catch up), unless ?render=always.
+const ALWAYS_RENDER = alwaysRender();
 
 type State =
   | { status: 'loading' }
@@ -26,6 +35,8 @@ interface Perf {
   fps: number;
   calls: number;
   triangles: number;
+  /** Nothing drawn for a while (on-demand rendering with nothing changing). */
+  idle: boolean;
 }
 
 const LEGEND: [string, string][] = [
@@ -38,25 +49,41 @@ const LEGEND: [string, string][] = [
 ];
 
 /**
- * Samples renderer stats once a second. The renderer's counters are reset by hand at
- * the start of each frame, so they add up every pass (shadow map, post effects), not
- * just the last one.
+ * Reports each drawn frame's renderer stats. The renderer's counters are reset by hand
+ * at the start of each frame (automatic resets are off, see onCreated), so they add up
+ * every pass, shadow map included, not just the last one.
  */
-function PerfProbe({ onSample }: { onSample: (p: Perf) => void }) {
-  const acc = useRef({ frames: 0, since: 0 });
+function FrameProbe({ onFrame }: { onFrame: (calls: number, triangles: number) => void }) {
   // Runs before the frame renders: what's in the counters is the whole previous frame.
-  // (Automatic resets are turned off in the Canvas's onCreated.)
   useFrame(({ gl }) => {
-    const a = acc.current;
-    const now = performance.now();
-    if (a.since === 0) a.since = now;
-    a.frames++;
-    if (now - a.since >= 1000) {
-      onSample({ fps: (a.frames * 1000) / (now - a.since), calls: gl.info.render.calls, triangles: gl.info.render.triangles });
-      a.frames = 0;
-      a.since = now;
-    }
+    onFrame(gl.info.render.calls, gl.info.render.triangles);
     gl.info.reset();
+  });
+  return null;
+}
+
+/**
+ * Adaptive resolution: averages the frame rate over runs of 30 consecutive frames and
+ * nudges the performance factor (see nextFactor). Gaps between frames (idle, on-demand
+ * rendering) are skipped, so not drawing doesn't look like being slow.
+ */
+function AdaptiveResolution({ factor, onChange }: { factor: number; onChange: (f: number) => void }) {
+  const run = useRef({ frames: 0, time: 0 });
+  useFrame((_, delta) => {
+    const r = run.current;
+    if (delta > 0.1) {
+      r.frames = 0;
+      r.time = 0;
+      return;
+    }
+    r.frames++;
+    r.time += delta;
+    if (r.frames >= 30) {
+      const next = nextFactor(factor, r.frames / r.time);
+      r.frames = 0;
+      r.time = 0;
+      if (next !== factor) onChange(next);
+    }
   });
   return null;
 }
@@ -91,7 +118,7 @@ export default function App() {
   const onBuilt = useCallback((m: CityMeshes) => setBuilt(m), []);
   const [quality, setQuality] = useState<Quality>(initialQuality);
   const settings = QUALITY[quality];
-  // Performance factor from the monitor: 1 = full resolution for the tier, lower when FPS drops.
+  // Performance factor: 1 = full resolution for the tier, lower when FPS drops.
   const [factor, setFactor] = useState(1);
   const dpr = dprFor(settings.dpr, factor, window.devicePixelRatio || 1);
   const pickQuality = (q: Quality) => {
@@ -99,6 +126,29 @@ export default function App() {
     setFactor(1);
     setQuality(q);
   };
+
+  // Frame times and the latest stats, written every frame, read twice a second for the overlay.
+  const frames = useRef<{ times: number[]; calls: number; triangles: number }>({ times: [], calls: 0, triangles: 0 });
+  const onFrame = useCallback((calls: number, triangles: number) => {
+    const f = frames.current;
+    const now = performance.now();
+    f.times.push(now);
+    while (f.times.length && now - f.times[0] > 1000) f.times.shift();
+    f.calls = calls;
+    f.triangles = triangles;
+  }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const f = frames.current;
+      if (f.calls === 0) return;
+      const now = performance.now();
+      const recent = f.times.filter((t) => now - t <= 1000);
+      // With on-demand rendering the frame rate means nothing while nothing moves: say so.
+      const idle = !ALWAYS_RENDER && (f.times.length === 0 || now - f.times[f.times.length - 1] > 1500);
+      setPerf({ fps: recent.length, calls: f.calls, triangles: f.triangles, idle });
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     loadMap()
@@ -117,7 +167,8 @@ export default function App() {
           // A new canvas per quality: shadows and buffers are set up once, at creation.
           key={quality}
           camera={{ position: view.position, fov: 50, near: 1, far: 12000 }}
-          gl={{ reversedDepthBuffer: REVERSED_DEPTH, logarithmicDepthBuffer: !REVERSED_DEPTH, antialias: !settings.post }}
+          frameloop={ALWAYS_RENDER ? 'always' : 'demand'}
+          gl={{ reversedDepthBuffer: REVERSED_DEPTH, logarithmicDepthBuffer: !REVERSED_DEPTH, antialias: settings.msaa }}
           // PCF, not the default soft PCF: sharper and cheaper; the light is low-poly anyway.
           shadows={settings.shadowMap > 0 ? 'percentage' : false}
           dpr={dpr}
@@ -129,22 +180,21 @@ export default function App() {
           <color attach="background" args={[SKY.horizon]} />
           <fog attach="fog" args={[SKY.horizon, 1800, 5500]} />
           {/* Lower the resolution when the frame rate drops, raise it again with headroom. */}
-          <PerformanceMonitor
-            onChange={({ factor: f }) => setFactor(Math.round(f * 10) / 10)}
-            flipflops={4}
-            onFallback={() => setFactor(0)}
-          />
+          <AdaptiveResolution factor={factor} onChange={setFactor} />
           <Sky clouds={settings.clouds} />
-          <Sun shadowMap={settings.shadowMap} />
-          {settings.post && (
-            <Suspense fallback={null}>
-              <Effects />
-            </Suspense>
-          )}
-          <MapControls makeDefault target={view.target} maxPolarAngle={Math.PI / 2.15} minDistance={40} maxDistance={6000} />
-          {state.status === 'ready' && <City map={state.map} onBuilt={onBuilt} />}
+          <Sun shadowMap={settings.shadowMap} shadowEvery={settings.shadowEvery} />
+          {/* Snappier damping: the camera settles in about 60 frames, then rendering stops until the next input. */}
+          <MapControls
+            makeDefault
+            target={view.target}
+            maxPolarAngle={Math.PI / 2.15}
+            minDistance={40}
+            maxDistance={6000}
+            dampingFactor={0.12}
+          />
+          {state.status === 'ready' && <City map={state.map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} />}
           {state.status === 'ready' && <Surroundings map={state.map} density={settings.filler} />}
-          <PerfProbe onSample={setPerf} />
+          <FrameProbe onFrame={onFrame} />
         </Canvas>
       )}
 
@@ -192,7 +242,8 @@ export default function App() {
 
       {perf && (
         <div className="perf">
-          {perf.fps.toFixed(0)} fps · {perf.calls} draw calls · {fmt(perf.triangles)} tris
+          {perf.idle ? 'idle (draws only when something changes)' : `${perf.fps.toFixed(0)} fps`} · {perf.calls} draw calls ·{' '}
+          {fmt(perf.triangles)} tris
           {built && ` · built in ${built.ms.toFixed(0)} ms`}
         </div>
       )}

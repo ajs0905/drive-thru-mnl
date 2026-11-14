@@ -4,13 +4,17 @@
  */
 import { addFlatPolygon, addWalls, extrudeBuilding, FLOOR_HEIGHT, windowCode, WINDOWS } from '../geometry/extrude';
 import { hexToRgb, MeshBuilder, shade, srgbToLinear, type RGB } from '../geometry/meshBuilder';
-import type { Area, Building, MapData, Point, Road, RoadClass } from '../map/types';
+import type { Area, BarrierKind, Building, MapData, Point, Road, RoadClass } from '../map/types';
 import { addDeckStructure, addDisc, addRoadRibbon, addSidewalk, addZebra, cutBackPieces, MARK, markCode, type DeckStyle } from '../geometry/road';
 import { laneCount, RANK, sidewalkBands } from '../map/roads';
 import type { Vec4 } from '../geometry/meshBuilder';
+import { ChunkedBuilder, chunkKey, type Chunk } from '../geometry/chunks';
 import { idUnit } from '../map/hash';
-import { roofProps, type RoofProp } from '../geometry/roofProps';
-import { polygonArea, withWinding } from '../geometry/polygon';
+import { roofProps } from '../geometry/roofProps';
+import type { Prop, PropKind } from '../geometry/props';
+import { fixtureProps, treeProps } from '../geometry/streetProps';
+import { addBarrier, BARRIER_THICKNESS } from '../geometry/barrier';
+import { polygonArea, vertexCentroid, withWinding } from '../geometry/polygon';
 
 export const EDGE_HEIGHT = 6;
 
@@ -50,12 +54,34 @@ export const PALETTE = {
   markingYellow: '#f4c02a',
 };
 
-/** Rooftop detail colors (sRGB hex; three.js converts instance colors). */
-export const ROOF_PROP_COLORS = {
-  housing: '#bdb8ad',
-  ac: '#dcdad4',
+/** Prop colors (sRGB hex; three.js converts instance colors). Each prop picks one by its tone. */
+export const PROP_COLORS: Record<PropKind, string[]> = {
+  housing: ['#bdb8ad'],
+  ac: ['#dcdad4'],
   /** Blue plastic, black plastic, steel, beige. */
-  tanks: ['#3f6fa8', '#2f3234', '#b9bdc1', '#cdbf9e'],
+  tank: ['#3f6fa8', '#2f3234', '#b9bdc1', '#cdbf9e'],
+  pillar: ['#d8d2c4', '#c2b8a6', '#e6e1d6'],
+  post: ['#5a5e63'],
+  boom: ['#f2c230', '#e9e6dc'],
+  bollard: ['#3d4145', '#e3b52c', '#b9bdc1'],
+  block: ['#c9c4b8'],
+  trunk: ['#6b5038', '#5e4632'],
+  palmTrunk: ['#8f8270', '#9a8d79'],
+  canopy: ['#5f8f3f', '#4f7d36', '#6e9b46', '#577f3b', '#66923f'],
+  crown: ['#6d9a3a', '#5f8c34', '#78a144'],
+};
+
+export const propColor = (p: Prop): string => {
+  const list = PROP_COLORS[p.kind];
+  return list[Math.min(list.length - 1, Math.floor(p.tone * list.length))];
+};
+
+/** Barrier colors: painted concrete walls, dark metal fences, hedges, steel rails. */
+export const BARRIER_COLORS: Record<BarrierKind, { side: string; top: string }> = {
+  wall: { side: '#d8d2c4', top: '#c9c2b2' },
+  fence: { side: '#4a4f52', top: '#4a4f52' },
+  hedge: { side: '#4c7a34', top: '#5d8e3e' },
+  rail: { side: '#b9bcbf', top: '#cfd2d4' },
 };
 
 // Small steps up so overlapping layers don't flicker. Major roads sit on top where
@@ -139,36 +165,41 @@ export interface LayerArrays {
   aux?: Float32Array;
 }
 
+export type LayerChunk = Chunk<LayerArrays>;
+
 export interface CityMeshes {
-  buildings: LayerArrays;
-  scenery: LayerArrays;
-  roads: LayerArrays;
-  ground: LayerArrays;
-  /** Concrete for flyovers and footbridges: deck edges, barriers, pillars. */
-  structures: LayerArrays;
+  /** Each layer is split into grid cells (src/geometry/chunks.ts) so cells off screen are skipped. */
+  buildings: LayerChunk[];
+  scenery: LayerChunk[];
+  roads: LayerChunk[];
+  ground: LayerChunk[];
+  /** Concrete for flyovers and footbridges (deck edges, barriers, pillars), plus walls, fences and hedges. */
+  structures: LayerChunk[];
   /** See-through fence along the playable edge (becomes the invisible wall for the car). */
   edge: LayerArrays;
-  /** Rooftop details, drawn as instances. */
-  props: RoofProp[];
+  /** Rooftop details and street fixtures, drawn as instances, grouped by the same grid cells. */
+  props: Chunk<Prop[]>[];
+  /** Trees, drawn as instances like props but kept visible farther away. */
+  trees: Chunk<Prop[]>[];
   triangles: number;
   ms: number;
 }
 
 export function buildCity(map: MapData): CityMeshes {
   const t0 = performance.now();
-  const buildings = new MeshBuilder({ aux: true });
-  const scenery = new MeshBuilder({ aux: true });
-  const roads = new MeshBuilder({ aux: true });
-  const ground = new MeshBuilder();
+  const buildings = new ChunkedBuilder({ aux: true });
+  const scenery = new ChunkedBuilder({ aux: true });
+  const roads = new ChunkedBuilder({ aux: true });
+  const ground = new ChunkedBuilder();
   const edge = new MeshBuilder();
-  const structures = new MeshBuilder();
+  const structures = new ChunkedBuilder();
 
   for (const b of map.buildings) {
     const jitter = 0.92 + idUnit(b.id) * 0.14;
     const wall: RGB = b.scenery ? col(PALETTE.scenery) : shade(col(buildingColor(b)), jitter);
     const base = b.minH ?? 0;
     const colors = { wall, roof: shade(wall, 0.8), windows: windowStyle(b) };
-    extrudeBuilding(b.scenery ? scenery : buildings, b.rings, b.h - base, colors, base);
+    if (b.rings[0]?.length) extrudeBuilding((b.scenery ? scenery : buildings).at(b.rings[0][0]), b.rings, b.h - base, colors, base);
   }
 
   const drive: DeckStyle = {
@@ -179,16 +210,22 @@ export function buildCity(map: MapData): CityMeshes {
   addRoads(roads, structures, map, drive, walk);
 
   const landuseY = landuseHeights(map.areas);
-  for (const a of map.areas) addFlatPolygon(ground, a.rings, areaY(a, landuseY), col(areaColor(a)));
+  for (const a of map.areas) {
+    if (a.rings[0]?.length) addFlatPolygon(ground.at(vertexCentroid(a.rings[0])), a.rings, areaY(a, landuseY), col(areaColor(a)));
+  }
 
   if (map.playable && map.playable.length >= 3) {
     addWalls(edge, withWinding(map.playable, true), 0, EDGE_HEIGHT, col(PALETTE.playableEdge));
   }
 
-  const props = map.buildings.flatMap(roofProps);
+  for (const b of map.barriers ?? []) {
+    const c = BARRIER_COLORS[b.kind];
+    addBarrier(structures.at(b.points[Math.floor(b.points.length / 2)]), b.points, BARRIER_THICKNESS[b.kind], b.h, col(c.side), col(c.top));
+  }
 
   const out = {
-    props,
+    props: propCells([...map.buildings.flatMap(roofProps), ...(map.fixtures ?? []).flatMap(fixtureProps)]),
+    trees: propCells((map.trees ?? []).flatMap(treeProps)),
     buildings: buildings.build(),
     scenery: scenery.build(),
     roads: roads.build(),
@@ -203,6 +240,18 @@ export function buildCity(map: MapData): CityMeshes {
       structures.triangleCount + edge.triangleCount,
     ms: performance.now() - t0,
   };
+}
+
+/** Groups props by grid cell (the cell of each prop's own position), in a stable order. */
+export function propCells(props: Prop[]): Chunk<Prop[]>[] {
+  const cells = new Map<string, Prop[]>();
+  for (const p of props) {
+    const key = chunkKey([p.x, p.y]);
+    const list = cells.get(key);
+    if (list) list.push(p);
+    else cells.set(key, [p]);
+  }
+  return [...cells].sort(([a], [b]) => a.localeCompare(b)).map(([key, arrays]) => ({ key, arrays }));
 }
 
 const length = (pts: Point[]) => pts.slice(1).reduce((d, p, i) => d + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0);
@@ -225,7 +274,9 @@ function endAux(r: Road, atStart: boolean, total: number, mark: number): (q: Poi
  * Roads, junction polygons, sidewalks and crossings into the road layer; flyover
  * structure into its own layer.
  */
-function addRoads(roads: MeshBuilder, structures: MeshBuilder, map: MapData, drive: DeckStyle, walk: DeckStyle) {
+function addRoads(roadCells: ChunkedBuilder, structureCells: ChunkedBuilder, map: MapData, drive: DeckStyle, walk: DeckStyle) {
+  /** Everything for one road goes into the cell of its middle point. */
+  const mid = (r: Road) => r.points[Math.floor(r.points.length / 2)];
   // Road ends that meet other roads but have no junction polygon get a disc to fill
   // the wedge-shaped gap. Counted per network so footways don't trigger road discs.
   const shared = new Map<string, number>();
@@ -243,6 +294,7 @@ function addRoads(roads: MeshBuilder, structures: MeshBuilder, map: MapData, dri
     if (r.cls === 'path' || r.z) continue;
     const sides = sidewalkBands(r);
     const w = SIDEWALK_WIDTH[r.cls];
+    const roads = roadCells.at(mid(r));
     if (sides.left) addSidewalk(roads, r.points, r.w, w, 'left', SIDEWALK_Y, sidewalk);
     if (sides.right) addSidewalk(roads, r.points, r.w, w, 'right', SIDEWALK_Y, sidewalk);
   }
@@ -253,6 +305,7 @@ function addRoads(roads: MeshBuilder, structures: MeshBuilder, map: MapData, dri
     const color = col(PALETTE.road[cls]);
     for (const r of map.roads) {
       if (r.cls !== cls) continue;
+      const roads = roadCells.at(mid(r));
       const mark = cls === 'path' ? 0 : markCode(MARK.lanes, { lanes: laneCount(r), oneway: r.oneway, rank: RANK[cls] });
       addRoadRibbon(roads, r.points, r.w, ROAD_Y[cls], color, { z: r.z, trim: r.trim, mark });
       // The cut-back ends as plain asphalt, so curves and merges never leave a gap.
@@ -267,14 +320,14 @@ function addRoads(roads: MeshBuilder, structures: MeshBuilder, map: MapData, dri
         // A hair below the ribbons, so only the wedge gaps show.
         addDisc(roads, p, r.w / 2, ROAD_Y[cls] - 0.015 + (r.z?.[i] ?? 0), color, 8, endAux(r, atStart, total, mark));
       }
-      if (r.z) addDeckStructure(structures, r.points, r.w, r.z, cls === 'path' ? walk : drive);
+      if (r.z) addDeckStructure(structureCells.at(mid(r)), r.points, r.w, r.z, cls === 'path' ? walk : drive);
     }
   }
 
   for (const j of map.junctions ?? []) {
-    addFlatPolygon(roads, [j.ring], (j.patch ? PATCH_Y : ROAD_Y[j.cls]) + j.z, col(PALETTE.road[j.cls]));
+    addFlatPolygon(roadCells.at(j.ring[0]), [j.ring], (j.patch ? PATCH_Y : ROAD_Y[j.cls]) + j.z, col(PALETTE.road[j.cls]));
   }
 
   // Zebras: white bars over the road's own asphalt color, so lane lines don't show through.
-  for (const c of map.crossings ?? []) addZebra(roads, c.c, c.dir, c.half, c.w, CROSSING_Y + c.z, col(PALETTE.road[c.cls]));
+  for (const c of map.crossings ?? []) addZebra(roadCells.at(c.c), c.c, c.dir, c.half, c.w, CROSSING_Y + c.z, col(PALETTE.road[c.cls]));
 }

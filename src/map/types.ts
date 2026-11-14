@@ -107,6 +107,45 @@ export interface Area {
   rings: Ring[];
 }
 
+/** Wall, fence, hedge or guard rail (OSM `barrier=*` ways), standing on the ground. */
+export type BarrierKind = 'wall' | 'fence' | 'hedge' | 'rail';
+
+export interface Barrier {
+  id: string;
+  kind: BarrierKind;
+  /** Height in meters (tagged, or a default per kind). */
+  h: number;
+  /** Outside the playable area: rendered, but never collidable. */
+  scenery?: true;
+  /** Cut open where roads and paths pass through, so it never blocks a street. */
+  points: Point[];
+}
+
+/** Broadleaf crown or palm. Tagged species decide; untagged trees get a seeded pick. */
+export type TreeShape = 'broad' | 'palm';
+
+export interface Tree {
+  p: Point;
+  shape: TreeShape;
+  /** Size factor around 1 (seeded per tree, or from a height tag). */
+  s: number;
+}
+
+/** Small things on the street: gate posts, parking booms, bollards, concrete blocks. */
+export type FixtureKind = 'gate' | 'boom' | 'bollard' | 'block';
+
+export interface Fixture {
+  kind: FixtureKind;
+  p: Point;
+  /**
+   * Direction the fixture spans, radians counter-clockwise from east: across the road
+   * for gates and booms (or along the wall for a gate in a wall), along the road for blocks.
+   */
+  rot: number;
+  /** Gates and booms: the opening they span, in meters. */
+  span?: number;
+}
+
 export interface MapStats {
   features: number;
   roads: number;
@@ -122,10 +161,12 @@ export interface MapStats {
     droppedRoads: number;
     droppedAreas: number;
   };
+  /** Filled in when barriers and trees from the second export were added. */
+  extras?: { barriers: number; barrierMeters: number; gapsCut: number; trees: number; treesMoved: number; fixtures: number; dropped: Record<string, number> };
 }
 
 export interface MapData {
-  version: 5;
+  version: 6;
   origin: { lat: number; lon: number };
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   /** Outline of the drivable area, if one was given to the pipeline. */
@@ -136,5 +177,9 @@ export interface MapData {
   crossings: Crossing[];
   buildings: Building[];
   areas: Area[];
+  /** From the second export (data/barriers.overpassql). Missing when it wasn't given. */
+  barriers?: Barrier[];
+  trees?: Tree[];
+  fixtures?: Fixture[];
   stats: MapStats;
 }

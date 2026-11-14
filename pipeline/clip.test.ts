@@ -14,7 +14,7 @@ const building = (id: string, cx: number, cy: number): Building => ({
 });
 
 const map: MapData = {
-  version: 5,
+  version: 6,
   junctions: [],
   crossings: [],
   origin: { lat: 14.55, lon: 121.05 },

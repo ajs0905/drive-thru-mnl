@@ -9,7 +9,7 @@ function ring(inner: number): MapData {
   const s = inner / 2 + 5; // centerline offset so road edges stop `inner / 2` from the middle
   const e = s + 5;
   return {
-    version: 5,
+    version: 6,
     origin: { lat: 0, lon: 0 },
     bounds: { minX: -50, minY: -50, maxX: 50, maxY: 50 },
     roads: [

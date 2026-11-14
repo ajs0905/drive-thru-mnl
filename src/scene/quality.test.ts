@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dprFor, guessQuality, QUALITY } from './quality';
+import { dprFor, guessQuality, nextFactor, QUALITY } from './quality';
 
 describe('guessQuality', () => {
   it('starts phones on low, small machines on medium, the rest on high', () => {
@@ -18,7 +18,11 @@ describe('QUALITY', () => {
     expect(medium.shadowMap).toBeLessThanOrEqual(high.shadowMap);
     expect(low.dpr[1]).toBeLessThanOrEqual(medium.dpr[1]);
     expect(medium.dpr[1]).toBeLessThanOrEqual(high.dpr[1]);
-    expect(low.post).toBe(false);
+    expect(low.msaa).toBe(false);
+    expect(low.propsDistance).toBeLessThanOrEqual(medium.propsDistance);
+    expect(medium.propsDistance).toBeLessThanOrEqual(high.propsDistance);
+    expect(low.treeDistance).toBeLessThanOrEqual(medium.treeDistance);
+    expect(medium.treeDistance).toBeLessThanOrEqual(high.treeDistance);
   });
 });
 
@@ -29,5 +33,15 @@ describe('dprFor', () => {
     expect(dprFor([1, 1.5], 0.5, 2)).toBe(1.25);
     expect(dprFor([1, 1.5], 1, 1)).toBe(1); // a plain 1x screen
     expect(dprFor([0.6, 1], 3, 1)).toBe(1);
+  });
+});
+
+describe('nextFactor', () => {
+  it('steps down on slow frames, up with headroom, and holds in between', () => {
+    expect(nextFactor(1, 30)).toBe(0.8);
+    expect(nextFactor(0.1, 30)).toBe(0);
+    expect(nextFactor(0.5, 120)).toBe(0.6);
+    expect(nextFactor(1, 144)).toBe(1);
+    expect(nextFactor(0.7, 50)).toBe(0.7);
   });
 });

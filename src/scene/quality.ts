@@ -1,7 +1,8 @@
 /**
  * Quality tiers: the same city everywhere, with the expensive effects switched by
- * device. Picked by hand for now (HUD, or ?q=low|medium|high); automatic detection
- * from frame times comes with the tiles and tiers milestone (docs/ARCHITECTURE.md §8).
+ * device. Picked by hand for now (HUD, or ?q=low|medium|high); resolution adapts to
+ * the frame rate within each tier. Automatic tier switching comes with the tiles and
+ * tiers milestone (docs/ARCHITECTURE.md §8).
  */
 export type Quality = 'low' | 'medium' | 'high';
 export const QUALITIES: Quality[] = ['low', 'medium', 'high'];
@@ -12,26 +13,51 @@ export interface QualitySettings {
    * most) when the frame rate drops, then back up when there's headroom.
    */
   dpr: [number, number];
+  /** Hardware anti-aliasing (MSAA) on the canvas. */
+  msaa: boolean;
   /** Sun shadows near the camera: shadow map size, or 0 for none. */
   shadowMap: number;
-  /** Post effects (bloom, tone mapping pass, SMAA). */
-  post: boolean;
+  /** While the camera moves, re-render the shadow map at most every this many frames. */
+  shadowEvery: number;
   /** Share of filler city blocks past the map (0..1). */
   filler: number;
   /** Procedural clouds in the sky shader (noise on every sky pixel). */
   clouds: boolean;
+  /** Rooftop details and street fixtures are drawn only within this distance of the camera's focus (m). */
+  propsDistance: number;
+  /** Trees, the same way: they stay visible farther than small props. */
+  treeDistance: number;
 }
 
 export const QUALITY: Record<Quality, QualitySettings> = {
-  low: { dpr: [0.6, 1], shadowMap: 0, post: false, filler: 0.4, clouds: false },
-  medium: { dpr: [0.75, 1.25], shadowMap: 1024, post: false, filler: 1, clouds: true },
-  high: { dpr: [1, 1.5], shadowMap: 2048, post: true, filler: 1, clouds: true },
+  low: { dpr: [0.6, 1], msaa: false, shadowMap: 0, shadowEvery: 0, filler: 0.4, clouds: false, propsDistance: 500, treeDistance: 1000 },
+  medium: { dpr: [0.75, 1.25], msaa: true, shadowMap: 1024, shadowEvery: 4, filler: 1, clouds: true, propsDistance: 900, treeDistance: 1800 },
+  high: { dpr: [1, 1.25], msaa: true, shadowMap: 2048, shadowEvery: 2, filler: 1, clouds: true, propsDistance: 1400, treeDistance: 3000 },
 };
 
 /** Pixel ratio for a performance factor (1 = full) within a tier's range, never above the screen's. */
 export function dprFor(range: [number, number], factor: number, screen: number): number {
   const [lo, hi] = range;
   return Math.min(screen, lo + (hi - lo) * Math.max(0, Math.min(1, factor)));
+}
+
+/** Frame rates below this lower the resolution; above `RAISE_FPS` raise it again. */
+export const LOWER_FPS = 45;
+export const RAISE_FPS = 57;
+
+/**
+ * Next performance factor after measuring an average frame rate over a run of
+ * consecutive frames. Steps down faster than up, so it settles instead of bouncing.
+ */
+export function nextFactor(factor: number, fps: number): number {
+  if (fps < LOWER_FPS) return Math.max(0, Math.round((factor - 0.2) * 10) / 10);
+  if (fps > RAISE_FPS) return Math.min(1, Math.round((factor + 0.1) * 10) / 10);
+  return factor;
+}
+
+/** Continuous rendering (`?render=always`), for benchmarks. Otherwise frames are drawn only when something changes. */
+export function alwaysRender(): boolean {
+  return new URLSearchParams(window.location.search).get('render') === 'always';
 }
 
 const KEY = 'drive-thru-mnl.quality';

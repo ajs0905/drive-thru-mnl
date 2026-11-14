@@ -4,7 +4,9 @@
  * (the controls' target), sized by how far away the camera is, so close-ups get
  * sharp shadows and overviews still get some. The square moves in whole shadow-map
  * texels, which keeps shadow edges from crawling as the camera pans. The city doesn't
- * move, so the shadow map is only re-rendered when that square moves or resizes.
+ * move, so the shadow map is only re-rendered when that square moves or resizes, and
+ * while the camera keeps moving at most every `shadowEvery` frames (the light stays
+ * put in between, so shadows don't slide).
  */
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
@@ -14,7 +16,7 @@ import { SKY } from './skyConfig';
 
 const SUN_DISTANCE = 2500;
 
-function useSun(shadowMap: number) {
+function useSun(shadowMap: number, shadowEvery: number) {
   const sun = useMemo(() => {
     const light = new DirectionalLight(SKY.sun, SKY.sunIntensity);
     light.castShadow = shadowMap > 0;
@@ -28,43 +30,59 @@ function useSun(shadowMap: number) {
       light.shadow.needsUpdate = true;
     }
     const focus = new Vector3();
-    const frame = { half: 0, x: NaN, z: NaN };
-    const update = (camera: Camera, target: Vector3 | undefined) => {
-      focus.copy(target ?? new Vector3());
-      const half = shadowHalfSize(camera.position.distanceTo(focus));
-      if (shadowMap > 0) {
-        focus.x = snapToTexel(focus.x, half, shadowMap);
-        focus.z = snapToTexel(focus.z, half, shadowMap);
-        if (Math.abs(half - frame.half) > half * 0.05) {
-          const cam = light.shadow.camera;
-          cam.left = -half;
-          cam.right = half;
-          cam.top = half;
-          cam.bottom = -half;
-          cam.updateProjectionMatrix();
-          frame.half = half;
-          light.shadow.needsUpdate = true;
-        }
-        if (focus.x !== frame.x || focus.z !== frame.z) {
-          frame.x = focus.x;
-          frame.z = focus.z;
-          light.shadow.needsUpdate = true;
-        }
-      }
+    // What the shadow map was last rendered for, and when.
+    const shown = { half: 0, x: NaN, z: NaN, frame: -Infinity };
+    const clock = { frame: 0 };
+    const place = (half: number) => {
       light.position.copy(focus).addScaledVector(SKY.sunDir, SUN_DISTANCE);
       light.target.position.copy(focus);
       light.target.updateMatrixWorld();
+      if (shadowMap > 0 && half !== shown.half) {
+        const cam = light.shadow.camera;
+        cam.left = -half;
+        cam.right = half;
+        cam.top = half;
+        cam.bottom = -half;
+        cam.updateProjectionMatrix();
+      }
+    };
+    /**
+     * Per frame. Returns true while a shadow update is still waiting (the caller asks
+     * for another frame, so the shadows catch up after the camera stops).
+     */
+    const update = (camera: Camera, target: Vector3 | undefined): boolean => {
+      clock.frame++;
+      focus.copy(target ?? new Vector3());
+      const half = shadowHalfSize(camera.position.distanceTo(focus));
+      if (shadowMap === 0) {
+        place(half); // no shadows: only the direction matters
+        return false;
+      }
+      focus.x = snapToTexel(focus.x, half, shadowMap);
+      focus.z = snapToTexel(focus.z, half, shadowMap);
+      const resized = Math.abs(half - shown.half) > half * 0.05;
+      const moved = focus.x !== shown.x || focus.z !== shown.z;
+      if (!resized && !moved) return false;
+      // Throttled while moving: the light stays where its shadow map was rendered until the next update.
+      if (clock.frame - shown.frame < shadowEvery) return true;
+      const newHalf = resized ? half : shown.half;
+      place(newHalf);
+      Object.assign(shown, { half: newHalf, x: focus.x, z: focus.z, frame: clock.frame });
+      light.shadow.needsUpdate = true;
+      return false;
     };
     return { light, update };
-  }, [shadowMap]);
+  }, [shadowMap, shadowEvery]);
   useEffect(() => () => sun.light.dispose(), [sun]);
   return sun;
 }
 
-export function Sun({ shadowMap }: { shadowMap: number }) {
-  const sun = useSun(shadowMap);
+export function Sun({ shadowMap, shadowEvery }: { shadowMap: number; shadowEvery: number }) {
+  const sun = useSun(shadowMap, shadowEvery);
   const controls = useThree((s) => s.controls) as unknown as { target?: Vector3 } | null;
-  useFrame(({ camera }) => sun.update(camera, controls?.target));
+  useFrame(({ camera, invalidate }) => {
+    if (sun.update(camera, controls?.target)) invalidate();
+  });
   return (
     <>
       <primitive object={sun.light} />

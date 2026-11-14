@@ -2,10 +2,26 @@ import { describe, expect, it } from 'vitest';
 import type { MapData } from '../map/types';
 import { decodeMark, MARK } from '../geometry/road';
 import { decodeWindows, WINDOWS } from '../geometry/extrude';
-import { buildCity, buildingColor, CROSSING_Y, landuseHeights, PALETTE, SIDEWALK_Y, windowStyle } from './cityGeometry';
+import { buildCity, buildingColor, CROSSING_Y, landuseHeights, PALETTE, SIDEWALK_Y, windowStyle, type LayerArrays, type LayerChunk } from './cityGeometry';
+
+/** A chunked layer merged back into one set of arrays, for checking totals. */
+function merged(chunks: LayerChunk[]): LayerArrays {
+  const cat = (pick: (a: LayerArrays) => Float32Array | undefined) => {
+    const parts = chunks.map((c) => pick(c.arrays) ?? new Float32Array());
+    const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
+  };
+  const aux = chunks.some((c) => c.arrays.aux);
+  return { position: cat((a) => a.position), normal: cat((a) => a.normal), color: cat((a) => a.color), ...(aux && { aux: cat((a) => a.aux) }) };
+}
 
 const sample: MapData = {
-  version: 5,
+  version: 6,
   junctions: [],
   crossings: [],
   origin: { lat: 14.5509, lon: 121.0503 },
@@ -29,7 +45,15 @@ const sample: MapData = {
 };
 
 describe('buildCity', () => {
-  const city = buildCity(sample);
+  const built = buildCity(sample);
+  const city = {
+    ...built,
+    buildings: merged(built.buildings),
+    scenery: merged(built.scenery),
+    roads: merged(built.roads),
+    ground: merged(built.ground),
+    props: built.props.flatMap((c) => c.arrays),
+  };
 
   it('fills every layer and keeps scenery separate', () => {
     expect(city.buildings.position.length / 9).toBe(4 * 2 + 2);
@@ -59,7 +83,7 @@ describe('buildCity', () => {
 
   it('draws junction polygons, sidewalks and zebra crossings into the road layer', () => {
     const modes = (m: MapData) => {
-      const { aux, position } = buildCity(m).roads;
+      const { aux, position } = merged(buildCity(m).roads);
       const out = new Map<number, number[]>(); // mode -> heights
       for (let v = 0; v < aux!.length / 4; v++) {
         const mode = decodeMark(aux![v * 4 + 3]).mode;
@@ -89,6 +113,18 @@ describe('buildCity', () => {
   it('builds no fence when there is no playable area', () => {
     expect(sample.playable).toBeUndefined();
     expect(city.edge.position.length).toBe(0);
+  });
+
+  it('splits layers into grid cells, each with its own geometry', () => {
+    const wide = buildCity({
+      ...sample,
+      buildings: [
+        ...sample.buildings,
+        { id: 'way/9', type: 'office', h: 20, hSrc: 'estimate', rings: [[[2000, 0], [2020, 0], [2020, 20], [2000, 20]]] },
+      ],
+    });
+    expect(wide.buildings.map((c) => c.key)).toEqual(['0,0', '1,0']);
+    expect(wide.buildings.every((c) => c.arrays.position.length > 0)).toBe(true);
   });
 
   it('builds a fence when there is one', () => {
@@ -139,5 +175,29 @@ describe('landuseHeights', () => {
       const y = landuseHeights(order);
       expect(y.get(small)!).toBeGreaterThan(y.get(big)!);
     }
+  });
+});
+
+describe('buildCity with barriers, trees and fixtures', () => {
+  const plain = buildCity(sample);
+  const city = buildCity({
+    ...sample,
+    barriers: [{ id: 'w', kind: 'wall', h: 2.4, points: [[-90, 90], [-70, 90]] }],
+    trees: [{ p: [-60, 80], shape: 'broad', s: 1 }, { p: [1500, 80], shape: 'palm', s: 1 }],
+    fixtures: [{ kind: 'boom', p: [-20, -10], rot: Math.PI / 2, span: 5 }],
+  });
+  const tris = (chunks: LayerChunk[]) => chunks.reduce((n, c) => n + c.arrays.position.length / 9, 0);
+
+  it('draws barriers with the flyover concrete (no extra draw calls)', () => {
+    expect(tris(city.structures) - tris(plain.structures)).toBe(4 * 2 + 2);
+  });
+
+  it('puts trees in their own grid cells and fixtures with the rooftop props', () => {
+    expect(city.trees.map((c) => [c.key, c.arrays.map((p) => p.kind)])).toEqual([
+      ['-1,0', ['trunk', 'canopy']],
+      ['1,0', ['palmTrunk', 'crown']],
+    ]);
+    const kinds = city.props.flatMap((c) => c.arrays.map((p) => p.kind));
+    expect(kinds.filter((k) => k === 'post' || k === 'boom')).toEqual(['post', 'boom']);
   });
 });

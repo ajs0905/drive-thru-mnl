@@ -128,6 +128,43 @@ export function runQa(map: MapData): Issue[] {
   }
 
   issues.push(...roadIssues(map));
+  issues.push(...extrasIssues(map, ground, inside));
+  return issues;
+}
+
+/**
+ * 6. Trees standing on a road or inside a building, and walls, fences or hedges across a
+ * road or path (guard rails and jersey barriers line roads on purpose, so they're left out).
+ */
+function extrasIssues(map: MapData, ground: SegmentGrid<Road>, inside: (p: Point) => number | undefined): Issue[] {
+  const issues: Issue[] = [];
+  const paths = new SegmentGrid<Road>(30);
+  for (const r of map.roads) {
+    if (r.cls !== 'path') continue;
+    for (let i = 0; i < r.points.length - 1; i++) if (Math.max(zAt(r, i), zAt(r, i + 1)) <= 1) paths.insert(r.points[i], r.points[i + 1], r);
+  }
+  const depth = (p: Point, grid: SegmentGrid<Road>) =>
+    Math.max(0, ...grid.query(p, p, 20).map((e) => e.item.w / 2 - distanceToSegment(p, e.a, e.b)));
+  for (const t of map.trees ?? []) {
+    const d = depth(t.p, ground);
+    if (d > 0) issues.push({ kind: 'tree-on-road', at: t.p, detail: `${d.toFixed(1)} m in`, severity: d });
+    else if (inside(t.p) !== undefined) issues.push({ kind: 'tree-in-building', at: t.p, detail: `tree at ${t.p.join(', ')}`, severity: 1 });
+  }
+  for (const b of map.barriers ?? []) {
+    if (b.kind === 'rail') continue;
+    let worst = 0;
+    let at: Point = b.points[0];
+    for (let i = 0; i < b.points.length - 1; i++) {
+      const [a, c] = [b.points[i], b.points[i + 1]];
+      const steps = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1])));
+      for (let k = 0; k <= steps; k++) {
+        const p: Point = [a[0] + ((c[0] - a[0]) * k) / steps, a[1] + ((c[1] - a[1]) * k) / steps];
+        const d = Math.max(depth(p, ground), depth(p, paths));
+        if (d > worst) [worst, at] = [d, p];
+      }
+    }
+    if (worst > 0) issues.push({ kind: 'barrier-on-road', at, detail: `${b.id} ${b.kind} ${worst.toFixed(1)} m in`, severity: worst });
+  }
   return issues;
 }
 

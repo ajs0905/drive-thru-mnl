@@ -6,7 +6,7 @@ Where the map comes from and what the pipeline does to it. For how this fits int
 
 | What | Where | License |
 | --- | --- | --- |
-| Roads, buildings, land use, water | [OpenStreetMap](https://www.openstreetmap.org), exported with [overpass-turbo](https://overpass-turbo.eu) | [ODbL](https://www.openstreetmap.org/copyright). Shown as "© OpenStreetMap contributors" in the game and README. |
+| Roads, buildings, land use, water; walls, fences, trees, gates | [OpenStreetMap](https://www.openstreetmap.org), exported with [overpass-turbo](https://overpass-turbo.eu) | [ODbL](https://www.openstreetmap.org/copyright). Shown as "© OpenStreetMap contributors" in the game and README. |
 | Playable area outline | Drawn by hand in [geojson.io](https://geojson.io) | Part of this repo |
 
 ODbL lets us use and adapt the data, including in a public project, as long as it's attributed and the processed database is shared under the same license.
@@ -17,8 +17,10 @@ ODbL lets us use and adapt the data, including in a public project, as long as i
 | --- | --- |
 | [`data/bgc.overpassql`](../data/bgc.overpassql) | The Overpass query: roads, buildings, land use, parks and water in the box 14.5370, 121.0370 to 14.5650, 121.0640 |
 | `data/raw/bgc.geojson` | The raw export (19 MB, about 25,900 features) |
+| [`data/barriers.overpassql`](../data/barriers.overpassql) | Second query, same box: walls, fences, hedges, guard rails, gates, booms, bollards, trees, plus traffic lights and street lamps for later |
+| `data/raw/bgc-barriers.geojson` | Its raw export (550 KB, 1,634 features). Optional: without it the map has no walls or trees. |
 | [`data/playable-area.geojson`](../data/playable-area.geojson) | 15-point polygon around BGC, 3.51 km². Where the car can drive. |
-| `public/data/bgc.json` | The processed map the game loads (2.6 MB, 657 KB gzipped). Generated: don't edit by hand. |
+| `public/data/bgc.json` | The processed map the game loads (3.1 MB, 751 KB gzipped). Generated: don't edit by hand. |
 | `public/data/sample.json` | Tiny map built from the test fixture, used when `bgc.json` is missing |
 | `data/qa-baseline.json` | Accepted map QA counts; CI fails if a count goes above it |
 
@@ -28,8 +30,9 @@ Only needed for newer OpenStreetMap edits or a different area:
 
 1. Open [overpass-turbo.eu](https://overpass-turbo.eu), paste the query from `data/bgc.overpassql`, click **Run**.
 2. **Export > GeoJSON > download**, save it as `data/raw/bgc.geojson`.
-3. `npm run pipeline` to rebuild `public/data/bgc.json`.
-4. `npm run qa` to check for regressions. If counts went down, update `data/qa-baseline.json` (`npm run qa -- --json > data/qa-baseline.json`).
+3. Same for `data/barriers.overpassql`, saved as `data/raw/bgc-barriers.geojson`. If overpass-turbo says `duplicate_query`, wait a minute and run once, or pick another server under Settings.
+4. `npm run pipeline` to rebuild `public/data/bgc.json`.
+5. `npm run qa` to check for regressions. If counts went down, update `data/qa-baseline.json` (`npm run qa -- --json > data/qa-baseline.json`).
 
 To change the drivable area, open `data/playable-area.geojson` at geojson.io, drag the points, save, and run the pipeline again.
 
@@ -113,6 +116,16 @@ BGC's malls are linked by skywalks that OSM maps straight through the buildings.
 - Found by rasterizing exactly what the renderer paves (road ribbons with their cut-back ends, junction polygons, gap discs) on a 0.5 m grid around every junction, then flood-filling the unpaved cells from the grid's edge. Unpaved cells the fill can't reach are enclosed.
 - Holes up to 10 m², and thin slivers (under 1.2 m thick on average), get patch polygons drawn just under the road surfaces. Long slivers are paved in 8 m chunks so each chunk's convex hull follows curves. A second pass catches crumbs at the patches' edges. Bigger enclosed areas are often real (parking loops, roundabout centers, slip-lane islands) and stay; map QA counts them.
 
+### 10. Walls, trees and street fixtures (`pipeline/barriers.ts`)
+
+From the second export. Kept as a separate step and file so refreshing it never changes the roads or buildings.
+
+- **Walls, fences, hedges, guard rails** (`barrier=*` ways; closed ones like the Manila Golf Club wall come as polygons and are walked as outlines). Heights from `height` tags, else 2.4 m walls, 1.2 m retaining walls, 1.8 m fences, 1.3 m hedges, 0.8 m rails. Clipped like roads.
+- Walls, fences and hedges are **cut open wherever they stand on a road or path** (sampled every 25 cm against the road surface plus 40 cm), so a mapped wall never blocks a street. Guard rails and jersey barriers line roads on purpose and stay whole. A gate in a wall with no road through it opens a 4 m gap.
+- **Trees** from `natural=tree` nodes and `natural=tree_row` lines (one every 8 m). Palms from `leaf_cycle=palm` or the species (royal palms, coconuts and others); broadleaf for other tagged species; untagged ones are 25% palms, seeded per tree. Size from a `height` tag or seeded. Trees up to 2 m into a road are street trees mapped a little off and are moved to the curb; deeper ones, and trees in buildings, in water or on top of another tree, are dropped.
+- **Fixtures**: gates and parking booms are turned across the road they sit on and sized to it; bollards and concrete blocks stay where mapped. Lowered-curb points are ignored; traffic lights and street lamps are kept in the raw export for the polish milestone.
+- Result: 43 barrier pieces (5.9 km, 27 openings), 919 trees (254 palms; 190 moved to the curb), 158 gates, 72 booms, 54 bollards, 12 blocks.
+
 ## Projection
 
 Equirectangular around a fixed origin (14.5509 N, 121.0503 E):
@@ -151,12 +164,15 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Junction polygons reaching far past their roads | (new) | 0 |
 | Zebras overlapping each other or inside a junction | 76 | 0 |
 | Enclosed unpaved patches at junctions (holes, slivers) | 140 | 37 (real islands up to 60 m²) |
+| Trees standing on a road | (new) 226 before moving and dropping | 0 |
+| Trees inside a building | (new) | 0 |
+| Walls, fences or hedges across a road or path | (new) | 0 |
 
 Most remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs). The rest are houses closer than 2.8 m to the street center, or roads mapped straight through a building.
 
 ## Data format
 
-`public/data/bgc.json` is a `MapData` object (version 5), defined in [`src/map/types.ts`](../src/map/types.ts). Field-by-field summary and the coordinate convention: [ARCHITECTURE.md, Data contract](ARCHITECTURE.md#5-data-contract).
+`public/data/bgc.json` is a `MapData` object (version 6), defined in [`src/map/types.ts`](../src/map/types.ts). Field-by-field summary and the coordinate convention: [ARCHITECTURE.md, Data contract](ARCHITECTURE.md#5-data-contract).
 
 ## Known data issues
 
