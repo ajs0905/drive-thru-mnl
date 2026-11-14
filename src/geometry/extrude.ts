@@ -3,7 +3,7 @@
  */
 import earcut from 'earcut';
 import type { Ring } from '../map/types';
-import { MeshBuilder, to3, type RGB, type Vec3 } from './meshBuilder';
+import { MeshBuilder, to3, type RGB, type Vec3, type Vec4 } from './meshBuilder';
 import { withWinding } from './polygon';
 
 const UP: Vec3 = [0, 1, 0];
@@ -37,11 +37,33 @@ export function addFlatPolygon(mb: MeshBuilder, rings: Ring[], y: number, color:
   return idx.length / 3;
 }
 
+/** Floor-to-floor height used for windows (matches the height estimates in pipeline/heights.ts). */
+export const FLOOR_HEIGHT = 3.2;
+
+/**
+ * Window styles, packed into one float per wall vertex for the building shader
+ * (src/scene/buildingMaterial.ts): kind + 8·variant + 128·floors.
+ */
+export const WINDOWS = { none: 0, glass: 1, office: 2, apartment: 3, house: 4, parking: 5 } as const;
+export type WindowKind = (typeof WINDOWS)[keyof typeof WINDOWS];
+
+export function windowCode(kind: WindowKind, variant: number, floors: number): number {
+  const v = Math.max(0, Math.min(15, Math.floor(variant)));
+  const f = Math.max(0, Math.min(200, Math.floor(floors)));
+  return kind + 8 * v + 128 * f;
+}
+
+export function decodeWindows(code: number): { kind: number; variant: number; floors: number } {
+  return { kind: code % 8, variant: Math.floor(code / 8) % 16, floors: Math.floor(code / 128) };
+}
+
 /**
  * Adds walls for one ring. For an outward-facing wall the ring must be wound so the
  * solid is on its left: counter-clockwise for the outer ring, clockwise for holes.
+ * With `windows` (a windowCode) and a MeshBuilder with aux, each vertex carries
+ * [meters along this wall, meters above the base, wall length, windows].
  */
-export function addWalls(mb: MeshBuilder, ring: Ring, base: number, top: number, color: RGB) {
+export function addWalls(mb: MeshBuilder, ring: Ring, base: number, top: number, color: RGB, windows = 0) {
   for (let i = 0; i < ring.length; i++) {
     const [ax, ay] = ring[i];
     const [bx, by] = ring[(i + 1) % ring.length];
@@ -55,14 +77,18 @@ export function addWalls(mb: MeshBuilder, ring: Ring, base: number, top: number,
     const b0 = to3(bx, by, base);
     const a1 = to3(ax, ay, top);
     const b1 = to3(bx, by, top);
-    mb.triangle(a0, b0, b1, n, color);
-    mb.triangle(a0, b1, a1, n, color);
+    const h = top - base;
+    const [u0, u1, v0, v1]: Vec4[] = [[0, 0, len, windows], [len, 0, len, windows], [0, h, len, windows], [len, h, len, windows]];
+    mb.triangle(a0, b0, b1, n, color, [u0, u1, v1]);
+    mb.triangle(a0, b1, a1, n, color, [u0, v1, v0]);
   }
 }
 
 export interface ExtrudeColors {
   wall: RGB;
   roof: RGB;
+  /** Window style for the walls (windowCode); 0 = plain. */
+  windows?: number;
 }
 
 /**
@@ -80,8 +106,8 @@ export function extrudeBuilding(
   const outer = withWinding(rings[0], true);
   const holes = rings.slice(1).filter((h) => h.length >= 3).map((h) => withWinding(h, false));
   const top = base + height;
-  addWalls(mb, outer, base, top, colors.wall);
-  for (const h of holes) addWalls(mb, h, base, top, colors.wall);
+  addWalls(mb, outer, base, top, colors.wall, colors.windows);
+  for (const h of holes) addWalls(mb, h, base, top, colors.wall, colors.windows);
   addFlatPolygon(mb, [outer, ...holes], top, colors.roof);
   // Raised structures (canopies, skybridges) are seen from below.
   if (base > 0) addFlatPolygon(mb, [outer, ...holes], base, colors.roof, true);

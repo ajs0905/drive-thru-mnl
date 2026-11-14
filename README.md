@@ -18,12 +18,17 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - **Messy data, handled.** Only 3% of buildings have a height in OSM, so heights are estimated by rules. Indoor walkways, basements and skywalks mapped through malls are cleaned up. Roads are narrowed to fit between the houses along them.
 - **Flyovers worked out from tags.** OSM only says "bridge, layer 1". The pipeline decides which bridges are really raised (only those crossing a road), builds ramps on the approach roads that stop at junctions, and adds decks, barriers and pillars.
 - **Clean intersections, painted roads.** Roads are split into a graph and every junction gets its own polygon, worked out from where the road edges meet; junctions of divided roads merge into one, and leftover gaps are found by rasterizing the road surface and paved. Lane lines, center lines, zebra crossings and curbs are drawn by a shader from per-vertex data: no textures, no extra draw calls.
-- **Fast to render.** The whole city and sky draw in 9 draw calls (about 210k triangles), built in about 250 ms.
+- **Windows without textures.** Every building gets windows from its type and height (glass towers, offices, apartments, houses, parking decks), drawn by a shader; roofs get stair housings, AC units and water tanks.
+- **No edge of the world.** Past the mapped area the city continues as filler blocks out to the haze, with the real skylines of Makati and Ortigas where they actually are, and the Rizal hills on the eastern horizon.
+- **Lighting that scales with the device.** Sun shadows that follow the camera, ambient occlusion and bloom on desktops; tone mapping and baked contact shading everywhere. A Low / Medium / High switch keeps phones smooth, and phones never download the post-effects code.
+- **Fast to render.** On Low the whole city, surroundings and sky draw in 13 draw calls (about 285k triangles), built in about 300 ms.
 - **Tested and checked.** 260+ unit tests, an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
 
 ![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags](docs/images/flyover.png)
 
 ![Junction polygons, lane markings, zebra crossings and sidewalks, all generated from OSM tags](docs/images/streets.png)
+
+![Windows by building type and rooftop water tanks, next to a barangay of low houses](docs/images/buildings.png)
 
 ## Roadmap
 
@@ -32,7 +37,8 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - [x] Flyovers and footbridges with ramps and pillars, road widths fitted to the street, map cleanup
 - [x] Map QA, architecture docs, CI
 - [x] Better roads: lane markings, clean intersections, zebra crossings, sidewalks and curbs; physically based sky with clouds
-- [ ] Better buildings: windows, roof details
+- [x] Better buildings: windows, roof details
+- [x] Lighting and surroundings: shadows, ambient occlusion, tone mapping, Low / Medium / High switch; filler city, real skylines and hills past the map
 - [ ] Walls and fences from OSM
 - [ ] Drivable car with NFS-style limits (solid buildings, barriers, surface grip, respawn)
 - [ ] Tile streaming and quality tiers for phones
@@ -52,7 +58,7 @@ The BGC map data is already in the repo, so that's all you need. Drag to pan, ri
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Start the game locally |
+| `npm run dev` | Start the game locally (add `?q=low`, `?q=medium` or `?q=high` to the URL to force a quality tier) |
 | `npm test` | Unit tests |
 | `npm run pipeline` | Rebuild `public/data/bgc.json` from the raw export |
 | `npm run qa` | Scan the map for known problems, with camera links |

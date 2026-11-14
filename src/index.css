@@ -111,6 +111,32 @@ body,
   color: #8f939c;
 }
 
+.hud .quality {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #8f939c;
+}
+
+.hud .quality button {
+  font: inherit;
+  text-transform: capitalize;
+  padding: 2px 7px;
+  border: 1px solid #3a3f4b;
+  border-radius: 4px;
+  background: transparent;
+  color: #c9ccd2;
+  cursor: pointer;
+}
+
+.hud .quality button.on {
+  background: #f5b83d;
+  border-color: #f5b83d;
+  color: #15171c;
+}
+
 .perf {
   position: absolute;
   left: 8px;

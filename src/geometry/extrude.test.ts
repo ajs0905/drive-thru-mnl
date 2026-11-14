@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ring } from '../map/types';
-import { addFlatPolygon, extrudeBuilding } from './extrude';
+import { addFlatPolygon, decodeWindows, extrudeBuilding, windowCode, WINDOWS } from './extrude';
 import { MeshBuilder, triangleNormal, type Vec3 } from './meshBuilder';
 
 const colors = { wall: [1, 0, 0] as [number, number, number], roof: [0, 0, 1] as [number, number, number] };
@@ -136,5 +136,33 @@ describe('addFlatPolygon', () => {
   it('ignores empty input', () => {
     const mb = new MeshBuilder();
     expect(addFlatPolygon(mb, [], 0, colors.roof)).toBe(0);
+  });
+});
+
+describe('wall coordinates for windows', () => {
+  it('packs and unpacks a window style', () => {
+    const code = windowCode(WINDOWS.glass, 11, 42);
+    expect(decodeWindows(code)).toEqual({ kind: WINDOWS.glass, variant: 11, floors: 42 });
+    expect(decodeWindows(windowCode(WINDOWS.house, 99, -3))).toEqual({ kind: WINDOWS.house, variant: 15, floors: 0 });
+  });
+
+  it('gives wall vertices meters along the wall, meters up, the wall length and the style', () => {
+    const mb = new MeshBuilder({ aux: true });
+    const code = windowCode(WINDOWS.office, 3, 6);
+    extrudeBuilding(mb, [square], 20, { ...colors, windows: code }, 0);
+    const aux = mb.build().aux!;
+    const walls = [];
+    for (let v = 0; v < aux.length / 4; v++) if (aux[v * 4 + 3] === code) walls.push([aux[v * 4], aux[v * 4 + 1], aux[v * 4 + 2]]);
+    expect(walls).toHaveLength(4 * 6); // 4 walls, 2 triangles each
+    expect(Math.max(...walls.map((w) => w[0]))).toBeCloseTo(10); // the square's side
+    expect(Math.max(...walls.map((w) => w[1]))).toBeCloseTo(20);
+    expect(walls.every((w) => Math.abs(w[2] - 10) < 1e-6)).toBe(true);
+  });
+
+  it('leaves roofs without windows', () => {
+    const mb = new MeshBuilder({ aux: true });
+    extrudeBuilding(mb, [square], 20, { ...colors, windows: windowCode(WINDOWS.office, 0, 6) });
+    const { aux, normal } = mb.build();
+    for (let v = 0; v < normal.length / 3; v++) if (normal[v * 3 + 1] > 0.9) expect(aux![v * 4 + 3]).toBe(0);
   });
 });

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { MapData } from '../map/types';
 import { decodeMark, MARK } from '../geometry/road';
-import { buildCity, buildingColor, CROSSING_Y, landuseHeights, PALETTE, SIDEWALK_Y } from './cityGeometry';
+import { decodeWindows, WINDOWS } from '../geometry/extrude';
+import { buildCity, buildingColor, CROSSING_Y, landuseHeights, PALETTE, SIDEWALK_Y, windowStyle } from './cityGeometry';
 
 const sample: MapData = {
   version: 5,
@@ -79,6 +80,12 @@ describe('buildCity', () => {
     expect(more.get(MARK.plain)!.length).toBeGreaterThan(base.get(MARK.plain)?.length ?? 0);
   });
 
+  it('gives building walls window data and puts props on the playable office roof', () => {
+    expect(city.buildings.aux!.length).toBe((city.buildings.position.length / 3) * 4);
+    expect(city.props.length).toBeGreaterThan(0);
+    expect(city.props.every((p) => p.base === 45)).toBe(true); // only way/1 (scenery way/2 gets none)
+  });
+
   it('builds no fence when there is no playable area', () => {
     expect(sample.playable).toBeUndefined();
     expect(city.edge.position.length).toBe(0);
@@ -97,6 +104,29 @@ describe('buildingColor', () => {
     expect(buildingColor({ ...b, type: 'school', h: 13 })).toBe(PALETTE.civic);
     expect(buildingColor({ ...b, type: 'yes', h: 80 })).toBe(PALETTE.commercial);
     expect(buildingColor({ ...b, type: 'yes', h: 6 })).toBe(PALETTE.lowGeneric);
+  });
+});
+
+describe('windowStyle', () => {
+  const b = { id: 'x', rings: [], hSrc: 'estimate' as const };
+  const kind = (extra: { type: string; h: number; minH?: number }) => decodeWindows(windowStyle({ ...b, ...extra })).kind;
+  it('picks windows by type and height', () => {
+    expect(kind({ type: 'office', h: 80 })).toBe(WINDOWS.glass);
+    expect(kind({ type: 'office', h: 15 })).toBe(WINDOWS.office);
+    expect(kind({ type: 'apartments', h: 30 })).toBe(WINDOWS.apartment);
+    expect(kind({ type: 'house', h: 6 })).toBe(WINDOWS.house);
+    expect(kind({ type: 'yes', h: 60 })).toBe(WINDOWS.glass);
+    expect(kind({ type: 'parking', h: 12 })).toBe(WINDOWS.parking);
+  });
+
+  it('leaves warehouses, canopies and sheds blank', () => {
+    expect(windowStyle({ ...b, type: 'warehouse', h: 10 })).toBe(0);
+    expect(windowStyle({ ...b, type: 'roof', h: 4.2, minH: 3.6 })).toBe(0);
+    expect(windowStyle({ ...b, type: 'yes', h: 2 })).toBe(0);
+  });
+
+  it('counts whole floors', () => {
+    expect(decodeWindows(windowStyle({ ...b, type: 'office', h: 32 })).floors).toBe(10);
   });
 });
 

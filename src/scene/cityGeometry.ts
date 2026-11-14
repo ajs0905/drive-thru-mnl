@@ -2,19 +2,20 @@
  * Turns MapData into a handful of merged meshes (one per layer). The whole city
  * renders in about 5 draw calls instead of one per building or road.
  */
-import { addFlatPolygon, addWalls, extrudeBuilding } from '../geometry/extrude';
+import { addFlatPolygon, addWalls, extrudeBuilding, FLOOR_HEIGHT, windowCode, WINDOWS } from '../geometry/extrude';
 import { hexToRgb, MeshBuilder, shade, srgbToLinear, type RGB } from '../geometry/meshBuilder';
 import type { Area, Building, MapData, Point, Road, RoadClass } from '../map/types';
 import { addDeckStructure, addDisc, addRoadRibbon, addSidewalk, addZebra, cutBackPieces, MARK, markCode, type DeckStyle } from '../geometry/road';
 import { laneCount, RANK, sidewalkBands } from '../map/roads';
 import type { Vec4 } from '../geometry/meshBuilder';
 import { idUnit } from '../map/hash';
+import { roofProps, type RoofProp } from '../geometry/roofProps';
 import { polygonArea, withWinding } from '../geometry/polygon';
 
 export const EDGE_HEIGHT = 6;
 
 export const PALETTE = {
-  baseGround: '#aeb09c',
+  baseGround: '#aaa79d',
   residential: '#e8cfa3',
   commercial: '#a9c1db',
   civic: '#e0b49a',
@@ -49,6 +50,14 @@ export const PALETTE = {
   markingYellow: '#f4c02a',
 };
 
+/** Rooftop detail colors (sRGB hex; three.js converts instance colors). */
+export const ROOF_PROP_COLORS = {
+  housing: '#bdb8ad',
+  ac: '#dcdad4',
+  /** Blue plastic, black plastic, steel, beige. */
+  tanks: ['#3f6fa8', '#2f3234', '#b9bdc1', '#cdbf9e'],
+};
+
 // Small steps up so overlapping layers don't flicker. Major roads sit on top where
 // pieces still overlap; sidewalks sit under everything so road corners cover them.
 export const ROAD_Y: Record<RoadClass, number> = { path: 0.12, service: 0.16, minor: 0.2, major: 0.24 };
@@ -69,6 +78,26 @@ export function buildingColor(b: Building): string {
   if (CIVIC.has(b.type)) return PALETTE.civic;
   if (UTILITY.has(b.type)) return PALETTE.utility;
   return b.h >= 25 ? PALETTE.commercial : PALETTE.lowGeneric; // untyped: towers read as glass, low ones as concrete
+}
+
+const HOUSES = new Set(['house', 'detached', 'terrace', 'semidetached_house', 'bungalow']);
+const PARKING = new Set(['parking', 'garage', 'garages']);
+
+/** Window style for a building's walls (windowCode), from its type and height. */
+export function windowStyle(b: Building): number {
+  const base = b.minH ?? 0;
+  const tall = b.h - base;
+  if (base >= 2.5 || tall < 2.5) return 0; // canopies, skybridges, sheds
+  const floors = Math.floor(tall / FLOOR_HEIGHT);
+  const variant = Math.floor(idUnit(`${b.id}#windows`) * 16);
+  const style = (kind: (typeof WINDOWS)[keyof typeof WINDOWS]) => windowCode(kind, variant, floors);
+  if (PARKING.has(b.type)) return tall >= 5 ? style(WINDOWS.parking) : 0;
+  if (UTILITY.has(b.type)) return 0; // warehouses, factories, roofs: blank walls
+  if (HOUSES.has(b.type)) return style(WINDOWS.house);
+  if (RESIDENTIAL.has(b.type)) return style(tall >= 10 ? WINDOWS.apartment : WINDOWS.house);
+  if (COMMERCIAL.has(b.type) || CIVIC.has(b.type)) return style(tall >= 25 ? WINDOWS.glass : tall >= 9 ? WINDOWS.office : WINDOWS.house);
+  // Untyped: towers read as glass, mid-rises as apartments, low ones as houses and shops.
+  return style(tall >= 25 ? WINDOWS.glass : tall >= 10 ? WINDOWS.apartment : WINDOWS.house);
 }
 
 function areaColor(a: Area): string {
@@ -106,7 +135,7 @@ export interface LayerArrays {
   position: Float32Array;
   normal: Float32Array;
   color: Float32Array;
-  /** Road layer only: per-vertex marking data for the road shader. */
+  /** Road and building layers: per-vertex data for their shaders (markings, windows). */
   aux?: Float32Array;
 }
 
@@ -119,14 +148,16 @@ export interface CityMeshes {
   structures: LayerArrays;
   /** See-through fence along the playable edge (becomes the invisible wall for the car). */
   edge: LayerArrays;
+  /** Rooftop details, drawn as instances. */
+  props: RoofProp[];
   triangles: number;
   ms: number;
 }
 
 export function buildCity(map: MapData): CityMeshes {
   const t0 = performance.now();
-  const buildings = new MeshBuilder();
-  const scenery = new MeshBuilder();
+  const buildings = new MeshBuilder({ aux: true });
+  const scenery = new MeshBuilder({ aux: true });
   const roads = new MeshBuilder({ aux: true });
   const ground = new MeshBuilder();
   const edge = new MeshBuilder();
@@ -136,7 +167,8 @@ export function buildCity(map: MapData): CityMeshes {
     const jitter = 0.92 + idUnit(b.id) * 0.14;
     const wall: RGB = b.scenery ? col(PALETTE.scenery) : shade(col(buildingColor(b)), jitter);
     const base = b.minH ?? 0;
-    extrudeBuilding(b.scenery ? scenery : buildings, b.rings, b.h - base, { wall, roof: shade(wall, 0.8) }, base);
+    const colors = { wall, roof: shade(wall, 0.8), windows: windowStyle(b) };
+    extrudeBuilding(b.scenery ? scenery : buildings, b.rings, b.h - base, colors, base);
   }
 
   const drive: DeckStyle = {
@@ -153,7 +185,10 @@ export function buildCity(map: MapData): CityMeshes {
     addWalls(edge, withWinding(map.playable, true), 0, EDGE_HEIGHT, col(PALETTE.playableEdge));
   }
 
+  const props = map.buildings.flatMap(roofProps);
+
   const out = {
+    props,
     buildings: buildings.build(),
     scenery: scenery.build(),
     roads: roads.build(),

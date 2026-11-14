@@ -194,11 +194,14 @@ flowchart LR
 
 ## 7. Rendering strategy
 
-- **One mesh per layer**, not one per building or road: playable buildings, scenery buildings, roads, ground, bridge structures, playable edge, plus the base plane and the sky. About **9 draw calls** for the whole city. Colors are per vertex, so one material per layer is enough. See [ADR 0003](decisions/0003-merged-meshes-per-layer.md).
+- **One mesh per layer**, not one per building or road: playable buildings, scenery buildings, roads, ground, bridge structures, playable edge, plus the base plane, the sky, two instanced meshes for rooftop details, one for the filler city past the map and one for the hills. About **13 draw calls** for the whole city on Low (more on Medium and High for the shadow pass and post effects). Colors are per vertex, so one material per layer is enough. See [ADR 0003](decisions/0003-merged-meshes-per-layer.md).
 - **Trade-off:** a merged mesh is all-or-nothing for frustum culling, and everything stays on the GPU. That's fine at BGC's size and is exactly what tiles fix: each tile gets its own small set of merged meshes, so culling and unloading work per tile.
 - **Layering without flicker:** flat layers sit at small fixed heights (ground 0.02 to 0.09 m, sidewalks 0.10 m, footpaths 0.12 m, gap patches 0.14 m, roads 0.16 to 0.24 m by class, zebra crossings 0.28 m) on top of a base plane at -0.15 m, plus polygon offset. Junction polygons replace overlapping road ends, so roads of different classes no longer fight at intersections. A logarithmic depth buffer is on today; on phones it's a candidate to turn off (cost on mobile GPUs).
 - **Style:** flat low-poly, vertex colors, no photo textures.
 - **Road markings in a shader:** the road layer carries one extra vec4 per vertex (distance along, offset across, half width, packed style). A Lambert material patched with `onBeforeCompile` (`src/scene/roadMaterial.ts`) draws edge lines, lane dividers, center lines, zebra crossings and curbs from that, antialiased with `fwidth` and faded out when thinner than a pixel. No textures, no extra draw calls. See [ADR 0009](decisions/0009-road-markings-in-a-shader.md).
+- **Windows in a shader:** building walls carry meters along the wall, meters up, wall length and a packed window style per vertex; a patched Lambert material (`src/scene/buildingMaterial.ts`) draws glass curtain walls, office grids, apartment rows, house windows or parking decks, blending to the average facade color in the distance. Rooftop housings, AC units and water tanks are placed by `src/geometry/roofProps.ts` and drawn as instances. See [ADR 0010](decisions/0010-building-windows-and-roof-details.md).
+- **Lighting by quality tier:** ACES tone mapping everywhere; sun shadows around the camera's focus on Medium and High (`src/scene/Sun.tsx`); ambient occlusion and bloom on High (`src/scene/Effects.tsx`, loaded only when used). See section 8 and [ADR 0011](decisions/0011-lighting-by-quality-tier.md).
+- **Surroundings:** past the scenery ring there's no data, so the map would end in flat ground. Seeded filler blocks (`src/geometry/outskirts.ts`) continue the city out to where the haze covers everything, with tower clusters where the real skylines are (Makati CBD, Ortigas, Rockwell, Shaw, placed from their real lat/long). Two low-poly ridges stand in for the Rizal hills on the eastern horizon; they follow the camera like the sky, and their colors are pre-mixed with the haze (`src/scene/Surroundings.tsx`).
 - **Sky:** three.js's physically based `Sky` (Preetham scattering model with built-in procedural clouds), following the camera (`src/scene/Sky.tsx`, settings in `skyConfig.ts`). No textures to download. The city renders without tone mapping, so the sky applies its own ACES curve, and just above the horizon it blends into the fog's haze color; the ground plane reaches past the fog, so the city fades into the sky with no visible edge. The directional light comes from the sun's direction. Photo skyboxes (HDRIs) were considered and rejected: they clash with the flat style and cost megabytes on phones.
 
 ## 8. Quality tiers
@@ -212,12 +215,15 @@ Same game and map everywhere; detail scales with the device.
 | Scenery ring | Boxes or hidden | Simplified | Full |
 | Props, roof details | Few / off | Some | All |
 | Window shader | Simple | Full | Full |
-| Shadows | Off | Off | On (if budget allows) |
+| Shadows (in now) | Off | 2048 map around the camera's focus | 4096 map |
+| Ambient occlusion, bloom (in now) | Off | Off | On |
 | AI traffic | Few | Some | Full |
 
 **Never scaled down:** the real map shapes, roads and flyovers, the car and its handling, the overall look.
 
 **Choosing a tier:** a first guess from device signals (`navigator.deviceMemory`, `hardwareConcurrency`, GPU renderer string, screen size), then live adjustment from measured frame times (step down after sustained drops, step up with headroom). Players can override it in settings.
+
+**In now** (`src/scene/quality.ts`): the guess from pointer type, memory and cores, a Low / Medium / High switch in the HUD (also `?q=low|medium|high`), remembered between visits. Live adjustment comes with the tiles and tiers milestone.
 
 Budgets per tier: [PERFORMANCE.md](PERFORMANCE.md).
 
@@ -262,13 +268,16 @@ One page each in [decisions/](decisions/):
 | [0007](decisions/0007-map-qa-as-regression-gate.md) | Map QA counts as a CI regression gate | Accepted |
 | [0008](decisions/0008-car-physics.md) | Car physics: Rapier vs custom 2.5D | Proposed |
 | [0009](decisions/0009-road-markings-in-a-shader.md) | Road markings drawn by a shader from per-vertex data | Accepted |
+| [0010](decisions/0010-building-windows-and-roof-details.md) | Building windows in a shader, roof details as instances | Accepted |
+| [0011](decisions/0011-lighting-by-quality-tier.md) | Lighting and post effects, switched by quality tier | Accepted |
 
 ## 12. Roadmap through the architecture
 
 | Milestone | What it adds or changes |
 | --- | --- |
 | Better roads + sky (done) | Junction polygons from the road graph (`pipeline/junctions.ts`, `src/geometry/junction.ts`), per-vertex marking data in the mesh builder, road shader for lanes/zebras/curbs, sidewalk bands from tags, sidewalk/parking clutter filtered in `extract.ts`, zebras placed where crossing ways cut across roads (`pipeline/crossings.ts`), merged junctions for divided roads, median slivers closed, enclosed gaps paved (`pipeline/paving.ts`), physically based sky with procedural clouds in `src/scene` |
-| Better buildings | Per-wall UVs, window shader, instanced roof details |
+| Better buildings (done) | Per-wall coordinates in the mesh builder, window shader by building type and height, instanced roof details (housings, AC units, water tanks) |
+| Lighting and surroundings (done) | Tone mapping, wall contact darkening, a low morning sun with shadows around the camera's focus, ambient occlusion and bloom, a manual Low / Medium / High switch; filler city with real skylines past the map, hills on the horizon |
 | Barrier data | `barrier=*` added to the Overpass query; new pipeline step turning walls and fences into wall geometry |
 | Drivable car | Game loop, car module, physics (ADR 0008), colliders from playable buildings, edge wall, barriers; surface grip from area/road type; respawn to nearest road |
 | Tiles, streaming, tiers | Tile format (section 5), worker build, tile manager, quality manager (section 8), Ramer-Douglas-Peucker simplification for far tiles |
