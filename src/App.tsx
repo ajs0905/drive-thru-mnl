@@ -1,6 +1,6 @@
 import { MapControls } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { loadMap, type MapSource } from './map/loadMap';
 import type { MapData } from './map/types';
 import { City } from './scene/City';
@@ -20,6 +20,9 @@ import { Sky } from './scene/Sky';
 import { Sun } from './scene/Sun';
 import { Surroundings } from './scene/Surroundings';
 import { SKY } from './scene/skyConfig';
+
+// Drive mode and the physics engine load only when the player starts driving.
+const Drive = lazy(() => import('./scene/Drive'));
 
 // Checked once: reversed depth if the GPU has it, otherwise a logarithmic depth buffer.
 const REVERSED_DEPTH = supportsReversedDepth();
@@ -156,6 +159,36 @@ export default function App() {
       .catch((err: Error) => setState({ status: 'error', message: err.message }));
   }, []);
 
+  // Drive mode: Enter starts it, Esc leaves it. The speed readout is written straight to
+  // the page every frame instead of through React state.
+  const [driving, setDriving] = useState(false);
+  const [carReady, setCarReady] = useState(false);
+  const speedEl = useRef<HTMLSpanElement>(null);
+  const carSeen = useRef(false);
+  const onSpeed = useCallback((speed: number) => {
+    if (!carSeen.current) {
+      carSeen.current = true;
+      setCarReady(true);
+    }
+    if (speedEl.current) speedEl.current.textContent = String(Math.round(Math.abs(speed) * 3.6));
+  }, []);
+  const ready = state.status === 'ready';
+  const startDriving = useCallback(() => {
+    // A focused button would be pressed again by the space bar (the handbrake).
+    (document.activeElement as HTMLElement | null)?.blur();
+    carSeen.current = false;
+    setCarReady(false);
+    setDriving(true);
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') setDriving(false);
+      else if (e.code === 'Enter' && ready && !driving) startDriving();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [ready, driving, startDriving]);
+
   const view = state.status === 'ready' ? initialView(state.map) : null;
   const stats = state.status === 'ready' ? state.map.stats : null;
   const estimated = state.status === 'ready' ? state.map.buildings.filter((b) => b.hSrc === 'estimate').length : 0;
@@ -167,7 +200,8 @@ export default function App() {
           // A new canvas per quality: shadows and buffers are set up once, at creation.
           key={quality}
           camera={{ position: view.position, fov: 50, near: 1, far: 12000 }}
-          frameloop={ALWAYS_RENDER ? 'always' : 'demand'}
+          // Driving draws every frame; otherwise only when something changes.
+          frameloop={ALWAYS_RENDER || driving ? 'always' : 'demand'}
           gl={{ reversedDepthBuffer: REVERSED_DEPTH, logarithmicDepthBuffer: !REVERSED_DEPTH, antialias: settings.msaa }}
           // PCF, not the default soft PCF: sharper and cheaper; the light is low-poly anyway.
           shadows={settings.shadowMap > 0 ? 'percentage' : false}
@@ -183,17 +217,25 @@ export default function App() {
           <AdaptiveResolution factor={factor} onChange={setFactor} />
           <Sky clouds={settings.clouds} />
           <Sun shadowMap={settings.shadowMap} shadowEvery={settings.shadowEvery} />
-          {/* Snappier damping: the camera settles in about 60 frames, then rendering stops until the next input. */}
+          {/*
+            Snappier damping: the camera settles in about 60 frames, then rendering stops until the next input.
+            While driving the controls stay (their target follows the car, which the sun's shadows and the
+            prop distances use) but take no input, and their limits are opened up so their per-frame update
+            leaves the chase camera alone.
+          */}
           <MapControls
             makeDefault
             target={view.target}
-            maxPolarAngle={Math.PI / 2.15}
-            minDistance={40}
+            enabled={!driving}
+            enableDamping={!driving}
+            maxPolarAngle={driving ? Math.PI : Math.PI / 2.15}
+            minDistance={driving ? 0 : 40}
             maxDistance={6000}
             dampingFactor={0.12}
           />
           {state.status === 'ready' && <City map={state.map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} treeModels={settings.treeModels} />}
           {state.status === 'ready' && <Surroundings map={state.map} density={settings.filler} />}
+          <Suspense fallback={null}>{driving && state.status === 'ready' && <Drive map={state.map} onSpeed={onSpeed} />}</Suspense>
           <FrameProbe onFrame={onFrame} />
         </Canvas>
       )}
@@ -211,23 +253,46 @@ export default function App() {
                 Sample data. Run <code>npm run pipeline</code> for the real map.
               </p>
             )}
-            <p className="stats">
-              {stats.clip
-                ? `${fmt(stats.clip.playableBuildings)} buildings + ${fmt(stats.clip.sceneryBuildings)} scenery`
-                : `${fmt(stats.buildings)} buildings`}
-              , {fmt(stats.roads)} roads
-              <br />
-              {fmt(estimated)} of {fmt(stats.buildings)} heights estimated (no OSM height tag)
-            </p>
-            <ul className="legend">
-              {LEGEND.map(([label, color]) => (
-                <li key={label}>
-                  <i style={{ background: color }} />
-                  {label}
-                </li>
-              ))}
-            </ul>
-            <p className="hint">Drag to pan, right-drag to rotate, scroll to zoom</p>
+            {!driving && (
+              <>
+                <p className="stats">
+                  {stats.clip
+                    ? `${fmt(stats.clip.playableBuildings)} buildings + ${fmt(stats.clip.sceneryBuildings)} scenery`
+                    : `${fmt(stats.buildings)} buildings`}
+                  , {fmt(stats.roads)} roads
+                  <br />
+                  {fmt(estimated)} of {fmt(stats.buildings)} heights estimated (no OSM height tag)
+                </p>
+                <ul className="legend">
+                  {LEGEND.map(([label, color]) => (
+                    <li key={label}>
+                      <i style={{ background: color }} />
+                      {label}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {driving ? (
+              <div className="drive">
+                <p className="speed">
+                  <span ref={speedEl}>0</span> km/h
+                </p>
+                <p className="hint">{carReady ? 'W A S D or arrows to drive, Space handbrake, R reset' : 'Starting the engine...'}</p>
+                <button type="button" onClick={() => setDriving(false)}>
+                  Back to map (Esc)
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="hint">Drag to pan, right-drag to rotate, scroll to zoom</p>
+                <div className="drive">
+                  <button type="button" className="primary" onClick={startDriving}>
+                    Drive here (Enter)
+                  </button>
+                </div>
+              </>
+            )}
             <div className="quality" role="group" aria-label="Graphics quality">
               Quality
               {QUALITIES.map((q) => (

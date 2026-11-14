@@ -22,8 +22,9 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - **Walls and trees that respect the streets.** Walls, fences and hedges from OSM are cut open wherever a road or path passes, street trees mapped a meter into the road are moved to the curb, and gates and parking booms turn to span the road they sit on. 900+ trees (palms where the species says so) and 300 street fixtures, drawn as GPU instances; trees are low-poly models built in code (three broadleaf shapes and palms with drooping fronds).
 - **No edge of the world.** Past the mapped area the city continues as filler blocks out to the haze, with the real skylines of Makati and Ortigas where they actually are, and the Rizal hills on the eastern horizon.
 - **Lighting that scales with the device.** Sun shadows that follow the camera on Medium and High; tone mapping and baked contact shading everywhere. A Low / Medium / High switch plus resolution that adapts to the frame rate keeps phones smooth, and nothing is drawn while nothing moves.
+- **Drive it.** Press Drive (or Enter) and a car appears on the nearest road. Arcade handling on real physics (Rapier): speed-sensitive steering, a handbrake for drifts, brake lights that flare, a chase camera that swings around in corners. The physics engine only downloads when you start driving.
 - **Fast to render.** The city is merged into a few big meshes per layer and grid cell (about 50 to 80 draw calls), cells off screen are skipped, and an idle view costs nothing. Built in about 300 ms.
-- **Tested and checked.** 350+ unit tests, an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
+- **Tested and checked.** 390 unit tests (the car's handling runs in the real physics engine in tests), an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
 
 ![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags](docs/images/flyover.png)
 
@@ -42,7 +43,9 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - [x] Lighting and surroundings: shadows, tone mapping, Low / Medium / High switch with adaptive resolution; filler city, real skylines and hills past the map
 - [x] Performance: reversed depth, grid-cell culling, render on demand
 - [x] Walls, fences, trees, gates and parking booms from OSM; low-poly tree models built in code
-- [ ] Drivable car with NFS-style limits (solid buildings, barriers, surface grip, respawn)
+- [x] Drivable car, first step: Rapier physics with arcade handling, chase camera, brake lights
+- [ ] Solid buildings, walls and the playable edge; drivable flyovers; touch controls and respawn
+- [ ] Time trials and races through real streets
 - [ ] Tile streaming and quality tiers for phones
 - [ ] Minimap, landmarks, polish
 - [ ] Live on Vercel
@@ -57,6 +60,8 @@ npm run dev
 ```
 
 The BGC map data is already in the repo, so that's all you need. Drag to pan, right-drag to rotate, scroll to zoom.
+
+Press **Drive here** (or Enter) to drive from where the camera looks: W A S D or the arrow keys, Space for the handbrake, R to reset the car, Esc to go back to the map. Buildings aren't solid yet (next step).
 
 | Command | What it does |
 | --- | --- |
@@ -76,6 +81,7 @@ The BGC map data is already in the repo, so that's all you need. Drag to pan, ri
 ## Stack
 
 - Three.js via React Three Fiber, TypeScript, Vite
+- Rapier physics via `@react-three/rapier`, loaded on demand
 - Node + TypeScript data pipeline (`pipeline/`)
 - Vitest, oxlint, GitHub Actions
 
@@ -84,3 +90,4 @@ The BGC map data is already in the repo, so that's all you need. Drag to pan, ri
 - Code: [MIT](LICENSE), Adrian Joseph B. Salva
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the Open Database License (ODbL)
 - Polygon triangulation: [earcut](https://github.com/mapbox/earcut)
+- Car: Sedan from the [Free Low Poly Vehicles Pack](https://rgsdev.itch.io/free-low-poly-vehicles-pack) by Rgsdev (CC0), converted with `tools/car-to-glb.ts`

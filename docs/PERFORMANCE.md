@@ -24,7 +24,8 @@ Headless Chrome on a desktop CPU with a software renderer (no GPU), so frame rat
 
 | What | Value | Notes |
 | --- | --- | --- |
-| JS bundle | 1.21 MB, **338 KB gzipped** (321) | Mostly three.js, React Three Fiber and drei (drei is only used for `MapControls`) |
+| JS bundle | 1.22 MB, **342 KB gzipped** (321) | Mostly three.js, React Three Fiber and drei (drei is only used for `MapControls`) |
+| Drive chunk | 2.3 MB, **867 KB gzipped** | Downloaded only when driving starts: the Rapier physics engine (WebAssembly embedded as base64, which compresses poorly) plus the car code. The car model is 16 KB gzipped |
 | Map data (`bgc.json`) | 3.13 MB, **751 KB gzipped** (657) | Whole map in one JSON file; junction polygons, gap patches, zebras and lane/sidewalk tags added about 80 KB, walls, trees and fixtures 15 KB more |
 | City mesh build | **about 300 ms** (213), main thread | Freezes the page while it runs; sidewalks, junction polygons and roof prop placement (about 15 ms) are new work |
 | Draw calls | **about 50 to 80** (8) | Layers split into 1.2 km grid cells so off-screen cells are skipped; the shadow pass adds a few on Medium and High while the camera moves. Trees and street fixtures added 10 to 17 (two instanced shapes per cell, plus their shadows); the tree models add 6 to 11 more on Medium and High (up to four models per cell). |
@@ -54,6 +55,10 @@ Built-in tree models replace the trunk-plus-crown trees on Medium and High ([ADR
 | Overview (README hero) | 68 / 305k | 77 / 357k → 88 / 384k | 79 / 360k → 90 / 387k |
 
 Whole map: 34.9k → 62.7k tree triangles, 14 → 26 instanced tree meshes. Medium was already over its 300k budget in the park and overview views (307k, 357k) and is now at 332k and 384k. Distance-based detail in the tiles milestone (billboards for far trees among it) is where that comes back.
+
+### Drivable car (first step)
+
+The Sedan adds about 1,500 triangles and 8 draw calls (body, two lamp meshes, four wheels, the blob shadow); it casts no shadow-map shadow. Physics is one rigid body and a ground collider, stepped at 60 Hz. While driving, rendering is continuous instead of on demand. Headless at 960x540 on Medium, a street-level drive drew 53 to 80 draw calls and 266k to 400k triangles depending on where the car points (the chase camera sees more of the city at once than the map's usual views). Frame rate there means nothing (software renderer); on real hardware it's still to be measured.
 
 ### Desktop with a GPU
 

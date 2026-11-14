@@ -33,18 +33,18 @@ function violations(files: string[], rule: (spec: string) => boolean) {
 describe('module boundaries', () => {
   const src = sourceFiles('src');
   const pipeline = sourceFiles('pipeline');
-  const pure = src.filter((f) => /^src\/(geo|geometry|map)\//.test(f.replaceAll('\\', '/')));
+  const pure = src.filter((f) => /^src\/(geo|geometry|map|car)\//.test(f.replaceAll('\\', '/')));
 
   it('finds the source files it checks', () => {
     expect(pure.length).toBeGreaterThan(5);
     expect(pipeline.length).toBeGreaterThan(5);
   });
 
-  it('keeps geo, geometry and map free of three.js and React', () => {
+  it('keeps geo, geometry, map and car free of three.js and React', () => {
     expect(violations(pure, (s) => RENDERING.test(s))).toEqual([]);
   });
 
-  it('keeps geo, geometry and map from depending on the scene', () => {
+  it('keeps geo, geometry, map and car from depending on the scene', () => {
     expect(violations(pure, (s) => s.startsWith('src/scene') || s.startsWith('src/App'))).toEqual([]);
   });
 

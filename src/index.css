@@ -139,6 +139,43 @@ body,
   color: #15171c;
 }
 
+.hud .drive {
+  /* Like the quality switch: the panel lets clicks through, its buttons take them. */
+  pointer-events: auto;
+  margin-top: 8px;
+}
+
+.hud .drive button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid #3a3f4b;
+  border-radius: 4px;
+  background: transparent;
+  color: #c9ccd2;
+  cursor: pointer;
+}
+
+.hud .drive button.primary {
+  background: #f5b83d;
+  border-color: #f5b83d;
+  color: #15171c;
+  font-weight: 600;
+}
+
+.hud .drive .speed {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #8f939c;
+}
+
+.hud .drive .speed span {
+  font-size: 28px;
+  font-weight: 700;
+  color: #e8e8ea;
+  font-variant-numeric: tabular-nums;
+}
+
 .perf {
   position: absolute;
   left: 8px;
