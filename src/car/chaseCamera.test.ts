@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHASE, cameraPull, chaseView, clipDistance, damp, speedFov, turnToward } from './chaseCamera';
+import { CHASE, cameraPull, chaseView, clipDistance, crashShake, damp, shakeOffset, speedFov, turnToward } from './chaseCamera';
 
 describe('chaseView', () => {
   it('sits behind and above the car, looking ahead of it', () => {
@@ -89,5 +89,32 @@ describe('clipDistance', () => {
     let d = 3;
     for (let i = 0; i < 180; i++) d = clipDistance(d, null, 7, 1 / 60);
     expect(d).toBeCloseTo(7, 1);
+  });
+});
+
+describe('crash handling', () => {
+  it('reads a crash as no more than hard braking', () => {
+    expect(cameraPull(-183)).toBe(cameraPull(-CHASE.maxAccel));
+    expect(cameraPull(-CHASE.maxAccel)).toBeGreaterThanOrEqual(-CHASE.maxPullIn);
+  });
+  it('eases in only a little during the split second of a crash', () => {
+    // A crash: 0.15 s at the deceleration limit, then the car is stopped.
+    let pull = 0;
+    let most = 0;
+    for (let i = 0; i < 60; i++) {
+      pull += (cameraPull(i < 9 ? -183 : 0) - pull) * damp(CHASE.pullRate, 1 / 60);
+      most = Math.min(most, pull);
+    }
+    expect(most).toBeGreaterThan(-0.45);
+  });
+  it('shakes harder for harder crashes, up to a limit, and not at all for none', () => {
+    expect(crashShake(0)).toBe(0);
+    expect(crashShake(5)).toBeLessThan(crashShake(10));
+    expect(crashShake(100)).toBe(1);
+    expect(shakeOffset(0, 1.234)).toEqual([0, 0]);
+    for (let t = 0; t < 1; t += 0.05) {
+      const [x, y] = shakeOffset(1, t);
+      expect(Math.hypot(x, y)).toBeLessThanOrEqual(CHASE.shake * Math.SQRT2 + 1e-9);
+    }
   });
 });

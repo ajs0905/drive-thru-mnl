@@ -168,3 +168,23 @@ describe('elevateRoads', () => {
     for (const r of roads) if (r.z) expect(r.z).toHaveLength(r.points.length);
   });
 });
+
+describe('networks keep their own heights', () => {
+  it("doesn't lift a road where a footbridge over it shares a node with it", () => {
+    // The footbridge crosses the avenue at x=50 and (as often mapped in OSM) shares that node.
+    // It also crosses a service road properly (no shared node), which is what gets it raised.
+    const avenue = road([[0, 0], [50, 0], [100, 0]]);
+    const foot = bridge([[50, -20], [50, 0], [50, 20]], {}, 'path');
+    const service = road([[0, 10], [100, 10]], { cls: 'service', highway: 'service' });
+    const { roads } = elevateRoads([avenue, foot, service]);
+    expect(roads[0].z).toBeUndefined();
+    expect(roads[1].z?.every((v) => v === DECK_HEIGHT.walk)).toBe(true);
+  });
+  it("doesn't lift a path where a flyover shares a node with it", () => {
+    const f = flyover();
+    const path = road([[140, -30], [140, 0], [140, 30]], {}, 'path');
+    const { roads } = elevateRoads([...f.all, path]);
+    expect(roads[4].z).toBeUndefined();
+    expect(zAtX(roads[1], 140)).toBe(DECK_HEIGHT.drive);
+  });
+});

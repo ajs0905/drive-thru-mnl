@@ -11,12 +11,12 @@
  * limits centered on it.
  */
 import { useFrame, useLoader, useThree } from '@react-three/fiber';
-import { RigidBody, useBeforePhysicsStep, useRapier, type RapierRigidBody } from '@react-three/rapier';
-import { useEffect, useMemo, useRef } from 'react';
+import { RigidBody, useBeforePhysicsStep, useRapier, type RapierCollider, type RapierRigidBody } from '@react-three/rapier';
+import { useEffect, useMemo, useRef, type RefObject } from 'react';
 import { Quaternion, Vector3, type PerspectiveCamera } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { kick, STILL, stepBody } from '../car/bodyMotion';
-import { CHASE, cameraPull, chaseView, clipDistance, damp, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
+import { CHASE, cameraPull, chaseView, clipDistance, crashShake, damp, shakeOffset, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
 import { inputFromKeys, KEY_BINDINGS, NO_KEYS } from '../car/controls';
 import { wheelHardPoint, type CarSpec } from '../car/spec';
 import { chassisCollider, newDriveState, setupWheels, stepVehicle, type VehicleController } from '../car/vehicle';
@@ -31,11 +31,14 @@ export function Car({
   spec,
   spawn,
   onSpeed,
+  cameraBlockers,
 }: {
   spec: CarSpec;
   spawn: { position: Vec3; yaw: number };
   /** Called every frame with the forward speed (m/s). */
   onSpeed?: (speed: number) => void;
+  /** The collider the chase camera keeps in front of (buildings and walls); anything if not given. */
+  cameraBlockers?: RefObject<RapierCollider | null>;
 }) {
   const gltf = useLoader(GLTFLoader, `${import.meta.env.BASE_URL}${spec.model}`);
   const model = useMemo(() => prepareCarModel(gltf.scene), [gltf]);
@@ -57,6 +60,9 @@ export function Car({
     placed: false,
     pull: 0,
     clip: Infinity,
+    speed: 0,
+    shake: 0,
+    impacts: 0,
     body: STILL,
     upshifts: 0,
     pos: new Vector3(),
@@ -161,22 +167,31 @@ export function Car({
     poseBody(model, v.body.pitch, v.body.roll);
 
     // Chase camera: snaps behind the car the first time, then its direction trails the
-    // car's; its distance eases with the car's acceleration, and the view widens with speed.
-    v.dir = v.placed ? turnToward(v.dir, [v.fwd.x, v.fwd.z], damp(CHASE.turnRate, dt)) : turnToward(v.dir, [v.fwd.x, v.fwd.z], 1);
-    v.pull += (cameraPull(drive.accel.forward) - v.pull) * (v.placed ? damp(CHASE.pullRate, dt) : 1);
+    // car's; its distance eases with the car's acceleration, and the view widens with a
+    // smoothed speed (so a crash doesn't yank it). A crash shakes it instead.
+    const first = !v.placed;
+    v.dir = first ? turnToward(v.dir, [v.fwd.x, v.fwd.z], 1) : turnToward(v.dir, [v.fwd.x, v.fwd.z], damp(CHASE.turnRate, dt));
+    v.pull += (cameraPull(drive.accel.forward) - v.pull) * (first ? 1 : damp(CHASE.pullRate, dt));
+    v.speed += (Math.abs(speed) - v.speed) * (first ? 1 : damp(CHASE.speedRate, dt));
+    if (drive.impacts > v.impacts || drive.crashing) v.shake = Math.max(v.shake, crashShake(drive.impact));
+    v.impacts = drive.impacts;
+    v.shake *= 1 - damp(CHASE.shakeDecay, dt);
     v.placed = true;
-    const cam = chaseView([v.pos.x, v.pos.y, v.pos.z], v.dir[0], v.dir[1], speed, v.pull);
-    // Keep walls from coming between the car and the camera.
+    const cam = chaseView([v.pos.x, v.pos.y, v.pos.z], v.dir[0], v.dir[1], v.speed, v.pull);
+    // Keep buildings and walls from coming between the car and the camera (thin posts and
+    // overhead decks don't count: the camera passing a tree trunk looks fine, snapping in front of it didn't).
     const from = { x: v.pos.x, y: v.pos.y + CHASE.focusHeight, z: v.pos.z };
     const to = { x: cam.position[0] - from.x, y: cam.position[1] - from.y, z: cam.position[2] - from.z };
     const full = Math.hypot(to.x, to.y, to.z);
     const dir = { x: to.x / full, y: to.y / full, z: to.z / full };
-    const hit = world.castRay(new rapier.Ray(from, dir), full, true, undefined, undefined, undefined, body.current ?? undefined);
+    const blockers = cameraBlockers?.current;
+    const hit = world.castRay(new rapier.Ray(from, dir), full, true, undefined, undefined, undefined, body.current ?? undefined, blockers ? (c) => c.handle === blockers.handle : undefined);
     v.clip = clipDistance(Math.min(v.clip, full), hit ? hit.timeOfImpact : null, full, dt);
     const camera = state.camera as PerspectiveCamera;
-    camera.position.set(from.x + dir.x * v.clip, from.y + dir.y * v.clip, from.z + dir.z * v.clip);
+    const [sx, sy] = shakeOffset(v.shake, state.clock.elapsedTime);
+    camera.position.set(from.x + dir.x * v.clip - dir.z * sx, from.y + dir.y * v.clip + sy, from.z + dir.z * v.clip + dir.x * sx);
     camera.lookAt(...cam.lookAt);
-    const fov = speedFov(speed);
+    const fov = speedFov(v.speed);
     if (Math.abs(camera.fov - fov) > 0.01) {
       camera.fov = fov;
       camera.updateProjectionMatrix();

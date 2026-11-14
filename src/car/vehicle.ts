@@ -81,6 +81,14 @@ export interface DriveState {
   lastVel: Vec | null;
   /** Brake lights on. */
   braking: boolean;
+  /**
+   * Crashes so far (a counter, so the renderer notices one between frames), the last
+   * one's total speed change (m/s; a crash spreads over a few steps), and whether one is
+   * still going on.
+   */
+  impacts: number;
+  impact: number;
+  crashing: boolean;
 }
 
 export const newDriveState = (): DriveState => ({
@@ -92,7 +100,13 @@ export const newDriveState = (): DriveState => ({
   accel: { forward: 0, left: 0 },
   lastVel: null,
   braking: false,
+  impacts: 0,
+  impact: 0,
+  crashing: false,
 });
+
+/** Above this deceleration (m/s^2, about 3 g) a change in speed is a crash, not braking. */
+const IMPACT_ACCEL = 30;
 
 /** Acceleration readings are smoothed over about this long (s), so bumps don't shake the camera. */
 const ACCEL_SMOOTHING = 0.08;
@@ -107,6 +121,14 @@ export function stepVehicle(vc: VehicleController, body: RAPIER.RigidBody, spec:
 
   // Acceleration in the car's frame, from the change in world velocity (so turning shows as sideways acceleration).
   if (s.lastVel) {
+    const dv = Math.hypot(vel.x - s.lastVel.x, vel.z - s.lastVel.z);
+    const hit = dv / dt > IMPACT_ACCEL;
+    if (hit && s.crashing) s.impact += dv;
+    else if (hit) {
+      s.impacts++;
+      s.impact = dv;
+    }
+    s.crashing = hit;
     const a = toLocal({ x: (vel.x - s.lastVel.x) / dt, y: (vel.y - s.lastVel.y) / dt, z: (vel.z - s.lastVel.z) / dt }, rot);
     const k = 1 - Math.exp(-dt / ACCEL_SMOOTHING);
     s.accel = { forward: s.accel.forward + (a.z - s.accel.forward) * k, left: s.accel.left + (a.x - s.accel.left) * k };

@@ -381,16 +381,23 @@ function wall(mb: MeshBuilder, a: Point, b: Point, topA: number, topB: number, b
  * Concrete structure for a raised road: deck edges, underside, side barriers and
  * pillars. Only drawn where the road is off the ground. Returns triangles added.
  */
+/** Below this height (m) a ramp has no side walls: they'd just look like lines painted on the road. */
+export const DECK_SIDES_FROM = 1;
+/**
+ * Barriers go on top of a deck piece once all of it is at least this high (m): along
+ * the whole raised part of a ramp, so a car half on a ramp's edge is held on, not rolled off.
+ */
+export const DECK_RAIL_FROM = 1;
+
 export function addDeckStructure(mb: MeshBuilder, points: Point[], width: number, z: number[], style: DeckStyle): number {
   const { pts, zs } = dedupeWithZ(points, z);
   const { left, right } = offsetPolyline(pts, width / 2);
   const start = mb.triangleCount;
-  const LIFT = 1; // below this a ramp's side walls would just look like lines painted on the road
 
   for (let i = 0; i < left.length - 1; i++) {
     const za = zs[i];
     const zb = zs[i + 1];
-    if (Math.max(za, zb) < LIFT) continue;
+    if (Math.max(za, zb) < DECK_SIDES_FROM) continue;
     const ba = Math.max(0, za - style.depth);
     const bb = Math.max(0, zb - style.depth);
     const dx = pts[i + 1][0] - pts[i][0];
@@ -412,7 +419,7 @@ export function addDeckStructure(mb: MeshBuilder, points: Point[], width: number
     }
 
     // Barriers, both faces, once the road is clearly up in the air.
-    if (style.barrier > 0 && Math.min(za, zb) > 1.5) {
+    if (style.barrier > 0 && Math.min(za, zb) >= DECK_RAIL_FROM) {
       const h = style.barrier;
       const inl: [number, number, number] = [-nl[0], 0, -nl[2]];
       const inr: [number, number, number] = [-nr[0], 0, -nr[2]];

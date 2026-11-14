@@ -7,7 +7,12 @@
  * It also reacts, subtly, to how hard the car speeds up or slows down: it hangs back up
  * to about a meter under full throttle and eases in about a meter under hard braking,
  * and the view widens a few degrees at speed. That makes acceleration, braking and
- * gear shifts readable on screen. Three.js space throughout (y up).
+ * gear shifts readable on screen.
+ *
+ * Crashes stop the car in a fraction of a second, which would yank all of that at once
+ * (the camera jumped about 2 m in and zoomed in a 79 km/h crash). So the camera follows
+ * a smoothed speed, reads at most hard braking's worth of deceleration, and shows a
+ * crash with a short shake instead. Three.js space throughout (y up).
  */
 export type Vec3 = [number, number, number];
 
@@ -34,7 +39,15 @@ export const CHASE = {
   maxPullBack: 0.8,
   maxPullIn: 1.0,
   /** How quickly the pull follows the acceleration (per second). */
-  pullRate: 5,
+  pullRate: 3,
+  /** Most acceleration the pull reads (m/s^2): about hard braking; a crash counts as no more than that. */
+  maxAccel: 12,
+  /** How quickly the speed the camera uses (distance, field of view) follows the car's (per second). */
+  speedRate: 2,
+  /** Crash shake: how far the camera jolts (m) at full strength, how fast it dies out (per second), and the speed change (m/s) of a full-strength crash. */
+  shake: 0.16,
+  shakeDecay: 7,
+  shakeImpact: 15,
   /** Field of view (degrees) at a standstill, and how much it widens per m/s up to `maxSpeed`. */
   fov: 50,
   fovPerSpeed: 0.12,
@@ -63,7 +76,23 @@ export function clipDistance(current: number, hit: number | null, full: number, 
 
 /** Extra distance behind the car (m) for its forward acceleration (m/s^2): positive is farther. */
 export function cameraPull(forwardAccel: number): number {
-  return Math.max(-CHASE.maxPullIn, Math.min(CHASE.maxPullBack, forwardAccel * CHASE.pullPerAccel));
+  const a = Math.max(-CHASE.maxAccel, Math.min(CHASE.maxAccel, forwardAccel));
+  return Math.max(-CHASE.maxPullIn, Math.min(CHASE.maxPullBack, a * CHASE.pullPerAccel));
+}
+
+/** Shake strength (0..1) for a crash that changed the car's speed by `dv` m/s. */
+export function crashShake(dv: number): number {
+  return Math.min(1, Math.max(0, dv / CHASE.shakeImpact));
+}
+
+/** Camera jolt (m: sideways, up) for a shake strength at a time (s): a quick, uneven wobble. */
+export function shakeOffset(strength: number, time: number): [number, number] {
+  const a = strength * CHASE.shake;
+  if (a === 0) return [0, 0];
+  return [
+    a * (0.7 * Math.sin(time * 41) + 0.3 * Math.sin(time * 67 + 1.3)),
+    a * (0.7 * Math.sin(time * 53 + 0.7) + 0.3 * Math.sin(time * 79)),
+  ];
 }
 
 /** Field of view (degrees) at a speed. */

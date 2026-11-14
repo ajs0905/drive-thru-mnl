@@ -66,13 +66,13 @@ Result: 3.1 x 2.7 km, 6,359 playable buildings, 6,118 scenery, 8,403 dropped.
 
 OSM marks bridges (`bridge=yes`, `viaduct`, `layer=1`) but not their height or where the slope starts.
 
-1. Roads connect where they share a point (the same OSM node).
-2. Connected bridge pieces form chains (union-find). A chain is raised only if some piece **crosses over another road** (spatial grid crossing test). Small bridges over creeks stay on the ground: 30 of them.
+1. Roads connect where they share a point (the same OSM node), within their own network. A footbridge node that sits on a road (a common OSM shortcut) doesn't lift the road, and a path that touches a flyover isn't lifted either.
+2. Connected bridge pieces form chains (union-find). A chain is raised only if some piece **crosses over another road** (spatial grid crossing test). Small bridges over creeks stay on the ground: 29 of them.
 3. Decks sit at layer x 7 m (roads) or 6 m (footbridges).
 4. The approach road becomes the ramp: it climbs over up to 90 m and stops at the first junction, so side streets don't get lifted. If a junction sits at the foot of the bridge, the bridge itself slopes down instead. Footbridges only come down by stairs or by sloping the bridge; a sidewalk never rises to meet one.
 5. Ramps follow a smoothstep curve, with extra points inserted so the slope is a curve.
 
-Result: 72 raised pieces (Kalayaan Overpass, Lawton Avenue viaduct, East Rembo C5 Overpass, Pamantasan Overpass, link ramps, footbridges), 37 ramps on approach roads, 21 on the bridge itself. Underpasses (`tunnel=yes`) are drawn at ground level for now.
+Result: 72 raised pieces (Kalayaan Overpass, Lawton Avenue viaduct, East Rembo C5 Overpass, Pamantasan Overpass, link ramps, footbridges), 39 ramps on approach roads, 19 on the bridge itself. Underpasses (`tunnel=yes`) are drawn at ground level for now.
 
 ### 4. Settle raised ways (`pipeline/settleRaised.ts`)
 
@@ -98,7 +98,7 @@ BGC's malls are linked by skywalks that OSM maps straight through the buildings.
 - Special cases: the outside of a bend gets a straight edge, a straight join where the width changes gets a short taper, sharp merges wrap around both arms, and two pieces of the same road continuing straight need no polygon (359).
 - Curved roads: each arm's direction is first taken toward the point 1 m along the road, then re-aimed twice at the point where the road actually gets cut back, so the polygon follows the curve.
 - Divided roads crossing: each carriageway crossing gets its own polygon, and the short pieces between them get cut away from both ends. Junctions joined by a piece with less than 3 m left are merged (union-find) into one convex polygon (Andrew's monotone chain hull), as long as it stays under 80 m across; the pieces inside aren't drawn. 144 merged polygons from 334 junctions.
-- Result: 1,452 junction polygons. 18 knots too tangled for a clean polygon (it would cross itself) fall back to overlapping road ends.
+- Result: 1,450 junction polygons. 18 knots too tangled for a clean polygon (it would cross itself) fall back to overlapping road ends.
 - The renderer also paves each road's cut-back stretch as plain asphalt under the polygon, so a polygon that doesn't follow the road exactly never leaves a gap.
 - Fills in `lanes` for every drivable road: the tag if it fits the (possibly narrowed) width, otherwise width / 3.3 m.
 
@@ -108,7 +108,7 @@ BGC's malls are linked by skywalks that OSM maps straight through the buildings.
 - Instead, each crossing way is intersected with drivable road centerlines (spatial grid). Where it cuts across one at more than 35 degrees, a straight 3 m zebra goes across that road from edge to edge; a divided road gets one per carriageway. Crossings under a flyover don't paint the deck, and footbridges are skipped.
 - OSM usually puts the crossing node right at the junction, so a zebra that would land inside a junction polygon is moved back along its road to just outside it (up to 12 m). A zebra overlapping one already placed (separating axis test) is dropped, as is one on a piece fully covered by a merged junction.
 - The bars are drawn over the crossed road's own asphalt color, so lane lines don't show through.
-- Result: 511 zebras from 405 crossing ways (122 moved out of junctions); 14 ways cross no road and 25 hits were too shallow (ways mapped along the road). The crossing ways themselves are dropped from the map.
+- Result: 514 zebras from 405 crossing ways (122 moved out of junctions); 14 ways cross no road and 26 hits were too shallow (ways mapped along the road). The crossing ways themselves are dropped from the map.
 
 ### 9. Pave enclosed gaps (`pipeline/paving.ts`)
 
@@ -163,7 +163,7 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Buildings more than 1 m into a service road | 93 | 68 |
 | Junction polygons reaching far past their roads | (new) | 0 |
 | Zebras overlapping each other or inside a junction | 76 | 0 |
-| Enclosed unpaved patches at junctions (holes, slivers) | 140 | 37 (real islands up to 60 m²) |
+| Enclosed unpaved patches at junctions (holes, slivers) | 140 | 35 (real islands up to 60 m²) |
 | Trees standing on a road | (new) 226 before moving and dropping | 0 |
 | Trees inside a building | (new) | 0 |
 | Walls, fences or hedges across a road or path | (new) | 0 |

@@ -1,72 +1,119 @@
 /**
- * What the car can hit, as one static triangle mesh in three.js space (x east, y up,
- * z south), built once when driving starts and handed to the physics engine.
+ * What the car can hit and drive on, besides the flat ground, as static triangle meshes
+ * in three.js space (x east, y up, z south), built once when driving starts and handed
+ * to the physics engine. Two meshes, because the chase camera treats them differently:
  *
- * Only vertical walls are needed, since the car stays on the ground (flyover decks come
- * later), so every solid is a ring of upright quads:
- *
+ * **Walls** (the camera stays in front of these):
  * - Playable buildings: every outline edge, holes included, from the ground to the roof.
  *   Buildings that start above the ground (canopies, skybridges, all well above a car's
  *   roof in this map) and scenery outside the playable area are skipped.
  * - Walls, fences, hedges and guard rails, as thin upright strips. They were already cut
  *   open wherever a road or path passes (pipeline/barriers.ts), so streets stay open.
  * - The playable edge: a tall wall along its outline.
+ *
+ * **Structures** (the camera may pass these: thin, or overhead):
+ * - Flyover decks and ramps, drivable: the road surface at the height it's drawn
+ *   (road class height plus the road's `z`), with shallow cones at the joints and the
+ *   raised junction polygons, so the wheels find no cracks. Their sides are exactly what
+ *   the renderer draws: the deck's edge band (reaching the ground where the deck is low,
+ *   open underneath where it's high) and the side barriers. Nothing invisible: a wall
+ *   down to the ground under a high deck edge would stop a car in what looks like open
+ *   space. So the car gets onto a flyover by its ramps, the barriers keep it on, and it
+ *   drives underneath where there's room.
+ * - Footbridges and skywalks aren't drivable: only their sides, the same way.
  * - Posts: flyover and footbridge pillars, tree trunks, bollards, concrete blocks and gate
  *   pillars, as small prisms matching what's drawn. Parking booms are left open (they
  *   don't lift yet), and so are gate openings.
  *
- * Triangles go both ways round where it matters: Rapier's triangle meshes collide from
- * either side, which the physics tests check, so thin walls need only one quad.
+ * Rapier's triangle meshes collide from either side (checked by the physics tests), so
+ * thin walls need only one quad.
  */
-import type { MapData, Point } from '../map/types';
+import earcut from 'earcut';
+import type { MapData, Point, Road, RoadClass } from '../map/types';
 import { PROP_SHAPE, type Prop, type PropKind } from './props';
-import { DECKS, deckPillars } from './road';
+import { DECK_RAIL_FROM, DECK_SIDES_FROM, DECKS, deckPillars, dedupeWithZ, offsetPolyline } from './road';
 import { fixtureProps, treeProps } from './streetProps';
 
 export const COLLISION = {
   /** Height of the invisible wall along the playable edge (m). */
   edgeHeight: 30,
-  /** Sides of the prisms standing in for round posts and trunks. */
+  /** Sides of the prisms standing in for round posts and trunks, and of the deck joint discs. */
   roundSides: 6,
-  /** Buildings starting higher than this above the ground leave room to drive under. */
+  jointSides: 8,
+  /** Room a car needs under a building or deck to drive beneath it (m). */
   clearance: 2.5,
+  /** Below this height a ramp is just road on the ground: no side walls. */
+  rampLift: 0.3,
+  /**
+   * How far a deck joint's rim sits below its middle, per meter out (a slope). Joints are
+   * shallow cones, not flat discs, so they stay under the road even where a ramp meets
+   * the deck: a flat disc at the top of a ramp stuck out of it like a ledge.
+   */
+  jointDrop: 0.25,
 };
 
 /** Props from trees and fixtures that are solid (the rest, like crowns and boom arms, aren't). */
 const SOLID_PROPS = new Set<PropKind>(['trunk', 'palmTrunk', 'pillar', 'post', 'bollard', 'block']);
 
-export interface CollisionMesh {
+export interface TriMesh {
   /** xyz per vertex, three.js space. */
   vertices: Float32Array;
   indices: Uint32Array;
-  /** What went in, for logging and tests. */
-  counts: { buildings: number; barriers: number; edge: number; posts: number; triangles: number };
 }
+
+export interface CollisionWorld {
+  /** What the chase camera keeps in front of: buildings, walls and fences, the playable edge. */
+  walls: TriMesh;
+  /** Decks, their sides and barriers, footbridge sides, posts. */
+  structures: TriMesh;
+  /** What went in, for logging and tests. */
+  counts: { buildings: number; barriers: number; edge: number; posts: number; decks: number; footbridges: number; triangles: number };
+}
+
+export interface CollisionOptions {
+  /** Height a road of each class is drawn at above its `z` (the renderer's road layering). */
+  surfaceY: Record<RoadClass, number>;
+}
+
+/** Map point and height -> three.js position. */
+const at = (p: Point, y: number): [number, number, number] => [p[0], y, -p[1]];
 
 class Builder {
   v: number[] = [];
   i: number[] = [];
 
-  /** Upright quad from map point a to b, between two heights. */
-  quad(a: Point, b: Point, bottom: number, top: number) {
+  tri(a: [number, number, number], b: [number, number, number], c: [number, number, number]) {
     const n = this.v.length / 3;
-    this.v.push(a[0], bottom, -a[1], b[0], bottom, -b[1], b[0], top, -b[1], a[0], top, -a[1]);
+    this.v.push(...a, ...b, ...c);
+    this.i.push(n, n + 1, n + 2);
+  }
+
+  /** Upright quad from map point a to b, with its own bottom and top at each end. */
+  quad(a: Point, b: Point, bottomA: number, bottomB: number, topA: number, topB: number) {
+    if (topA <= bottomA && topB <= bottomB) return;
+    const n = this.v.length / 3;
+    this.v.push(...at(a, bottomA), ...at(b, bottomB), ...at(b, topB), ...at(a, topA));
     this.i.push(n, n + 1, n + 2, n, n + 2, n + 3);
   }
 
-  /** Upright quads along a closed ring (or an open line). */
+  /** Upright quads along a closed ring (or an open line), between two heights. */
   walls(points: Point[], bottom: number, top: number, closed: boolean) {
     const last = closed ? points.length : points.length - 1;
     for (let k = 0; k < last; k++) {
       const a = points[k];
       const b = points[(k + 1) % points.length];
-      if (a[0] !== b[0] || a[1] !== b[1]) this.quad(a, b, bottom, top);
+      if (a[0] !== b[0] || a[1] !== b[1]) this.quad(a, b, bottom, bottom, top, top);
     }
   }
 
-  /** A prism standing on its footprint corners (map points). */
-  prism(corners: Point[], bottom: number, top: number) {
-    this.walls(corners, bottom, top, true);
+  /** A flat polygon (outer ring, map points) at a height, triangulated. */
+  flat(ring: Point[], y: number) {
+    const idx = earcut(ring.flat(), undefined, 2);
+    for (let k = 0; k < idx.length; k += 3) this.tri(at(ring[idx[k]], y), at(ring[idx[k + 1]], y), at(ring[idx[k + 2]], y));
+  }
+
+  mesh(): TriMesh {
+    return { vertices: new Float32Array(this.v), indices: new Uint32Array(this.i) };
   }
 }
 
@@ -90,43 +137,98 @@ export function propFootprint(p: Prop): Point[] {
   return local.map(([lx, lz]): Point => [p.x + lx * c + lz * s, p.y - (-lx * s + lz * c)]);
 }
 
-export function buildCollision(map: Pick<MapData, 'buildings' | 'roads' | 'playable' | 'barriers' | 'trees' | 'fixtures'>): CollisionMesh {
-  const b = new Builder();
-  const counts = { buildings: 0, barriers: 0, edge: 0, posts: 0, triangles: 0 };
+/**
+ * A raised road: its sides (to the ground where it's too low to drive under, else just
+ * the deck edge), its side barriers where the renderer draws them, and for drivable
+ * roads its surface and joint discs. `surface` is the drawn road height above `z`.
+ */
+function addDeck(structures: Builder, road: Road, surface: number, drivable: boolean) {
+  const shape = road.cls === 'path' ? DECKS.walk : DECKS.drive;
+  const { pts, zs } = dedupeWithZ(road.points, road.z);
+  if (pts.length < 2) return;
+  const { left, right } = offsetPolyline(pts, road.w / 2);
+  const ys = zs.map((z) => z + surface);
+
+  for (let k = 0; k < pts.length - 1; k++) {
+    const [za, zb] = [zs[k], zs[k + 1]];
+    if (Math.max(za, zb) < COLLISION.rampLift) continue; // still road on the ground
+    // Sides exactly as drawn: the deck's edge band, open underneath once the deck is high
+    // enough (a wall down to the ground there would be invisible), plus the barrier.
+    if (Math.max(za, zb) >= DECK_SIDES_FROM) {
+      const [ba, bb] = [Math.max(0, za - shape.depth), Math.max(0, zb - shape.depth)];
+      const rail = shape.barrier > 0 && Math.min(za, zb) >= DECK_RAIL_FROM ? shape.barrier : 0;
+      structures.quad(left[k], left[k + 1], ba, bb, ys[k] + rail, ys[k + 1] + rail);
+      structures.quad(right[k], right[k + 1], ba, bb, ys[k] + rail, ys[k + 1] + rail);
+    }
+    if (drivable) {
+      structures.tri(at(left[k], ys[k]), at(right[k], ys[k]), at(right[k + 1], ys[k + 1]));
+      structures.tri(at(left[k], ys[k]), at(right[k + 1], ys[k + 1]), at(left[k + 1], ys[k + 1]));
+    }
+  }
+  if (!drivable) return;
+  // Joints: cover the wedge-shaped cracks where the road bends or meets the next piece.
+  const r = road.w / 2;
+  const rim = r * COLLISION.jointDrop;
+  pts.forEach((p, k) => {
+    if (zs[k] < COLLISION.rampLift) return;
+    const mid = at(p, ys[k] - 0.01);
+    const ring = Array.from({ length: COLLISION.jointSides }, (_, n) => {
+      const a = (n / COLLISION.jointSides) * Math.PI * 2;
+      return at([p[0] + Math.cos(a) * r, p[1] + Math.sin(a) * r], ys[k] - 0.01 - rim);
+    });
+    ring.forEach((q, n) => structures.tri(mid, q, ring[(n + 1) % ring.length]));
+  });
+}
+
+/** The parts of the map collisions are built from (the optional ones may be missing). */
+export type CollisionInput = Pick<MapData, 'buildings' | 'roads'> & Partial<Pick<MapData, 'playable' | 'barriers' | 'trees' | 'fixtures' | 'junctions'>>;
+
+export function buildCollision(map: CollisionInput, opts: CollisionOptions): CollisionWorld {
+  const walls = new Builder();
+  const structures = new Builder();
+  const counts = { buildings: 0, barriers: 0, edge: 0, posts: 0, decks: 0, footbridges: 0, triangles: 0 };
 
   for (const bld of map.buildings) {
     if (bld.scenery || (bld.minH ?? 0) > COLLISION.clearance) continue;
-    for (const ring of bld.rings) b.walls(ring, 0, bld.h, true);
+    for (const ring of bld.rings) walls.walls(ring, 0, bld.h, true);
     counts.buildings++;
   }
 
   for (const bar of map.barriers ?? []) {
     if (bar.scenery || bar.points.length < 2) continue;
-    b.walls(bar.points, 0, bar.h, false);
+    walls.walls(bar.points, 0, bar.h, false);
     counts.barriers++;
   }
 
   if (map.playable && map.playable.length >= 3) {
-    b.walls(map.playable, 0, COLLISION.edgeHeight, true);
+    walls.walls(map.playable, 0, COLLISION.edgeHeight, true);
     counts.edge = map.playable.length;
   }
 
   for (const road of map.roads) {
-    if (!road.z || road.scenery) continue;
-    for (const p of deckPillars(road.points, road.z, road.cls === 'path' ? DECKS.walk : DECKS.drive)) {
+    if (!road.z || road.scenery || Math.max(...road.z) < COLLISION.rampLift) continue;
+    const drivable = road.cls !== 'path';
+    addDeck(structures, road, opts.surfaceY[road.cls], drivable);
+    if (drivable) counts.decks++;
+    else counts.footbridges++;
+    for (const p of deckPillars(road.points, road.z, drivable ? DECKS.drive : DECKS.walk)) {
       const s = p.size / 2;
-      b.prism([[p.x - s, p.y - s], [p.x + s, p.y - s], [p.x + s, p.y + s], [p.x - s, p.y + s]], 0, p.top);
+      structures.walls([[p.x - s, p.y - s], [p.x + s, p.y - s], [p.x + s, p.y + s], [p.x - s, p.y + s]], 0, p.top, true);
       counts.posts++;
     }
+  }
+  for (const j of map.junctions ?? []) {
+    if (j.z >= COLLISION.rampLift && j.cls !== 'path') structures.flat(j.ring, j.z + opts.surfaceY[j.cls]);
   }
 
   const props = [...(map.trees ?? []).flatMap(treeProps), ...(map.fixtures ?? []).flatMap(fixtureProps)];
   for (const p of props) {
     if (!SOLID_PROPS.has(p.kind)) continue;
-    b.prism(propFootprint(p), p.base, p.base + p.size[1]);
+    structures.walls(propFootprint(p), p.base, p.base + p.size[1], true);
     counts.posts++;
   }
 
-  counts.triangles = b.i.length / 3;
-  return { vertices: new Float32Array(b.v), indices: new Uint32Array(b.i), counts };
+  const out = { walls: walls.mesh(), structures: structures.mesh() };
+  counts.triangles = (out.walls.indices.length + out.structures.indices.length) / 3;
+  return { ...out, counts };
 }

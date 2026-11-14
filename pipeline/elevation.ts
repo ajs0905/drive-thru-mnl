@@ -4,7 +4,9 @@
  * OSM only says "this way is a bridge on layer 1". It doesn't say how high, or where
  * the slope is. The rules here:
  *
- *  1. Roads are connected where they share a point (same OSM node -> same coordinates).
+ *  1. Roads are connected where they share a point (same OSM node -> same coordinates),
+ *     within their own network: a footbridge node that sits on a road (a common OSM
+ *     shortcut) doesn't lift the road, or the other way round.
  *  2. A chain of connected bridge ways is raised only if some part of it crosses over
  *     another road. Small bridges over creeks stay at ground level.
  *  3. Raised decks sit at layer x 7 m (drivable) or layer x 6 m (footbridges).
@@ -30,6 +32,8 @@ export const RAMP = {
 type Net = 'drive' | 'walk';
 const netOf = (r: Road): Net => (r.cls === 'path' ? 'walk' : 'drive');
 const keyOf = (p: Point) => `${p[0]},${p[1]}`;
+/** Height keys are per network (see rule 1). */
+const zKey = (net: Net, p: Point) => `${net}:${keyOf(p)}`;
 const smooth = (x: number) => {
   const t = Math.max(0, Math.min(1, x));
   return t * t * (3 - 2 * t);
@@ -125,7 +129,7 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
     if (!raised[ri]) return;
     const h = deck(r);
     for (const p of r.points) {
-      const k = keyOf(p);
+      const k = zKey(netOf(r), p);
       raisedNode.add(k);
       nodeZ.set(k, Math.max(nodeZ.get(k) ?? 0, h));
     }
@@ -203,14 +207,15 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
   for (const net of ['drive', 'walk'] as Net[]) {
     const { length: R, min: MIN } = RAMP[net];
     for (const [k, list] of at[net]) {
-      if (!raisedNode.has(k)) continue;
+      const zk = `${net}:${k}`;
+      if (!raisedNode.has(zk)) continue;
       // Walkways come down by stairs, not by lifting the sidewalk they connect to.
       const canRamp = (r: Road) => net === 'drive' || r.highway === 'steps';
       const groundHere = list.filter(([ri]) => !raised[ri]);
       const rampable = groundHere.filter(([ri]) => canRamp(roads[ri]));
       const raisedHere = list.filter(([ri]) => raised[ri]);
       if (groundHere.length === 0 || raisedHere.length === 0) continue;
-      const h = nodeZ.get(k) ?? 0;
+      const h = nodeZ.get(zk) ?? 0;
 
       // Try the ground side: every ground direction leaving this node.
       const plainJoin = neighbors(net, k).size === 2;
@@ -229,7 +234,7 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
         const zAt = (d: number) => round2(h * smooth(1 - d / L));
         for (const steps of groundWalks) {
           for (const s of steps) {
-            const pk = keyOf(roads[s.road].points[s.to]);
+            const pk = zKey(net, roads[s.road].points[s.to]);
             nodeZ.set(pk, Math.max(nodeZ.get(pk) ?? 0, zAt(s.d1)));
           }
           sample(steps, [L / 4, L / 2, (3 * L) / 4, L], zAt);
@@ -237,7 +242,7 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
         stats.rampsOnGround++;
       } else {
         // No room on the ground: slope the bridge down to this node instead.
-        nodeCap.set(k, 0);
+        nodeCap.set(zk, 0);
         for (const [ri, pi] of raisedHere) {
           const len = roads[ri].points.length;
           const dirs: (1 | -1)[] = [];
@@ -247,7 +252,7 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
             const steps = walk(net, ri, pi, dir, R, true);
             const zAt = (d: number) => round2(h * smooth(d / R));
             for (const s of steps) {
-              const pk = keyOf(roads[s.road].points[s.to]);
+              const pk = zKey(net, roads[s.road].points[s.to]);
               nodeCap.set(pk, Math.min(nodeCap.get(pk) ?? Infinity, zAt(s.d1)));
             }
             sample(steps, [R / 4, R / 2, (3 * R) / 4, R], zAt);
@@ -259,8 +264,8 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
   }
 
   // --- Rebuild roads with heights and inserted ramp points --------------------------------
-  const zOf = (p: Point) => {
-    const k = keyOf(p);
+  const zOf = (net: Net, p: Point) => {
+    const k = zKey(net, p);
     return Math.min(nodeZ.get(k) ?? 0, nodeCap.get(k) ?? Infinity);
   };
 
@@ -271,7 +276,7 @@ export function elevateRoads(input: Road[]): { roads: Road[]; stats: ElevationSt
     let n = 0;
     for (let i = 0; i < r.points.length; i++) {
       points.push(r.points[i]);
-      z.push(zOf(r.points[i]));
+      z.push(zOf(netOf(r), r.points[i]));
       while (n < ins.length && ins[n].seg === i) {
         const { t } = ins[n];
         const [a, b] = [r.points[i], r.points[i + 1]];
