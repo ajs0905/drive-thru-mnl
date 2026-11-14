@@ -7,8 +7,10 @@
  * - Steering lock falls off with speed, and the wheels turn toward the input at a
  *   limited rate (faster back to center), so a keyboard tap doesn't jerk the car.
  * - Engine force fades out toward the top speed instead of cutting off.
- * - The handbrake locks the rear wheels and drops their sideways grip: a drift.
+ * - The handbrake tugs the rear wheels; together with the rear grip from drift.ts
+ *   (which it drops) that starts a drift.
  */
+import { rearSideFriction } from './drift';
 import type { Tuning } from './spec';
 
 export interface DriveKeys {
@@ -81,8 +83,11 @@ export function nextSteer(current: number, input: number, speed: number, dt: num
   return current + clamp(goal - current, -step, step);
 }
 
-/** What the wheels should do this step, for an input, the car's forward speed (m/s) and its current wheel angle. */
-export function driveCommand(input: DriveInput, speed: number, steer: number, t: Tuning): DriveCommand {
+/**
+ * What the wheels should do this step, for an input, the car's forward speed (m/s), its
+ * wheel angle, and its rear grip (0 loose to 1 normal, from drift.ts).
+ */
+export function driveCommand(input: DriveInput, speed: number, steer: number, t: Tuning, rearGrip = 1): DriveCommand {
   let engine = 0;
   let brake = 0;
   if (input.throttle > 0) {
@@ -99,6 +104,6 @@ export function driveCommand(input: DriveInput, speed: number, steer: number, t:
     brakeFront: brake,
     brakeRear: input.handbrake ? Math.max(brake, t.handbrake) : brake,
     steer,
-    rearSideFriction: input.handbrake ? t.driftSideFriction : t.sideFriction,
+    rearSideFriction: rearSideFriction(rearGrip, t),
   };
 }

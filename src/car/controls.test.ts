@@ -59,12 +59,15 @@ describe('driveCommand', () => {
   it('coasts with a light drag', () => {
     expect(driveCommand(input(), 15, 0, t)).toMatchObject({ engine: 0, brakeFront: t.coastBrake, brakeRear: t.coastBrake });
   });
-  it('locks the rear wheels and loosens their grip with the handbrake', () => {
+  it('tugs the rear wheels with the handbrake, without locking them', () => {
     const c = driveCommand(input({ handbrake: true }), 15, 0.2, t);
     expect(c.brakeRear).toBe(t.handbrake);
+    expect(c.brakeRear).toBeLessThan(t.brake);
     expect(c.brakeFront).toBe(t.coastBrake);
-    expect(c.rearSideFriction).toBe(t.driftSideFriction);
     expect(c.steer).toBe(0.2);
+  });
+  it('sets rear sideways grip from the drift assist', () => {
     expect(driveCommand(input(), 15, 0, t).rearSideFriction).toBe(t.sideFriction);
+    expect(driveCommand(input(), 15, 0, t, 0).rearSideFriction).toBe(t.driftSideFriction);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHASE, chaseView, damp, turnToward } from './chaseCamera';
+import { CHASE, cameraPull, chaseView, damp, speedFov, turnToward } from './chaseCamera';
 
 describe('chaseView', () => {
   it('sits behind and above the car, looking ahead of it', () => {
@@ -46,5 +46,28 @@ describe('turnToward', () => {
   });
   it('keeps the old direction when the goal has no ground direction', () => {
     expect(turnToward([0, 1], [0, 0], 0.5)).toEqual([0, 1]);
+  });
+});
+
+describe('camera reaction to acceleration and speed', () => {
+  it('hangs back when speeding up and eases in when braking, by about a meter at most', () => {
+    expect(cameraPull(0)).toBe(0);
+    expect(cameraPull(4)).toBeGreaterThan(0);
+    expect(cameraPull(-4)).toBeLessThan(0);
+    expect(cameraPull(100)).toBe(CHASE.maxPullBack);
+    expect(cameraPull(-100)).toBe(-CHASE.maxPullIn);
+    expect(CHASE.maxPullIn).toBeLessThanOrEqual(1);
+  });
+  it('moves the camera along the car by the pull', () => {
+    const base = chaseView([0, 0, 0], 0, 1, 10);
+    const pulled = chaseView([0, 0, 0], 0, 1, 10, 0.8);
+    expect(pulled.position[2]).toBeCloseTo(base.position[2] - 0.8);
+    expect(pulled.lookAt).toEqual(base.lookAt);
+  });
+  it('widens the view a few degrees with speed', () => {
+    expect(speedFov(0)).toBe(CHASE.fov);
+    expect(speedFov(30)).toBeGreaterThan(CHASE.fov);
+    expect(speedFov(1000) - CHASE.fov).toBeLessThanOrEqual(7);
+    expect(speedFov(-20)).toBe(speedFov(20));
   });
 });

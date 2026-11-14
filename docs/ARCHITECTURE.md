@@ -65,8 +65,9 @@ src/
               (typed arrays)
   map/        data contract (types.ts), loader, hashing,         pure TS (loader uses fetch)
               shared road rules (lanes, sidewalks)
-  car/        car spec and tuning, arcade controls, chase         pure TS, no three.js, no React
-              camera math, spawn point, Rapier vehicle setup      (Rapier objects passed in)
+  car/        car spec and tuning, arcade controls, drift         pure TS, no three.js, no React
+              assist, gearbox, body lean, chase camera math,      (Rapier objects passed in)
+              spawn point, Rapier vehicle setup and step
   scene/      three.js / React Three Fiber components            the only place that knows about rendering
   App.tsx     HUD, camera, drive mode, wiring
 pipeline/     offline steps + CLI (build.ts) + map QA (qa.ts)    Node only
@@ -191,11 +192,11 @@ sequenceDiagram
   App->>Drive: Enter: load chunk, mount
   Drive->>Car: spawn on nearest road
   loop every physics step
-    Car->>Rapier: keys -> drive command -> wheels (car/controls, car/vehicle)
+    Car->>Rapier: keys -> controls, drift assist, gearbox -> wheels (car/vehicle stepVehicle)
     Rapier-->>Car: chassis pose (interpolated), wheel states
   end
   loop every frame
-    Car->>Car: wheels, chase camera, blob shadow, brake lights
+    Car->>Car: wheels, body lean, chase camera, blob shadow, lights and halos
     Car->>App: speed (written straight to the HUD)
   end
 ```
@@ -239,7 +240,7 @@ flowchart LR
 - **Road markings in a shader:** the road layer carries one extra vec4 per vertex (distance along, offset across, half width, packed style). A Lambert material patched with `onBeforeCompile` (`src/scene/roadMaterial.ts`) draws edge lines, lane dividers, center lines, zebra crossings and curbs from that, antialiased with `fwidth` and faded out when thinner than a pixel. No textures, no extra draw calls. See [ADR 0009](decisions/0009-road-markings-in-a-shader.md).
 - **Windows in a shader:** building walls carry meters along the wall, meters up, wall length and a packed window style per vertex; a patched Lambert material (`src/scene/buildingMaterial.ts`) draws glass curtain walls, office grids, apartment rows, house windows or parking decks, blending to the average facade color in the distance. Rooftop housings, AC units and water tanks are placed by `src/geometry/roofProps.ts` and drawn as instances. See [ADR 0010](decisions/0010-building-windows-and-roof-details.md).
 - **Trees built in code:** three broadleaf variants (round, wide umbrella, tall) and a palm with drooping fronds, 50 to 82 triangles each, made from jittered icosahedron clusters and tapered prisms (`src/geometry/treeShapes.ts`). Bark and a reference leaf green are vertex colors; each tree's instance color is the ratio of its palette green to that reference, so no custom shader is needed. Low keeps the old trunk-plus-crown trees (38 triangles). See [ADR 0013](decisions/0013-tree-models-built-in-code.md).
-- **The car:** the Sedan from a CC0 low-poly pack, converted once to a 16 KB (gzipped) GLB by `tools/car-to-glb.ts`: scaled to a real sedan, materials baked into vertex colors so the body draws in one call and each wheel in one, lamps split out so they can glow. It doesn't cast into the sun's shadow map (re-rendered only every few frames, so a fast car's shadow would trail); a soft blob shadow under it follows every frame and works on Low too. Lamps glow by emissive color, not real lights, and skip tone mapping so the brake lights visibly brighten. About 1,500 triangles and 8 draw calls.
+- **The car:** the Sedan from a CC0 low-poly pack, converted once to a 16 KB (gzipped) GLB by `tools/car-to-glb.ts`: scaled to a real sedan, materials baked into vertex colors so the body draws in one call and each wheel in one, lamps split out so they can glow. It doesn't cast into the sun's shadow map (re-rendered only every few frames, so a fast car's shadow would trail); a soft blob shadow under it follows every frame and works on Low too. Lamps glow by emissive color, not real lights, and skip tone mapping so the brake lights visibly brighten; each lamp also has a halo (a soft glow sprite added on top of the scene, bigger and brighter while braking, hidden when the lamp faces away). The body pitches and rolls on a spring from the measured acceleration (visual only, the wheels stay put), and the chase camera eases in and out with acceleration and widens its view with speed. About 1,500 triangles and 12 draw calls.
 - **Lighting by quality tier:** ACES tone mapping everywhere; sun shadows around the camera's focus on Medium and High, re-rendered only when that area moves and at most every few frames while it does (`src/scene/Sun.tsx`); hardware anti-aliasing on Medium and High. No post-processing pass. See section 8 and [ADR 0011](decisions/0011-lighting-by-quality-tier.md).
 - **Depth:** a reversed depth buffer where the GPU supports it (`EXT_clip_control`), so far-away layers don't flicker and the GPU can still skip hidden pixels early; a logarithmic depth buffer otherwise.
 - **Surroundings:** past the scenery ring there's no data, so the map would end in flat ground. Seeded filler blocks (`src/geometry/outskirts.ts`) continue the city out to where the haze covers everything, with tower clusters where the real skylines are (Makati CBD, Ortigas, Rockwell, Shaw, placed from their real lat/long). Two low-poly ridges stand in for the Rizal hills on the eastern horizon; they follow the camera like the sky, and their colors are pre-mixed with the haze (`src/scene/Surroundings.tsx`).
@@ -326,7 +327,7 @@ One page each in [decisions/](decisions/):
 | Better buildings (done) | Per-wall coordinates in the mesh builder, window shader by building type and height, instanced roof details (housings, AC units, water tanks) |
 | Lighting and surroundings (done) | Tone mapping, wall contact darkening, a low morning sun with shadows around the camera's focus, a manual Low / Medium / High switch with adaptive resolution, reversed depth buffer, grid-cell meshes, render on demand; filler city with real skylines past the map, hills on the horizon |
 | Barrier data (done) | Second Overpass export (`data/barriers.overpassql`), `pipeline/barriers.ts` (walls cut open at roads, curbside trees moved, gates and booms turned across their road), data contract v6, walls in the structures layer, instanced trees and fixtures, three new QA checks. See [ADR 0012](decisions/0012-barriers-and-trees-from-a-second-export.md). Then tree models built in code for Medium and High ([ADR 0013](decisions/0013-tree-models-built-in-code.md)) |
-| Drivable car | In steps. 8a (done): `src/car` (spec, arcade controls, chase camera, spawn, Rapier vehicle), lazy drive mode with the Sedan on flat ground, brake lights, blob shadow. 8b: colliders from playable buildings, the edge wall and barriers. 8c: flyovers and ramps. 8d: surface grip, curbs, respawn with a fade, touch and gamepad. See ADRs 0008 and 0014 |
+| Drivable car | In steps. Feel (done): drift assist, hidden automatic gears with a shift kick, body pitch and roll, lamp halos, a camera that reacts to acceleration. 8a (done): `src/car` (spec, arcade controls, chase camera, spawn, Rapier vehicle), lazy drive mode with the Sedan on flat ground, brake lights, blob shadow. 8b: colliders from playable buildings, the edge wall and barriers. 8c: flyovers and ramps. 8d: surface grip, curbs, respawn with a fade, touch and gamepad. See ADRs 0008 and 0014 |
 | Tiles, streaming, tiers | Tile format (section 5), worker build, tile manager, quality manager (section 8), Ramer-Douglas-Peucker simplification for far tiles, billboards for far trees rendered from the tree models |
 | Polish | Minimap (reuses `src/scene/MapLines.tsx`), street names, landmarks, props, day/night |
 | Ship | Vercel deploy, measured budgets in PERFORMANCE.md, README media |

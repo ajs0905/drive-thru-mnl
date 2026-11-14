@@ -5,9 +5,9 @@
  */
 import RAPIER from '@dimforge/rapier3d-compat';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { driveCommand, nextSteer, type DriveInput } from './controls';
+import type { DriveInput } from './controls';
 import { SEDAN } from './spec';
-import { applyCommand, chassisCollider, chassisInertia, downforce, setupWheels } from './vehicle';
+import { chassisCollider, chassisInertia, downforce, newDriveState, setupWheels, stepVehicle } from './vehicle';
 
 const DT = 1 / 60;
 
@@ -25,7 +25,7 @@ function makeCar(speed = 0) {
   world.createCollider(chassisCollider(RAPIER, SEDAN), body);
   const vc = world.createVehicleController(body);
   setupWheels(vc, SEDAN);
-  const car = { world, body, vc, steer: 0, maxTilt: 0, time: 0 };
+  const car = { world, body, vc, state: newDriveState(), maxTilt: 0, maxSlip: 0, time: 0, everDrifted: false, gears: [] as number[] };
   drive(car, {}, 1); // settle on the springs
   if (speed) body.setLinvel({ x: 0, y: 0, z: speed }, true);
   return car;
@@ -37,12 +37,11 @@ type Car = ReturnType<typeof makeCar>;
 function drive(car: Car, partial: Partial<DriveInput>, seconds: number) {
   const input: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: false, ...partial };
   for (let i = 0; i < Math.round(seconds / DT); i++) {
-    const speed = car.vc.currentVehicleSpeed();
-    car.steer = nextSteer(car.steer, input.steer, speed, DT, SEDAN.tuning);
-    applyCommand(car.vc, SEDAN, driveCommand(input, speed, car.steer, SEDAN.tuning));
-    car.body.applyImpulse({ x: 0, y: -downforce(SEDAN, speed) * DT, z: 0 }, true);
-    car.vc.updateVehicle(DT);
+    stepVehicle(car.vc, car.body, SEDAN, car.state, input, DT);
     car.world.step();
+    car.maxSlip = Math.max(car.maxSlip, Math.abs(car.state.slip));
+    car.everDrifted ||= car.state.drifting;
+    if (car.gears.at(-1) !== car.state.gearbox.gear) car.gears.push(car.state.gearbox.gear);
     car.time += DT;
     const r = car.body.rotation();
     const up = 1 - 2 * (r.x * r.x + r.z * r.z);
@@ -107,13 +106,73 @@ describe('the Sedan in Rapier', () => {
     expect([0, 1, 2, 3].every((i) => fast.vc.wheelIsInContact(i))).toBe(true);
   });
 
-  it('turns tighter with the handbrake (the rear slides)', () => {
-    const grip = makeCar(20);
-    drive(grip, { steer: 1 }, 1.2);
-    const drift = makeCar(20);
-    drive(drift, { steer: 1, handbrake: true }, 1.2);
-    expect(drift.body.angvel().y).toBeGreaterThan(grip.body.angvel().y);
-    expect(drift.vc.currentVehicleSpeed()).toBeLessThan(grip.vc.currentVehicleSpeed()); // and scrubs speed
+  it('never drifts without the handbrake, even in a hard corner', () => {
+    const car = makeCar(20);
+    drive(car, { throttle: 1, steer: 1 }, 3);
+    expect(car.everDrifted).toBe(false);
+    expect(car.maxSlip).toBeLessThan(0.1);
+  });
+
+  it('drifts with a handbrake kick and holds the slide on throttle, without spinning out', () => {
+    const car = makeCar(20);
+    drive(car, { steer: 1, handbrake: true }, 0.3);
+    drive(car, { steer: 1, throttle: 1 }, 1.5);
+    expect(car.state.drifting).toBe(true);
+    expect(car.maxSlip).toBeGreaterThan(0.45); // a real slide: past 25 degrees
+    expect(car.maxSlip).toBeLessThan(1.1); // held near the limit, not spun out
+    const v = car.body.linvel();
+    expect(Math.hypot(v.x, v.z)).toBeGreaterThan(12); // keeps most of its 72 km/h
+    expect(car.maxTilt).toBeLessThan(15);
+  });
+
+  it('flows out of a drift when the player lets go of the steering', () => {
+    const car = makeCar(20);
+    drive(car, { steer: 1, handbrake: true }, 0.3);
+    drive(car, { steer: 1, throttle: 1 }, 1);
+    drive(car, { throttle: 1 }, 2.5);
+    expect(car.state.drifting).toBe(false);
+    expect(Math.abs(car.state.slip)).toBeLessThan(0.05);
+    expect(car.state.grip).toBe(1);
+    expect(car.vc.currentVehicleSpeed()).toBeGreaterThan(12);
+  });
+
+  it("doesn't start a drift at walking pace", () => {
+    const car = makeCar(4);
+    drive(car, { steer: 1, handbrake: true }, 1);
+    expect(car.everDrifted).toBe(false);
+  });
+
+  it('shifts up through the gears as it speeds up, and down again as it slows', () => {
+    const car = makeCar();
+    drive(car, { throttle: 1 }, 12);
+    expect(car.state.gearbox.gear).toBeGreaterThanOrEqual(4);
+    expect(car.gears).toEqual([1, 2, 3, 4, ...(car.state.gearbox.gear === 5 ? [5] : [])]);
+    expect(car.state.gearbox.upshifts).toBe(car.state.gearbox.gear - 1);
+    drive(car, { brake: 1 }, 6);
+    expect(car.state.gearbox.gear).toBe(-1); // stopped, then reversing
+  });
+
+  it('feels the upshift: the drive drops for a moment', () => {
+    const car = makeCar();
+    let before = 0;
+    let during = Infinity;
+    for (let i = 0; i < 6 * 60; i++) {
+      const shifting = car.state.gearbox.shifting > 0;
+      drive(car, { throttle: 1 }, DT);
+      if (car.state.gearbox.gear === 2 && !shifting && car.state.gearbox.shifting > 0) before = car.state.accel.forward;
+      if (car.state.gearbox.gear === 2 && car.state.gearbox.shifting > 0) during = Math.min(during, car.state.accel.forward);
+    }
+    expect(before).toBeGreaterThan(2);
+    expect(during).toBeLessThan(before * 0.75);
+  });
+
+  it('measures acceleration in the car frame: forward when speeding up, sideways in turns', () => {
+    const car = makeCar();
+    drive(car, { throttle: 1 }, 1);
+    expect(car.state.accel.forward).toBeGreaterThan(3);
+    const turning = makeCar(15);
+    drive(turning, { steer: 1, throttle: 0.3 }, 2);
+    expect(turning.state.accel.left).toBeGreaterThan(5); // turning left pulls the car left
   });
 });
 

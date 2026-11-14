@@ -3,7 +3,11 @@
  * direction trails the car's (it swings around in corners instead of being bolted on),
  * but its position is always computed from where the car is now, so it never falls
  * behind at speed. It pulls back a little as the car speeds up, for a sense of speed.
- * Three.js space throughout (y up).
+ *
+ * It also reacts, subtly, to how hard the car speeds up or slows down: it hangs back up
+ * to about a meter under full throttle and eases in about a meter under hard braking,
+ * and the view widens a few degrees at speed. That makes acceleration, braking and
+ * gear shifts readable on screen. Three.js space throughout (y up).
  */
 export type Vec3 = [number, number, number];
 
@@ -25,19 +29,41 @@ export const CHASE = {
   lookHeight: 1.1,
   /** How quickly the camera's direction follows the car's (per second; higher is stiffer). */
   turnRate: 4,
+  /** Extra distance per m/s^2 of forward acceleration, capped: back when speeding up, in when braking. */
+  pullPerAccel: 0.13,
+  maxPullBack: 0.8,
+  maxPullIn: 1.0,
+  /** How quickly the pull follows the acceleration (per second). */
+  pullRate: 5,
+  /** Field of view (degrees) at a standstill, and how much it widens per m/s up to `maxSpeed`. */
+  fov: 50,
+  fovPerSpeed: 0.12,
 };
+
+/** Extra distance behind the car (m) for its forward acceleration (m/s^2): positive is farther. */
+export function cameraPull(forwardAccel: number): number {
+  return Math.max(-CHASE.maxPullIn, Math.min(CHASE.maxPullBack, forwardAccel * CHASE.pullPerAccel));
+}
+
+/** Field of view (degrees) at a speed. */
+export function speedFov(speed: number): number {
+  return CHASE.fov + Math.min(Math.abs(speed), CHASE.maxSpeed) * CHASE.fovPerSpeed;
+}
 
 /** Share of the way to move toward a goal this frame, for exponential smoothing at any frame rate. */
 export function damp(rate: number, dt: number): number {
   return 1 - Math.exp(-rate * Math.max(0, dt));
 }
 
-/** Camera position and look-at point for a car at `car`, facing the ground direction (fx, fz), at a speed (m/s). */
-export function chaseView(car: Vec3, fx: number, fz: number, speed: number): ChaseView {
+/**
+ * Camera position and look-at point for a car at `car`, facing the ground direction
+ * (fx, fz), at a speed (m/s), with `pull` meters of extra distance (see cameraPull).
+ */
+export function chaseView(car: Vec3, fx: number, fz: number, speed: number, pull = 0): ChaseView {
   const len = Math.hypot(fx, fz) || 1;
   const [dx, dz] = [fx / len, fz / len];
   const s = Math.min(Math.abs(speed), CHASE.maxSpeed);
-  const back = CHASE.distance + CHASE.distancePerSpeed * s;
+  const back = CHASE.distance + CHASE.distancePerSpeed * s + pull;
   const up = CHASE.height + CHASE.heightPerSpeed * s;
   return {
     position: [car[0] - dx * back, car[1] + up, car[2] - dz * back],

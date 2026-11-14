@@ -1,11 +1,14 @@
 /**
  * The car on Rapier's ray-cast vehicle (a port of Bullet's): the chassis is one rigid
  * body, and each wheel is a ray cast down from the chassis with a spring, tire grip,
- * engine force and brake. This file sets it up and drives it from a DriveCommand; it
- * takes Rapier's objects as arguments, so the same code runs in the game and in tests.
+ * engine force and brake. This file sets it up and runs one physics step of driving
+ * (`stepVehicle`: input -> arcade controls, drift assist, gearbox -> wheels). It takes
+ * Rapier's objects as arguments, so the same code runs in the game and in tests.
  */
 import type RAPIER from '@dimforge/rapier3d-compat';
-import type { DriveCommand } from './controls';
+import { driveCommand, nextSteer, type DriveCommand, type DriveInput } from './controls';
+import { antiSpin, countersteer, driftPush, driftTurn, nextDrifting, nextRearGrip, slipAngle, toLocal, type Vec } from './drift';
+import { driveShare, NEW_GEARBOX, stepGearbox, type Gearbox } from './gearbox';
 import { wheelHardPoint, type CarSpec } from './spec';
 
 type Rapier = typeof RAPIER;
@@ -60,4 +63,74 @@ export function applyCommand(controller: VehicleController, spec: CarSpec, cmd: 
 /** Downward push for a speed (N), applied as an impulse each step. */
 export function downforce(spec: CarSpec, speed: number): number {
   return spec.tuning.downforce * speed * speed;
+}
+
+/** What the car remembers between physics steps. */
+export interface DriveState {
+  /** Wheel angle from the player's input (radians), before countersteer. */
+  steer: number;
+  /** Rear grip, 0 loose to 1 normal, and whether the car is drifting (drift.ts). */
+  grip: number;
+  drifting: boolean;
+  gearbox: Gearbox;
+  /** Slip angle (radians, positive moving toward the car's left). */
+  slip: number;
+  /** Smoothed acceleration in the car's frame (m/s^2): forward and toward its left. */
+  accel: { forward: number; left: number };
+  /** World velocity at the last step, to measure acceleration. */
+  lastVel: Vec | null;
+  /** Brake lights on. */
+  braking: boolean;
+}
+
+export const newDriveState = (): DriveState => ({
+  steer: 0,
+  grip: 1,
+  drifting: false,
+  gearbox: NEW_GEARBOX,
+  slip: 0,
+  accel: { forward: 0, left: 0 },
+  lastVel: null,
+  braking: false,
+});
+
+/** Acceleration readings are smoothed over about this long (s), so bumps don't shake the camera. */
+const ACCEL_SMOOTHING = 0.08;
+
+/** One physics step of driving: reads the car, updates `s`, sets the wheels and pushes the body. Call before the world steps. */
+export function stepVehicle(vc: VehicleController, body: RAPIER.RigidBody, spec: CarSpec, s: DriveState, input: DriveInput, dt: number) {
+  const t = spec.tuning;
+  const rot = body.rotation();
+  const vel = body.linvel();
+  const local = toLocal(vel, rot);
+  const speed = vc.currentVehicleSpeed();
+
+  // Acceleration in the car's frame, from the change in world velocity (so turning shows as sideways acceleration).
+  if (s.lastVel) {
+    const a = toLocal({ x: (vel.x - s.lastVel.x) / dt, y: (vel.y - s.lastVel.y) / dt, z: (vel.z - s.lastVel.z) / dt }, rot);
+    const k = 1 - Math.exp(-dt / ACCEL_SMOOTHING);
+    s.accel = { forward: s.accel.forward + (a.z - s.accel.forward) * k, left: s.accel.left + (a.x - s.accel.left) * k };
+  }
+  s.lastVel = { x: vel.x, y: vel.y, z: vel.z };
+
+  s.slip = slipAngle(local.x, local.z);
+  s.gearbox = stepGearbox(s.gearbox, speed, dt, t);
+  s.drifting = nextDrifting(s.drifting, input.handbrake, input.steer, speed, s.slip);
+  s.grip = nextRearGrip(s.grip, input.handbrake, input.throttle, s.drifting, dt, t);
+  s.steer = nextSteer(s.steer, input.steer, speed, dt, t);
+  const steer = Math.max(-t.maxSteer, Math.min(t.maxSteer, s.steer + countersteer(s.slip, t)));
+
+  const cmd = driveCommand(input, speed, steer, t, s.grip);
+  applyCommand(vc, spec, { ...cmd, engine: cmd.engine * driveShare(s.gearbox, t) });
+  s.braking = input.handbrake || cmd.brakeFront > t.coastBrake;
+
+  body.applyImpulse({ x: 0, y: -downforce(spec, speed) * dt, z: 0 }, true);
+  const push = driftPush(s.drifting, input.throttle, Math.hypot(vel.x, vel.z), t);
+  if (push) {
+    const h = Math.hypot(vel.x, vel.z);
+    body.applyImpulse({ x: (vel.x / h) * push * spec.mass * dt, y: 0, z: (vel.z / h) * push * spec.mass * dt }, true);
+  }
+  const turn = driftTurn(input.steer, s.drifting, t) + antiSpin(s.slip, body.angvel().y, t);
+  if (turn) body.applyTorqueImpulse({ x: 0, y: turn * chassisInertia(spec)[1] * dt, z: 0 }, true);
+  vc.updateVehicle(dt);
 }

@@ -8,7 +8,7 @@ import { Box3, type Mesh, type Object3D } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it } from 'vitest';
 import { SEDAN } from '../src/car/spec';
-import { blobShadowGeometry, LAMPS, prepareCarModel, setBrakeLights } from '../src/scene/carModel';
+import { blobShadowGeometry, HALO, haloTexture, lampCenters, LAMPS, poseBody, prepareCarModel, setBrakeLights, updateHalos } from '../src/scene/carModel';
 
 function load(path: string): Promise<Object3D> {
   const buf = readFileSync(path);
@@ -82,6 +82,70 @@ describe('prepareCarModel', async () => {
     setBrakeLights(model, false);
     expect(model.lamps.tail.emissiveIntensity).toBe(LAMPS.tail.idle);
     expect(LAMPS.tail.braking).toBeGreaterThan(LAMPS.tail.idle * 3);
+  });
+});
+
+describe('halos', async () => {
+  const model = prepareCarModel(await load(join(import.meta.dirname, '..', 'public', SEDAN.model)));
+
+  it('puts one halo on each lamp: two tail lights, two headlights, at the back and front', () => {
+    expect(model.halos.tail).toHaveLength(2);
+    expect(model.halos.head).toHaveLength(2);
+    expect(model.halos.tail.every((h) => h.position.z < -1.5)).toBe(true);
+    expect(model.halos.head.every((h) => h.position.z > 1.5)).toBe(true);
+    expect(Math.sign(model.halos.tail[0].position.x)).not.toBe(Math.sign(model.halos.tail[1].position.x));
+  });
+
+  it('glows bigger and brighter while braking', () => {
+    updateHalos(model, false, 1, 0);
+    const idle = { size: model.halos.tail[0].scale.x, opacity: model.halos.tail[0].material.opacity };
+    updateHalos(model, true, 1, 0);
+    expect(model.halos.tail[0].scale.x).toBeGreaterThan(idle.size * 2);
+    expect(model.halos.tail[0].material.opacity).toBeGreaterThan(idle.opacity);
+    expect(model.halos.tail[0].material.opacity).toBe(HALO.tail.braking.opacity);
+  });
+
+  it('hides halos whose lamps face away from the camera', () => {
+    updateHalos(model, true, 1, 0); // seen from behind
+    expect(model.halos.head.every((h) => !h.visible)).toBe(true);
+    expect(model.halos.tail.every((h) => h.visible)).toBe(true);
+    updateHalos(model, true, 0, 1); // seen from the front
+    expect(model.halos.tail.every((h) => !h.visible)).toBe(true);
+    expect(model.halos.head[0].material.opacity).toBeCloseTo(HALO.head.opacity);
+  });
+
+  it('is light, not paint: added on top, not tone mapped, not hiding things behind it', () => {
+    const m = model.halos.tail[0].material;
+    expect(m.toneMapped).toBe(false);
+    expect(m.depthWrite).toBe(false);
+    expect(m.blending).toBe(2); // AdditiveBlending
+  });
+
+  it('poses the body without moving the wheels', () => {
+    poseBody(model, 0.03, -0.02);
+    expect(model.body.rotation.x).toBeCloseTo(0.03);
+    expect(model.body.rotation.z).toBeCloseTo(-0.02);
+    expect(model.wheels.wheelFL.parent).not.toBe(model.body);
+    poseBody(model, 0, 0);
+  });
+});
+
+describe('haloTexture and lampCenters', () => {
+  it('fades from opaque in the middle to clear at the edge', () => {
+    const tex = haloTexture(16);
+    const data = tex.image.data as Uint8Array;
+    const alpha = (x: number, y: number) => data[(y * 16 + x) * 4 + 3];
+    expect(alpha(8, 8)).toBeGreaterThan(200);
+    expect(alpha(0, 0)).toBe(0);
+    expect(alpha(8, 8)).toBeGreaterThan(alpha(12, 8));
+  });
+  it('finds the left and right lamp centers', async () => {
+    const { BufferGeometry, Float32BufferAttribute } = await import('three');
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute([1, 0, 0, 1, 2, 0, -1, 0, 0, -1, 2, 0], 3));
+    const [left, right] = lampCenters(g);
+    expect(left.toArray()).toEqual([1, 1, 0]);
+    expect(right.toArray()).toEqual([-1, 1, 0]);
   });
 });
 

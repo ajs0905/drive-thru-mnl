@@ -1,24 +1,26 @@
 /**
  * The player's car: the model on a Rapier rigid body driven by a ray-cast vehicle
- * (src/car/vehicle.ts), keyboard input, the chase camera, the blob shadow, and brake
- * lights that light up while braking.
+ * (src/car/vehicle.ts), keyboard input, the chase camera, the blob shadow, brake lights
+ * and lamp halos, and the body's pitch and roll.
  *
- * Physics steps at a fixed 60 Hz (Drive.tsx); before each step the keys become a drive
- * command. The rendered car is interpolated between steps by @react-three/rapier, and
- * after that, each frame, the wheels, camera and shadow are placed from it. Moving the
- * map controls' target along with the car keeps the sun's shadow area and the prop
- * distance limits centered on it.
+ * Physics steps at a fixed 60 Hz (Drive.tsx); before each step `stepVehicle` turns the
+ * keys into what the wheels do (arcade controls, drift assist, gearbox). The rendered
+ * car is interpolated between steps by @react-three/rapier, and after that, each frame,
+ * the wheels, body lean, camera, shadow and lights are placed from it. Moving the map
+ * controls' target along with the car keeps the sun's shadow area and the prop distance
+ * limits centered on it.
  */
 import { useFrame, useLoader, useThree } from '@react-three/fiber';
 import { RigidBody, useBeforePhysicsStep, useRapier, type RapierRigidBody } from '@react-three/rapier';
 import { useEffect, useMemo, useRef } from 'react';
-import { Quaternion, Vector3 } from 'three';
+import { Quaternion, Vector3, type PerspectiveCamera } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { CHASE, chaseView, damp, turnToward, type Vec3 } from '../car/chaseCamera';
-import { driveCommand, inputFromKeys, KEY_BINDINGS, NO_KEYS, nextSteer } from '../car/controls';
+import { kick, STILL, stepBody } from '../car/bodyMotion';
+import { CHASE, cameraPull, chaseView, damp, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
+import { inputFromKeys, KEY_BINDINGS, NO_KEYS } from '../car/controls';
 import { wheelHardPoint, type CarSpec } from '../car/spec';
-import { applyCommand, chassisCollider, downforce, setupWheels, type VehicleController } from '../car/vehicle';
-import { blobShadow, placeShadow, prepareCarModel, setBrakeLights } from './carModel';
+import { chassisCollider, newDriveState, setupWheels, stepVehicle, type VehicleController } from '../car/vehicle';
+import { blobShadow, placeShadow, poseBody, prepareCarModel, setBrakeLights, updateHalos } from './carModel';
 
 /** Seconds upside down (or fallen off the world) before the car puts itself back on its wheels. */
 const STUCK_RESET = 2;
@@ -49,8 +51,18 @@ export function Car({
 
   const body = useRef<RapierRigidBody>(null);
   const { world, rapier } = useRapier();
-  const sim = useRef({ vc: null as VehicleController | null, steer: 0, keys: { ...NO_KEYS }, reset: false, stuck: 0, braking: false });
-  const view = useRef({ dir: [0, 1] as [number, number], placed: false, pos: new Vector3(), quat: new Quaternion(), fwd: new Vector3() });
+  const sim = useRef({ vc: null as VehicleController | null, drive: newDriveState(), keys: { ...NO_KEYS }, reset: false, stuck: 0 });
+  const view = useRef({
+    dir: [0, 1] as [number, number],
+    placed: false,
+    pull: 0,
+    body: STILL,
+    upshifts: 0,
+    pos: new Vector3(),
+    quat: new Quaternion(),
+    fwd: new Vector3(),
+    toCamera: new Vector3(),
+  });
 
   // Chassis collider and the vehicle, once the rigid body exists.
   useEffect(() => {
@@ -73,9 +85,12 @@ export function Car({
   const get = useThree((s) => s.get);
   useEffect(() => {
     const v = view.current;
+    const camera = get().camera as PerspectiveCamera;
+    const fov = camera.fov;
     return () => {
+      camera.fov = fov; // undo the speed widening
+      camera.updateProjectionMatrix();
       if (!v.placed) return;
-      const { camera } = get();
       camera.position.set(v.pos.x - v.dir[0] * EXIT_VIEW.back, v.pos.y + EXIT_VIEW.up, v.pos.z - v.dir[1] * EXIT_VIEW.back);
       camera.lookAt(v.pos);
     };
@@ -116,16 +131,9 @@ export function Car({
     s.stuck = upY < 0.3 || b.translation().y < -20 ? s.stuck + dt : 0;
     if (s.reset || s.stuck > STUCK_RESET) {
       putBackOnWheels(b, spawn.position[1]);
-      Object.assign(s, { reset: false, stuck: 0, steer: 0 });
+      Object.assign(s, { reset: false, stuck: 0, drive: { ...newDriveState(), gearbox: { ...s.drive.gearbox, gear: 1, shifting: 0 } } });
     }
-    const speed = s.vc.currentVehicleSpeed();
-    const input = inputFromKeys(s.keys);
-    s.steer = nextSteer(s.steer, input.steer, speed, dt, spec.tuning);
-    const cmd = driveCommand(input, speed, s.steer, spec.tuning);
-    applyCommand(s.vc, spec, cmd);
-    s.braking = input.handbrake || cmd.brakeFront > spec.tuning.coastBrake;
-    b.applyImpulse({ x: 0, y: -downforce(spec, speed) * dt, z: 0 }, true);
-    s.vc.updateVehicle(dt);
+    stepVehicle(s.vc, b, spec, s.drive, inputFromKeys(s.keys), dt);
   });
 
   useFrame((state, dt) => {
@@ -139,17 +147,32 @@ export function Car({
     });
 
     const v = view.current;
+    const drive = sim.current.drive;
     model.root.getWorldPosition(v.pos);
     model.root.getWorldQuaternion(v.quat);
     v.fwd.set(0, 0, 1).applyQuaternion(v.quat);
     const speed = vc.currentVehicleSpeed();
 
-    // Chase camera: snaps behind the car the first time, then its direction trails the car's.
+    // Body lean from acceleration, with a nose-down kick at each upshift.
+    v.body = stepBody(v.body, drive.accel.forward, drive.accel.left, dt);
+    if (drive.gearbox.upshifts > v.upshifts) v.body = kick(v.body);
+    v.upshifts = drive.gearbox.upshifts;
+    poseBody(model, v.body.pitch, v.body.roll);
+
+    // Chase camera: snaps behind the car the first time, then its direction trails the
+    // car's; its distance eases with the car's acceleration, and the view widens with speed.
     v.dir = v.placed ? turnToward(v.dir, [v.fwd.x, v.fwd.z], damp(CHASE.turnRate, dt)) : turnToward(v.dir, [v.fwd.x, v.fwd.z], 1);
+    v.pull += (cameraPull(drive.accel.forward) - v.pull) * (v.placed ? damp(CHASE.pullRate, dt) : 1);
     v.placed = true;
-    const cam = chaseView([v.pos.x, v.pos.y, v.pos.z], v.dir[0], v.dir[1], speed);
-    state.camera.position.set(...cam.position);
-    state.camera.lookAt(...cam.lookAt);
+    const cam = chaseView([v.pos.x, v.pos.y, v.pos.z], v.dir[0], v.dir[1], speed, v.pull);
+    const camera = state.camera as PerspectiveCamera;
+    camera.position.set(...cam.position);
+    camera.lookAt(...cam.lookAt);
+    const fov = speedFov(speed);
+    if (Math.abs(camera.fov - fov) > 0.01) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
     const controls = state.controls as unknown as { target?: Vector3 } | null;
     controls?.target?.copy(v.pos);
 
@@ -162,7 +185,10 @@ export function Car({
       n++;
     }
     placeShadow(shadow, v.pos.x, n > 0 ? y / n : null, v.pos.z, Math.atan2(v.fwd.x, v.fwd.z));
-    setBrakeLights(model, sim.current.braking);
+    setBrakeLights(model, drive.braking);
+    v.toCamera.copy(camera.position).sub(v.pos).normalize();
+    const facing = v.fwd.dot(v.toCamera);
+    updateHalos(model, drive.braking, -facing, facing);
     onSpeed?.(speed);
   });
 

@@ -58,7 +58,7 @@ Whole map: 34.9k → 62.7k tree triangles, 14 → 26 instanced tree meshes. Medi
 
 ### Drivable car (first step)
 
-The Sedan adds about 1,500 triangles and 8 draw calls (body, two lamp meshes, four wheels, the blob shadow); it casts no shadow-map shadow. Physics is one rigid body and a ground collider, stepped at 60 Hz. While driving, rendering is continuous instead of on demand. Headless at 960x540 on Medium, a street-level drive drew 53 to 80 draw calls and 266k to 400k triangles depending on where the car points (the chase camera sees more of the city at once than the map's usual views). Frame rate there means nothing (software renderer); on real hardware it's still to be measured.
+The Sedan adds about 1,500 triangles and 12 draw calls (body, two lamp meshes, four wheels, the blob shadow, four lamp halos; halos facing away from the camera are skipped); it casts no shadow-map shadow. Body lean, the gearbox and the drift assist are a few arithmetic operations per frame or physics step. Physics is one rigid body and a ground collider, stepped at 60 Hz. While driving, rendering is continuous instead of on demand. Headless at 960x540 on Medium, a street-level drive drew 53 to 80 draw calls and 266k to 400k triangles depending on where the car points (the chase camera sees more of the city at once than the map's usual views). Frame rate there means nothing (software renderer); on real hardware it's still to be measured.
 
 ### Desktop with a GPU
 

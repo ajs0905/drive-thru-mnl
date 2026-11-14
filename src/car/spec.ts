@@ -24,7 +24,7 @@ export interface Tuning {
   reverseSpeed: number;
   /** Brake impulse per wheel per step, full pedal. */
   brake: number;
-  /** Rear brake with the handbrake, and the light drag when coasting. */
+  /** Rear brake with the handbrake (a tug that breaks the rear loose, not a lock), and the light drag when coasting. */
   handbrake: number;
   coastBrake: number;
   /** Steering lock (radians) at a standstill and at top speed; in between it falls off with speed. */
@@ -44,6 +44,31 @@ export interface Tuning {
   suspensionTravel: number;
   suspensionRest: number;
   maxSuspensionForce: number;
+  /**
+   * Drift assist (see drift.ts). Rear grip returns at `gripRecover` per second after the
+   * handbrake; while the player holds throttle in a drift it only comes back to
+   * `sustainGrip`, so the slide keeps going. While drifting, full steering turns the car
+   * at `driftYaw` rad/s per second. The front wheels steer into any slide by
+   * `countersteer` times its angle, and past `maxDrift` (radians) the car's rotation is
+   * damped at `antiSpin` per second, so it holds the angle instead of spinning out.
+   */
+  gripRecover: number;
+  sustainGrip: number;
+  driftYaw: number;
+  /** Push along the direction of travel while drifting on throttle (m/s^2 at full throttle), so drifts keep their speed. */
+  driftPush: number;
+  countersteer: number;
+  maxDrift: number;
+  antiSpin: number;
+  /**
+   * Automatic gearbox (see gearbox.ts): speeds (m/s) to shift up out of gears 1, 2, 3...,
+   * how far below them it shifts back down, and the short drop in drive during an upshift
+   * (seconds, and the share of drive left), which gives the shift its kick.
+   */
+  upshift: number[];
+  downshiftGap: number;
+  shiftTime: number;
+  shiftDrive: number;
   /** Extra downward push, N per (m/s)^2: keeps the car planted at speed. */
   downforce: number;
   /** Slows spins and rolls a little, so crashes stay readable. */
@@ -93,7 +118,7 @@ export const SEDAN: CarSpec = {
     topSpeed: 50,
     reverseSpeed: 9,
     brake: 40,
-    handbrake: 60,
+    handbrake: 8,
     coastBrake: 2,
     maxSteer: 0.55,
     minSteer: 0.1,
@@ -101,13 +126,24 @@ export const SEDAN: CarSpec = {
     steerReturn: 3.5,
     frictionSlip: 1.3,
     sideFriction: 1.0,
-    driftSideFriction: 0.35,
+    driftSideFriction: 0.05,
     suspensionStiffness: 30,
     suspensionCompression: 4.4,
     suspensionRelaxation: 2.3,
     suspensionTravel: 0.2,
     suspensionRest: 0.3,
     maxSuspensionForce: 100000,
+    gripRecover: 2,
+    sustainGrip: 0.2,
+    driftYaw: 2.5,
+    driftPush: 7,
+    countersteer: 0.35,
+    maxDrift: 0.6,
+    antiSpin: 8,
+    upshift: [9, 17, 26, 36],
+    downshiftGap: 3,
+    shiftTime: 0.18,
+    shiftDrive: 0.25,
     downforce: 2,
     angularDamping: 0.6,
     linearDamping: 0.05,
