@@ -112,6 +112,8 @@ body,
 }
 
 .hud .quality {
+  /* The panel lets clicks through to the map; the switch has to take them. */
+  pointer-events: auto;
   margin-top: 8px;
   display: flex;
   align-items: center;

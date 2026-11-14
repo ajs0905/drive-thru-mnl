@@ -3,7 +3,8 @@
  * With shadows on, the shadow map covers a square around where the camera is looking
  * (the controls' target), sized by how far away the camera is, so close-ups get
  * sharp shadows and overviews still get some. The square moves in whole shadow-map
- * texels, which keeps shadow edges from crawling as the camera pans.
+ * texels, which keeps shadow edges from crawling as the camera pans. The city doesn't
+ * move, so the shadow map is only re-rendered when that square moves or resizes.
  */
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
@@ -23,9 +24,11 @@ function useSun(shadowMap: number) {
       light.shadow.camera.far = SUN_DISTANCE * 2;
       light.shadow.bias = -0.0004;
       light.shadow.normalBias = 0.5;
+      light.shadow.autoUpdate = false;
+      light.shadow.needsUpdate = true;
     }
     const focus = new Vector3();
-    const frame = { half: 0 };
+    const frame = { half: 0, x: NaN, z: NaN };
     const update = (camera: Camera, target: Vector3 | undefined) => {
       focus.copy(target ?? new Vector3());
       const half = shadowHalfSize(camera.position.distanceTo(focus));
@@ -40,6 +43,12 @@ function useSun(shadowMap: number) {
           cam.bottom = -half;
           cam.updateProjectionMatrix();
           frame.half = half;
+          light.shadow.needsUpdate = true;
+        }
+        if (focus.x !== frame.x || focus.z !== frame.z) {
+          frame.x = focus.x;
+          frame.z = focus.z;
+          light.shadow.needsUpdate = true;
         }
       }
       light.position.copy(focus).addScaledVector(SKY.sunDir, SUN_DISTANCE);

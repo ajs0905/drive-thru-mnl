@@ -1,15 +1,18 @@
-import { MapControls } from '@react-three/drei';
+import { MapControls, PerformanceMonitor } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { loadMap, type MapSource } from './map/loadMap';
 import type { MapData } from './map/types';
 import { City } from './scene/City';
 import { PALETTE, type CityMeshes } from './scene/cityGeometry';
-import { initialQuality, QUALITIES, QUALITY, saveQuality, type Quality } from './scene/quality';
+import { dprFor, initialQuality, QUALITIES, QUALITY, saveQuality, supportsReversedDepth, type Quality } from './scene/quality';
 import { Sky } from './scene/Sky';
 import { Sun } from './scene/Sun';
 import { Surroundings } from './scene/Surroundings';
 import { SKY } from './scene/skyConfig';
+
+// Checked once: reversed depth if the GPU has it, otherwise a logarithmic depth buffer.
+const REVERSED_DEPTH = supportsReversedDepth();
 
 // High tier only, so the post-processing code is a separate download.
 const Effects = lazy(() => import('./scene/Effects'));
@@ -88,8 +91,12 @@ export default function App() {
   const onBuilt = useCallback((m: CityMeshes) => setBuilt(m), []);
   const [quality, setQuality] = useState<Quality>(initialQuality);
   const settings = QUALITY[quality];
+  // Performance factor from the monitor: 1 = full resolution for the tier, lower when FPS drops.
+  const [factor, setFactor] = useState(1);
+  const dpr = dprFor(settings.dpr, factor, window.devicePixelRatio || 1);
   const pickQuality = (q: Quality) => {
     saveQuality(q);
+    setFactor(1);
     setQuality(q);
   };
 
@@ -110,9 +117,10 @@ export default function App() {
           // A new canvas per quality: shadows and buffers are set up once, at creation.
           key={quality}
           camera={{ position: view.position, fov: 50, near: 1, far: 12000 }}
-          gl={{ logarithmicDepthBuffer: true, antialias: !settings.post }}
-          shadows={settings.shadowMap > 0}
-          dpr={settings.dpr}
+          gl={{ reversedDepthBuffer: REVERSED_DEPTH, logarithmicDepthBuffer: !REVERSED_DEPTH, antialias: !settings.post }}
+          // PCF, not the default soft PCF: sharper and cheaper; the light is low-poly anyway.
+          shadows={settings.shadowMap > 0 ? 'percentage' : false}
+          dpr={dpr}
           onCreated={({ gl }) => {
             gl.toneMappingExposure = SKY.toneExposure;
             gl.info.autoReset = false; // PerfProbe resets once per frame, so stats cover every pass
@@ -120,7 +128,13 @@ export default function App() {
         >
           <color attach="background" args={[SKY.horizon]} />
           <fog attach="fog" args={[SKY.horizon, 1800, 5500]} />
-          <Sky />
+          {/* Lower the resolution when the frame rate drops, raise it again with headroom. */}
+          <PerformanceMonitor
+            onChange={({ factor: f }) => setFactor(Math.round(f * 10) / 10)}
+            flipflops={4}
+            onFallback={() => setFactor(0)}
+          />
+          <Sky clouds={settings.clouds} />
           <Sun shadowMap={settings.shadowMap} />
           {settings.post && (
             <Suspense fallback={null}>

@@ -20,7 +20,7 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - **Clean intersections, painted roads.** Roads are split into a graph and every junction gets its own polygon, worked out from where the road edges meet; junctions of divided roads merge into one, and leftover gaps are found by rasterizing the road surface and paved. Lane lines, center lines, zebra crossings and curbs are drawn by a shader from per-vertex data: no textures, no extra draw calls.
 - **Windows without textures.** Every building gets windows from its type and height (glass towers, offices, apartments, houses, parking decks), drawn by a shader; roofs get stair housings, AC units and water tanks.
 - **No edge of the world.** Past the mapped area the city continues as filler blocks out to the haze, with the real skylines of Makati and Ortigas where they actually are, and the Rizal hills on the eastern horizon.
-- **Lighting that scales with the device.** Sun shadows that follow the camera, ambient occlusion and bloom on desktops; tone mapping and baked contact shading everywhere. A Low / Medium / High switch keeps phones smooth, and phones never download the post-effects code.
+- **Lighting that scales with the device.** Sun shadows that follow the camera and bloom on desktops; tone mapping and baked contact shading everywhere. A Low / Medium / High switch plus resolution that adapts to the frame rate keeps phones smooth, and phones never download the post-effects code.
 - **Fast to render.** On Low the whole city, surroundings and sky draw in 13 draw calls (about 285k triangles), built in about 300 ms.
 - **Tested and checked.** 260+ unit tests, an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
 
@@ -38,7 +38,7 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - [x] Map QA, architecture docs, CI
 - [x] Better roads: lane markings, clean intersections, zebra crossings, sidewalks and curbs; physically based sky with clouds
 - [x] Better buildings: windows, roof details
-- [x] Lighting and surroundings: shadows, ambient occlusion, tone mapping, Low / Medium / High switch; filler city, real skylines and hills past the map
+- [x] Lighting and surroundings: shadows, tone mapping, bloom, Low / Medium / High switch with adaptive resolution; filler city, real skylines and hills past the map
 - [ ] Walls and fences from OSM
 - [ ] Drivable car with NFS-style limits (solid buildings, barriers, surface grip, respawn)
 - [ ] Tile streaming and quality tiers for phones

@@ -12,7 +12,7 @@ import { Color, type Camera, type ShaderMaterial } from 'three';
 import { Sky as SkyMesh } from 'three/examples/jsm/objects/Sky.js';
 import { SKY } from './skyConfig';
 
-function useSkyMesh() {
+function useSkyMesh(clouds: boolean) {
   const sky = useMemo(() => {
     const mesh = new SkyMesh();
     mesh.scale.setScalar(10000);
@@ -36,7 +36,8 @@ function useSkyMesh() {
     u.mieCoefficient.value = SKY.mieCoefficient;
     u.mieDirectionalG.value = SKY.mieDirectionalG;
     u.sunPosition.value.copy(SKY.sunDir);
-    u.cloudCoverage.value = SKY.clouds.coverage;
+    // Coverage 0 skips the cloud noise in the shader entirely (Low tier).
+    u.cloudCoverage.value = clouds ? SKY.clouds.coverage : 0;
     u.cloudDensity.value = SKY.clouds.density;
     u.cloudElevation.value = SKY.clouds.elevation;
     u.cloudScale.value = SKY.clouds.scale;
@@ -47,13 +48,13 @@ function useSkyMesh() {
       u.time.value = time;
     };
     return { mesh, update };
-  }, []);
+  }, [clouds]);
   useEffect(() => () => (sky.mesh.geometry.dispose(), (sky.mesh.material as ShaderMaterial).dispose()), [sky]);
   return sky;
 }
 
-export function Sky() {
-  const sky = useSkyMesh();
+export function Sky({ clouds = true }: { clouds?: boolean }) {
+  const sky = useSkyMesh(clouds);
   useFrame(({ camera, clock }) => sky.update(camera, clock.elapsedTime));
   return <primitive object={sky.mesh} />;
 }

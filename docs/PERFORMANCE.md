@@ -24,17 +24,21 @@ Headless Chrome on a desktop CPU with a software renderer (no GPU), so frame rat
 
 | What | Value | Notes |
 | --- | --- | --- |
-| JS bundle | 1.21 MB, **333 KB gzipped** (321) | Mostly three.js, React Three Fiber and drei (drei is only used for `MapControls`) |
-| Post effects chunk | 241 KB, **104 KB gzipped** | `postprocessing` + N8AO; only downloaded on High |
+| JS bundle | 1.21 MB, **338 KB gzipped** (321) | Mostly three.js, React Three Fiber and drei (drei is only used for `MapControls`) |
+| Post effects chunk | 182 KB, **82 KB gzipped** | `postprocessing` (bloom, tone mapping, SMAA); only downloaded on High |
 | Map data (`bgc.json`) | 3.06 MB, **736 KB gzipped** (657) | Whole map in one JSON file; junction polygons, gap patches, zebras and lane/sidewalk tags added about 80 KB |
 | City mesh build | **about 300 ms** (213), main thread | Freezes the page while it runs; sidewalks, junction polygons and roof prop placement (about 15 ms) are new work |
-| Draw calls | Low **13** (8), Medium **17**, High **46** | One merged mesh per layer, plus the sky (clouds are part of the sky shader), two instanced meshes for rooftop details, one for the filler city and one for the hills. Medium adds the shadow pass; High adds the ambient occlusion, bloom and tone mapping passes |
+| Draw calls | Low **13** (8), Medium **13 to 17**, High **about 30 to 35** | One merged mesh per layer, plus the sky (clouds are part of the sky shader), two instanced meshes for rooftop details, one for the filler city and one for the hills. Medium and High add the shadow pass only on frames where the shadowed area moves; High adds the bloom, tone mapping and SMAA passes |
 | Triangles | Low **284,902** (230,112), Medium and High **about 452k** | The whole city is always on the GPU; about 38k are rooftop details (2,800 instances, bottoms removed); the filler city past the map is 3,300 blocks (33k) on Low and 8,200 (82k) on Medium and High. Medium and High also re-draw the shadow casters (playable buildings, flyover structures, roof details) into the shadow map, about 118k more |
 | GPU buffers (estimated) | ~30 MB | 213k merged triangles x 3 vertices x 36 bytes (position, normal, color), plus 16 bytes per road and building vertex for markings and windows |
 | JS heap after load | **about 51 MB used** | MapData objects + typed arrays |
 | Pipeline | 2.5 s processing (0.67) | `npm run pipeline`, output byte-identical on re-run. Most of the increase is the 0.5 m paving raster around every junction (run twice); offline, so it doesn't affect players |
 
 **Against the Low budget:** draw calls and memory are fine. Triangles (285k) are over the 150k Low budget because the whole city is always drawn, and the 300 ms build on the main thread would be several times longer on a phone. Both are what tiles, distance-based detail and a Web Worker build are for.
+
+### Performance pass (after the first desktop measurement)
+
+Adrian's desktop measured **23 FPS on High** (46 draw calls, 452k triangles). The cost was mostly per pixel: the logarithmic depth buffer disabled early depth testing, the pixel ratio went up to 2, the 4096 shadow map was re-rendered every frame, and screen-space ambient occlusion ran on multisampled buffers. Changes: reversed depth buffer, lower pixel-ratio caps with automatic scaling from the frame rate, shadows re-rendered only when their area moves (plain PCF, 1024/2048 maps), no clouds on Low, ambient occlusion dropped and multisampling replaced by SMAA. On the software renderer used here (vertex-bound, so a weak stand-in for a GPU) at a fixed 480x300: Low 4 → 4 FPS, Medium 2 → 3, High 1.5 → 3. Real-GPU numbers to be filled in below.
 
 ### Desktop with a GPU
 
