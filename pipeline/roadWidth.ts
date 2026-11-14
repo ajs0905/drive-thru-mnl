@@ -31,7 +31,7 @@ export function parseLanes(v: unknown): number | undefined {
   return Number.isFinite(n) && n >= 1 && n <= 12 ? Math.floor(n) : undefined;
 }
 
-const isOneway = (t: Tags) => t.oneway === 'yes' || t.oneway === '1' || t.oneway === '-1' || t.junction === 'roundabout';
+export const isOneway = (t: Tags) => t.oneway === 'yes' || t.oneway === '1' || t.oneway === '-1' || t.junction === 'roundabout';
 
 /** Typical lane count when the data doesn't say: [two-way, one-way]. */
 const DEFAULT_LANES: Record<string, [number, number]> = {

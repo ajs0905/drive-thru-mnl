@@ -2,12 +2,14 @@ import { useEffect, useMemo } from 'react';
 import { BufferAttribute, BufferGeometry, DoubleSide } from 'three';
 import type { MapData } from '../map/types';
 import { buildCity, PALETTE, type CityMeshes, type LayerArrays } from './cityGeometry';
+import { createRoadMaterial } from './roadMaterial';
 
 function toGeometry(arrays: LayerArrays): BufferGeometry {
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(arrays.position, 3));
   g.setAttribute('normal', new BufferAttribute(arrays.normal, 3));
   g.setAttribute('color', new BufferAttribute(arrays.color, 3));
+  if (arrays.aux) g.setAttribute('roadAux', new BufferAttribute(arrays.aux, 4));
   g.computeBoundingSphere();
   return g;
 }
@@ -28,6 +30,15 @@ function Layer({ arrays, offset = 0 }: { arrays: LayerArrays; offset?: number })
   );
 }
 
+function Roads({ arrays }: { arrays: LayerArrays }) {
+  const geometry = useMemo(() => toGeometry(arrays), [arrays]);
+  const material = useMemo(() => createRoadMaterial(), []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => material.dispose(), [material]);
+  if (arrays.position.length === 0) return null;
+  return <mesh geometry={geometry} material={material} />;
+}
+
 function Edge({ arrays }: { arrays: LayerArrays }) {
   const geometry = useMemo(() => toGeometry(arrays), [arrays]);
   useEffect(() => () => geometry.dispose(), [geometry]);
@@ -44,7 +55,8 @@ export function City({ map, onBuilt }: { map: MapData; onBuilt?: (m: CityMeshes)
   useEffect(() => onBuilt?.(meshes), [meshes, onBuilt]);
 
   const b = map.bounds;
-  const size = Math.max(b.maxX - b.minX, b.maxY - b.minY) + 6000;
+  // Big enough to reach past the fog, so the ground fades into the sky's horizon color.
+  const size = Math.max(b.maxX - b.minX, b.maxY - b.minY) + 30000;
   const cx = (b.minX + b.maxX) / 2;
   const cz = -(b.minY + b.maxY) / 2;
 
@@ -56,7 +68,7 @@ export function City({ map, onBuilt }: { map: MapData; onBuilt?: (m: CityMeshes)
         <meshLambertMaterial color={PALETTE.baseGround} />
       </mesh>
       <Layer arrays={meshes.ground} offset={-1} />
-      <Layer arrays={meshes.roads} offset={-2} />
+      <Roads arrays={meshes.roads} />
       <Layer arrays={meshes.buildings} />
       <Layer arrays={meshes.scenery} />
       <Layer arrays={meshes.structures} />

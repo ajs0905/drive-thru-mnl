@@ -3,6 +3,7 @@ import type { Ring } from '../map/types';
 import {
   clipPolylineToRect,
   clipRingToRect,
+  convexHull,
   clipSegmentToRect,
   distanceToRing,
   distanceToSegment,
@@ -183,5 +184,17 @@ describe('clipPolylineToRect', () => {
 
   it('returns nothing for a line fully outside', () => {
     expect(clipPolylineToRect([[20, 20], [30, 30]], rect)).toEqual([]);
+  });
+});
+
+describe('convexHull', () => {
+  it('wraps a point cloud counter-clockwise, dropping inner and collinear points', () => {
+    const hull = convexHull([[0, 0], [5, 0], [10, 0], [10, 10], [0, 10], [5, 5], [2, 7]]);
+    expect(hull).toEqual([[0, 0], [10, 0], [10, 10], [0, 10]]);
+    expect(signedArea(hull)).toBeGreaterThan(0);
+  });
+
+  it('handles fewer than three points', () => {
+    expect(convexHull([[1, 1], [0, 0]])).toEqual([[0, 0], [1, 1]]);
   });
 });

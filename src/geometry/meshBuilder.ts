@@ -6,6 +6,7 @@
  */
 
 export type Vec3 = [number, number, number];
+export type Vec4 = [number, number, number, number];
 export type RGB = [number, number, number];
 
 class FloatList {
@@ -15,24 +16,39 @@ class FloatList {
     this.data = new Float32Array(initial);
   }
   push3(a: number, b: number, c: number) {
-    if (this.length + 3 > this.data.length) {
+    this.reserve(3);
+    this.data[this.length++] = a;
+    this.data[this.length++] = b;
+    this.data[this.length++] = c;
+  }
+  push4(v: Vec4) {
+    this.reserve(4);
+    for (let i = 0; i < 4; i++) this.data[this.length++] = v[i];
+  }
+  private reserve(n: number) {
+    if (this.length + n > this.data.length) {
       const next = new Float32Array(this.data.length * 2);
       next.set(this.data);
       this.data = next;
     }
-    this.data[this.length++] = a;
-    this.data[this.length++] = b;
-    this.data[this.length++] = c;
   }
   toArray(): Float32Array {
     return this.data.slice(0, this.length);
   }
 }
 
+const NO_AUX: [Vec4, Vec4, Vec4] = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+
 export class MeshBuilder {
   private pos = new FloatList();
   private nrm = new FloatList();
   private col = new FloatList();
+  /** Optional extra vec4 per vertex (road markings use it for u, v, half width, style). */
+  private aux: FloatList | null;
+
+  constructor(opts: { aux?: boolean } = {}) {
+    this.aux = opts.aux ? new FloatList() : null;
+  }
 
   get vertexCount(): number {
     return this.pos.length / 3;
@@ -43,16 +59,18 @@ export class MeshBuilder {
   }
 
   /** Adds one triangle. Vertices must be counter-clockwise when seen from the side the normal points to. */
-  triangle(a: Vec3, b: Vec3, c: Vec3, n: Vec3, color: RGB) {
+  triangle(a: Vec3, b: Vec3, c: Vec3, n: Vec3, color: RGB, aux: [Vec4, Vec4, Vec4] = NO_AUX) {
     for (const v of [a, b, c]) {
       this.pos.push3(v[0], v[1], v[2]);
       this.nrm.push3(n[0], n[1], n[2]);
       this.col.push3(color[0], color[1], color[2]);
     }
+    if (this.aux) for (const x of aux) this.aux.push4(x);
   }
 
-  build(): { position: Float32Array; normal: Float32Array; color: Float32Array } {
-    return { position: this.pos.toArray(), normal: this.nrm.toArray(), color: this.col.toArray() };
+  build(): { position: Float32Array; normal: Float32Array; color: Float32Array; aux?: Float32Array } {
+    const out = { position: this.pos.toArray(), normal: this.nrm.toArray(), color: this.col.toArray() };
+    return this.aux ? { ...out, aux: this.aux.toArray() } : out;
   }
 }
 

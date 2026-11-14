@@ -43,6 +43,8 @@ To change the drivable area, open `data/playable-area.geojson` at geojson.io, dr
 - Projects lat/long to local meters (see [Projection](#projection)), rounded to centimeters.
 - Road widths from tags ([`roadWidth.ts`](../pipeline/roadWidth.ts)): `width`, else `lanes` x 3.2 m plus shoulders, else typical lanes for the road type (fewer if one-way). Driveways 3.5 m, alleys 3 m. BGC's avenues are mapped as two one-way carriageways, so each half is sized as half a road.
 - Building heights (see [Building heights](#building-heights)).
+- Reads `lanes`, `oneway` and `sidewalk` (`sidewalk:left/right/both`) for drivable roads, and flags `footway=crossing` / `cycleway=crossing` ways (turned into zebras in step 7).
+- Drops clutter the renderer covers in other ways: 452 separately mapped sidewalks (the road's own sidewalk tag draws a sidewalk band instead; footbridges and stairs are kept) and 80 parking aisles.
 - Drops what shouldn't be drawn outdoors: 29 indoor corridors and mall stairs, 5 underground walkways, 4 basement-level buildings. Canopies (`building=roof`: gas stations, covered walkways) float at 3.6 m as thin slabs.
 - Cleans up duplicate points, repeated closing points and degenerate shapes. Everything skipped is counted with a reason.
 
@@ -79,8 +81,37 @@ BGC's malls are linked by skywalks that OSM maps straight through the buildings.
 
 ### 5. Fit widths (`pipeline/fitWidths.ts`)
 
-- Every road is measured against nearby building walls (exact segment-to-segment distance through the spatial grid) and narrowed to fit, down to 2.8 m for streets and alleys, 2.5 m for service roads and 6 m for major roads. Walls the centerline crosses are ignored (roads going under buildings). 603 of 2,211 roads narrowed.
+- Every road is measured against nearby building walls (exact segment-to-segment distance through the spatial grid) and narrowed to fit, down to 2.8 m for streets and alleys, 2.5 m for service roads and 6 m for major roads. Walls the centerline crosses are ignored (roads going under buildings). 598 of 2,141 roads narrowed.
 - Buildings whose center sits on a road surface are removed.
+
+### 6. Close median slivers (`pipeline/medians.ts`)
+
+- Divided roads are mapped as two one-way roads. Where their fitted widths leave a gap of under 1.2 m between them (parallel within 12 degrees, along at least 40% of the road), the ground or a sidewalk band shows through as a thin light line. Both carriageways are widened by the gap so they meet. Wider gaps are real medians and stay. 64 carriageways widened.
+
+### 7. Junctions (`pipeline/junctions.ts`)
+
+- OSM ways often run straight through an intersection, so drivable roads are first split at every node where three or more road segments meet (875 splits). Now every junction sits at road ends.
+- At each node where road ends meet, the junction polygon comes from the road edges ([`src/geometry/junction.ts`](../src/geometry/junction.ts)): arms are sorted by angle, the left edge of each arm is intersected with the right edge of the next, and each road is cut back to where its edges meet its neighbours'. The space in the middle becomes one polygon; the cut-back distance per road end is stored as `trim`.
+- Special cases: the outside of a bend gets a straight edge, a straight join where the width changes gets a short taper, sharp merges wrap around both arms, and two pieces of the same road continuing straight need no polygon (359).
+- Curved roads: each arm's direction is first taken toward the point 1 m along the road, then re-aimed twice at the point where the road actually gets cut back, so the polygon follows the curve.
+- Divided roads crossing: each carriageway crossing gets its own polygon, and the short pieces between them get cut away from both ends. Junctions joined by a piece with less than 3 m left are merged (union-find) into one convex polygon (Andrew's monotone chain hull), as long as it stays under 80 m across; the pieces inside aren't drawn. 144 merged polygons from 334 junctions.
+- Result: 1,452 junction polygons. 18 knots too tangled for a clean polygon (it would cross itself) fall back to overlapping road ends.
+- The renderer also paves each road's cut-back stretch as plain asphalt under the polygon, so a polygon that doesn't follow the road exactly never leaves a gap.
+- Fills in `lanes` for every drivable road: the tag if it fits the (possibly narrowed) width, otherwise width / 3.3 m.
+
+### 8. Crossings (`pipeline/crossings.ts`)
+
+- Mapped crossing ways often run past the curb, bend around corners, or are drawn along the road instead of across it, so painting stripes along the way itself looks wrong.
+- Instead, each crossing way is intersected with drivable road centerlines (spatial grid). Where it cuts across one at more than 35 degrees, a straight 3 m zebra goes across that road from edge to edge; a divided road gets one per carriageway. Crossings under a flyover don't paint the deck, and footbridges are skipped.
+- OSM usually puts the crossing node right at the junction, so a zebra that would land inside a junction polygon is moved back along its road to just outside it (up to 12 m). A zebra overlapping one already placed (separating axis test) is dropped, as is one on a piece fully covered by a merged junction.
+- The bars are drawn over the crossed road's own asphalt color, so lane lines don't show through.
+- Result: 511 zebras from 405 crossing ways (122 moved out of junctions); 14 ways cross no road and 25 hits were too shallow (ways mapped along the road). The crossing ways themselves are dropped from the map.
+
+### 9. Pave enclosed gaps (`pipeline/paving.ts`)
+
+- Even with the steps above, mapping quirks leave small patches of ground fully surrounded by road: tiny triangles between junctions a few meters apart, slivers between roads that almost touch.
+- Found by rasterizing exactly what the renderer paves (road ribbons with their cut-back ends, junction polygons, gap discs) on a 0.5 m grid around every junction, then flood-filling the unpaved cells from the grid's edge. Unpaved cells the fill can't reach are enclosed.
+- Holes up to 10 m², and thin slivers (under 1.2 m thick on average), get patch polygons drawn just under the road surfaces. Long slivers are paved in 8 m chunks so each chunk's convex hull follows curves. A second pass catches crumbs at the patches' edges. Bigger enclosed areas are often real (parking loops, roundabout centers, slip-lane islands) and stay; map QA counts them.
 
 ## Projection
 
@@ -116,17 +147,22 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Buildings poking through a flyover deck | 0 | 0 |
 | Buildings more than 1 m into a major road | 21 | 7 |
 | Buildings more than 1 m into a street or alley | 207 | 80 |
-| Buildings more than 1 m into a service road | 93 | 71 |
+| Buildings more than 1 m into a service road | 93 | 68 |
+| Junction polygons reaching far past their roads | (new) | 0 |
+| Zebras overlapping each other or inside a junction | 76 | 0 |
+| Enclosed unpaved patches at junctions (holes, slivers) | 140 | 37 (real islands up to 60 m²) |
 
 Most remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs). The rest are houses closer than 2.8 m to the street center, or roads mapped straight through a building.
 
 ## Data format
 
-`public/data/bgc.json` is a `MapData` object (version 3), defined in [`src/map/types.ts`](../src/map/types.ts). Field-by-field summary and the coordinate convention: [ARCHITECTURE.md, Data contract](ARCHITECTURE.md#5-data-contract).
+`public/data/bgc.json` is a `MapData` object (version 5), defined in [`src/map/types.ts`](../src/map/types.ts). Field-by-field summary and the coordinate convention: [ARCHITECTURE.md, Data contract](ARCHITECTURE.md#5-data-contract).
 
 ## Known data issues
 
 - Underpasses are drawn at ground level.
 - Thin strips of ground show where carriageways split apart.
+- Zebras are always square to the road, even where the mapped crossing is diagonal.
+- Lane counts are guesses where `lanes` isn't tagged (about half of the roads).
 - Some houses still poke into alleys narrower than 2.8 m.
 - Heights are estimates for about 97% of buildings.

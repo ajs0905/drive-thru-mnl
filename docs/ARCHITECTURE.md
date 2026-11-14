@@ -57,8 +57,10 @@ Doing the expensive work offline keeps the browser fast and makes the output **d
 src/
   geo/        projection: lat/long <-> local meters             pure TS
   geometry/   polygons, clipping, spatial grid, extrusion,      pure TS, no three.js, no React
-              road ribbons, mesh builder (typed arrays)
-  map/        data contract (types.ts), loader, hashing          pure TS (loader uses fetch)
+              road ribbons, junction polygons, mesh builder
+              (typed arrays)
+  map/        data contract (types.ts), loader, hashing,         pure TS (loader uses fetch)
+              shared road rules (lanes, sidewalks)
   scene/      three.js / React Three Fiber components            the only place that knows about rendering
   App.tsx     HUD, camera, wiring
 pipeline/     offline steps + CLI (build.ts) + map QA (qa.ts)    Node only
@@ -93,7 +95,11 @@ flowchart TD
   B --> C[elevation.ts<br/>raise flyovers and footbridges, build ramps]
   C --> D[settleRaised.ts<br/>skywalks inside buildings, mid-air ends]
   D --> E[fitWidths.ts<br/>fit roads between buildings,<br/>drop buildings standing on roads]
-  E --> F[(public/data/bgc.json)]
+  E --> M[medians.ts<br/>close slivers between<br/>carriageways]
+  M --> G[junctions.ts<br/>split roads at junctions,<br/>junction polygons, merge close ones]
+  G --> P[paving.ts<br/>pave enclosed gaps]
+  P --> H[crossings.ts<br/>zebras where crossing ways<br/>cut across roads]
+  H --> F[(public/data/bgc.json)]
 ```
 
 | Step | Responsibility | Key algorithms |
@@ -103,6 +109,10 @@ flowchart TD
 | `elevation.ts` | Decide which bridges are raised and how ramps reach them | Node snapping by shared coordinates, union-find, spatial grid crossing test, graph walks that stop at junctions, smoothstep |
 | `settleRaised.ts` | Clean up raised ways (skywalks through malls, scraps, mid-air ends) | Point-in-polygon, wall distance via spatial grid |
 | `fitWidths.ts` | Narrow roads to the space between buildings; remove buildings on road surfaces | Exact segment-to-segment distance via spatial grid |
+| `medians.ts` | Widen carriageways of divided roads that almost touch, so no thin line shows between them | Parallel-segment search via spatial grid, median of sampled gaps |
+| `junctions.ts` | Split roads where they cross, build one polygon per junction, record how far each road end is cut back, merge junctions of divided roads crossing, fill in lane counts | Node degree in the road graph, line-line intersection of road edges, angular sort, iterative re-aiming on curves, self-intersection test (`src/geometry/junction.ts`), union-find, convex hull |
+| `paving.ts` | Find patches of ground enclosed by road and pave the small ones | Triangle rasterization on a 0.5 m grid, flood fill, connected components, convex hulls per chunk |
+| `crossings.ts` | Turn mapped crossing footways into straight zebras across the roads they actually cut, outside junctions, without overlaps | Segment intersection via spatial grid, angle filter, arc-length placement, separating axis test |
 | `qa.ts` | Count known kinds of map problems with camera links | Same geometry helpers; runs on the output |
 
 Rules every step follows:
@@ -119,10 +129,12 @@ Details of each step and the data sources: [DATA.md](DATA.md).
 
 | Field | Contents |
 | --- | --- |
-| `version` | Format version, currently **3**. The loader refuses any other version with a clear "run `npm run pipeline`" message. |
+| `version` | Format version, currently **5**. The loader refuses any other version with a clear "run `npm run pipeline`" message. |
 | `origin` | The lat/long of local (0, 0). |
 | `bounds`, `playable` | Extent in meters; outline of the drivable area. |
-| `roads[]` | `points` (meters), `w` (width), `cls` (major/minor/service/path), optional `z[]` (height per point), `bridge`, `layer`, `tunnel`, `scenery`. |
+| `roads[]` | `points` (meters), `w` (width), `cls` (major/minor/service/path), optional `z[]` (height per point), `lanes`, `oneway`, `sidewalk` (both/left/right/none), `trim` (meters a junction polygon covers at each end), `bridge`, `layer`, `tunnel`, `scenery`. |
+| `junctions[]` | One polygon per road junction: `ring`, `z` (height, for junctions on flyovers), `cls` (highest road class meeting there), `patch` (fills a small gap; drawn under the roads). |
+| `crossings[]` | Zebra crossings: center on the road's centerline `c`, road direction `dir`, `half` road width, band width `w`, height `z`, `cls` of the road crossed. |
 | `buildings[]` | `rings` (outer + holes), `h` (top), optional `minH` (bottom, for canopies), `hSrc` (tag/levels/estimate), `type`, `scenery`. |
 | `areas[]` | Parks, water, plazas, land use as polygons. |
 | `stats` | Counts from the pipeline, shown in the HUD. |
@@ -182,10 +194,12 @@ flowchart LR
 
 ## 7. Rendering strategy
 
-- **One mesh per layer**, not one per building or road: playable buildings, scenery buildings, roads, ground, bridge structures, playable edge, plus the base plane. About **8 draw calls** for the whole city. Colors are per vertex, so one material per layer is enough. See [ADR 0003](decisions/0003-merged-meshes-per-layer.md).
+- **One mesh per layer**, not one per building or road: playable buildings, scenery buildings, roads, ground, bridge structures, playable edge, plus the base plane and the sky. About **9 draw calls** for the whole city. Colors are per vertex, so one material per layer is enough. See [ADR 0003](decisions/0003-merged-meshes-per-layer.md).
 - **Trade-off:** a merged mesh is all-or-nothing for frustum culling, and everything stays on the GPU. That's fine at BGC's size and is exactly what tiles fix: each tile gets its own small set of merged meshes, so culling and unloading work per tile.
-- **Layering without flicker:** flat layers sit at small fixed heights (ground 0.02 to 0.09 m, roads 0.12 to 0.24 m by class) on top of a base plane at -0.15 m, plus polygon offset. A logarithmic depth buffer is on today; on phones it's a candidate to turn off (cost on mobile GPUs).
-- **Style:** flat low-poly, vertex colors, no photo textures. Planned shader effects (windows, lane markings) need UVs, which the mesh builder will gain.
+- **Layering without flicker:** flat layers sit at small fixed heights (ground 0.02 to 0.09 m, sidewalks 0.10 m, footpaths 0.12 m, gap patches 0.14 m, roads 0.16 to 0.24 m by class, zebra crossings 0.28 m) on top of a base plane at -0.15 m, plus polygon offset. Junction polygons replace overlapping road ends, so roads of different classes no longer fight at intersections. A logarithmic depth buffer is on today; on phones it's a candidate to turn off (cost on mobile GPUs).
+- **Style:** flat low-poly, vertex colors, no photo textures.
+- **Road markings in a shader:** the road layer carries one extra vec4 per vertex (distance along, offset across, half width, packed style). A Lambert material patched with `onBeforeCompile` (`src/scene/roadMaterial.ts`) draws edge lines, lane dividers, center lines, zebra crossings and curbs from that, antialiased with `fwidth` and faded out when thinner than a pixel. No textures, no extra draw calls. See [ADR 0009](decisions/0009-road-markings-in-a-shader.md).
+- **Sky:** three.js's physically based `Sky` (Preetham scattering model with built-in procedural clouds), following the camera (`src/scene/Sky.tsx`, settings in `skyConfig.ts`). No textures to download. The city renders without tone mapping, so the sky applies its own ACES curve, and just above the horizon it blends into the fog's haze color; the ground plane reaches past the fog, so the city fades into the sky with no visible edge. The directional light comes from the sun's direction. Photo skyboxes (HDRIs) were considered and rejected: they clash with the flat style and cost megabytes on phones.
 
 ## 8. Quality tiers
 
@@ -213,7 +227,7 @@ Budgets per tier: [PERFORMANCE.md](PERFORMANCE.md).
 | --- | --- | --- |
 | Pure math and geometry | Unit tests with known answers (projection vs haversine, shoelace, clipping, offsets), random tests against brute force (spatial grid), winding checks on every generated triangle | `src/geometry/*.test.ts`, `src/geo/*.test.ts` |
 | Pipeline steps | Small hand-built fixtures per edge case (multipolygons, indoor ways, creek bridges, skywalks, alleys) | `pipeline/*.test.ts`, `pipeline/__fixtures__/` |
-| Whole map | `npm run qa`: counts of known problem kinds on the real output, with camera links | `pipeline/qa.ts` |
+| Whole map | `npm run qa`: counts of known problem kinds on the real output, with camera links. Road checks rasterize what the renderer paves to find enclosed holes | `pipeline/qa.ts`, `pipeline/qaRoads.ts` |
 | Architecture | Import rules from section 3 | `tests/architecture.test.ts` |
 | Visual | Camera links (`?cam=x,y,z,tx,ty,tz`) to known spots, screenshots before and after changes | manual |
 | Devices | Desktop + Realme 8 via `chrome://inspect` remote DevTools | [PERFORMANCE.md](PERFORMANCE.md) |
@@ -247,12 +261,13 @@ One page each in [decisions/](decisions/):
 | [0006](decisions/0006-raise-bridges-only-over-roads.md) | Raise a bridge only if it crosses a road | Accepted |
 | [0007](decisions/0007-map-qa-as-regression-gate.md) | Map QA counts as a CI regression gate | Accepted |
 | [0008](decisions/0008-car-physics.md) | Car physics: Rapier vs custom 2.5D | Proposed |
+| [0009](decisions/0009-road-markings-in-a-shader.md) | Road markings drawn by a shader from per-vertex data | Accepted |
 
 ## 12. Roadmap through the architecture
 
 | Milestone | What it adds or changes |
 | --- | --- |
-| Better roads + sky | Junction polygons from the road graph (pipeline or `src/geometry`), UVs in the mesh builder for lane markings, sidewalk/parking clutter filtered in `extract.ts`, procedural sky in `src/scene` |
+| Better roads + sky (done) | Junction polygons from the road graph (`pipeline/junctions.ts`, `src/geometry/junction.ts`), per-vertex marking data in the mesh builder, road shader for lanes/zebras/curbs, sidewalk bands from tags, sidewalk/parking clutter filtered in `extract.ts`, zebras placed where crossing ways cut across roads (`pipeline/crossings.ts`), merged junctions for divided roads, median slivers closed, enclosed gaps paved (`pipeline/paving.ts`), physically based sky with procedural clouds in `src/scene` |
 | Better buildings | Per-wall UVs, window shader, instanced roof details |
 | Barrier data | `barrier=*` added to the Overpass query; new pipeline step turning walls and fences into wall geometry |
 | Drivable car | Game loop, car module, physics (ADR 0008), colliders from playable buildings, edge wall, barriers; surface grip from area/road type; respawn to nearest road |

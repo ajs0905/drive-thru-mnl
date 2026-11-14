@@ -4,15 +4,16 @@
  */
 import { addFlatPolygon, addWalls, extrudeBuilding } from '../geometry/extrude';
 import { hexToRgb, MeshBuilder, shade, srgbToLinear, type RGB } from '../geometry/meshBuilder';
-import type { Area, Building, MapData, RoadClass } from '../map/types';
-import { addDeckStructure, addDisc, addRoadRibbon, type DeckStyle } from '../geometry/road';
+import type { Area, Building, MapData, Point, Road, RoadClass } from '../map/types';
+import { addDeckStructure, addDisc, addRoadRibbon, addSidewalk, addZebra, cutBackPieces, MARK, markCode, type DeckStyle } from '../geometry/road';
+import { laneCount, RANK, sidewalkBands } from '../map/roads';
+import type { Vec4 } from '../geometry/meshBuilder';
 import { idUnit } from '../map/hash';
 import { polygonArea, withWinding } from '../geometry/polygon';
 
 export const EDGE_HEIGHT = 6;
 
 export const PALETTE = {
-  sky: '#cfe2ee',
   baseGround: '#aeb09c',
   residential: '#e8cfa3',
   commercial: '#a9c1db',
@@ -38,15 +39,24 @@ export const PALETTE = {
     default: '#c9c6b9',
   } as Record<string, string>,
   road: {
-    major: '#474b52',
-    minor: '#53575e',
-    service: '#62666c',
+    major: '#5c6068',
+    minor: '#666a71',
+    service: '#73767c',
     path: '#c9c1b1',
   } satisfies Record<RoadClass, string>,
+  sidewalk: '#cdc6b8',
+  marking: '#ecebe4',
+  markingYellow: '#f4c02a',
 };
 
-// Small steps up so overlapping layers don't flicker. Major roads sit on top at junctions.
+// Small steps up so overlapping layers don't flicker. Major roads sit on top where
+// pieces still overlap; sidewalks sit under everything so road corners cover them.
 export const ROAD_Y: Record<RoadClass, number> = { path: 0.12, service: 0.16, minor: 0.2, major: 0.24 };
+export const SIDEWALK_Y = 0.1;
+/** Patches filling small gaps between roads: under every road surface, over sidewalks and paths. */
+export const PATCH_Y = 0.14;
+export const CROSSING_Y = 0.28;
+const SIDEWALK_WIDTH: Record<RoadClass, number> = { major: 3, minor: 2, service: 1.5, path: 0 };
 
 const RESIDENTIAL = new Set(['house', 'detached', 'residential', 'apartments', 'terrace', 'semidetached_house', 'bungalow', 'dormitory']);
 const COMMERCIAL = new Set(['office', 'commercial', 'hotel', 'retail', 'supermarket']);
@@ -96,6 +106,8 @@ export interface LayerArrays {
   position: Float32Array;
   normal: Float32Array;
   color: Float32Array;
+  /** Road layer only: per-vertex marking data for the road shader. */
+  aux?: Float32Array;
 }
 
 export interface CityMeshes {
@@ -115,7 +127,7 @@ export function buildCity(map: MapData): CityMeshes {
   const t0 = performance.now();
   const buildings = new MeshBuilder();
   const scenery = new MeshBuilder();
-  const roads = new MeshBuilder();
+  const roads = new MeshBuilder({ aux: true });
   const ground = new MeshBuilder();
   const edge = new MeshBuilder();
   const structures = new MeshBuilder();
@@ -127,39 +139,12 @@ export function buildCity(map: MapData): CityMeshes {
     extrudeBuilding(b.scenery ? scenery : buildings, b.rings, b.h - base, { wall, roof: shade(wall, 0.8) }, base);
   }
 
-  // Where road pieces meet (shared points), a disc fills the wedge-shaped gap
-  // between their flat ends. Counted per network so sidewalks don't trigger road discs.
-  const shared = new Map<string, number>();
-  for (const r of map.roads) {
-    const net = r.cls === 'path' ? 'w' : 'd';
-    for (const p of r.points) {
-      const k = `${net}${p[0]},${p[1]}`;
-      shared.set(k, (shared.get(k) ?? 0) + 1);
-    }
-  }
-
   const drive: DeckStyle = {
     depth: 1.2, barrier: 1, pillarEvery: 30, pillarSize: 1.8,
     color: col(PALETTE.concrete), underside: col(PALETTE.concreteUnder),
   };
   const walk: DeckStyle = { ...drive, depth: 0.5, barrier: 1.1, pillarEvery: 14, pillarSize: 0.6 };
-
-  // Paths first so higher classes land on top in the merged buffer too.
-  const order: RoadClass[] = ['path', 'service', 'minor', 'major'];
-  for (const cls of order) {
-    const color = col(PALETTE.road[cls]);
-    for (const r of map.roads) {
-      if (r.cls !== cls) continue;
-      addRoadRibbon(roads, r.points, r.w, ROAD_Y[cls], color, r.z);
-      const net = cls === 'path' ? 'w' : 'd';
-      const ends: [number, number][] = [[0, 0], [r.points.length - 1, 0]];
-      for (const [i] of ends) {
-        const p = r.points[i];
-        if ((shared.get(`${net}${p[0]},${p[1]}`) ?? 0) > 1) addDisc(roads, p, r.w / 2, ROAD_Y[cls] + (r.z?.[i] ?? 0), color);
-      }
-      if (r.z) addDeckStructure(structures, r.points, r.w, r.z, cls === 'path' ? walk : drive);
-    }
-  }
+  addRoads(roads, structures, map, drive, walk);
 
   const landuseY = landuseHeights(map.areas);
   for (const a of map.areas) addFlatPolygon(ground, a.rings, areaY(a, landuseY), col(areaColor(a)));
@@ -183,4 +168,78 @@ export function buildCity(map: MapData): CityMeshes {
       structures.triangleCount + edge.triangleCount,
     ms: performance.now() - t0,
   };
+}
+
+const length = (pts: Point[]) => pts.slice(1).reduce((d, p, i) => d + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0);
+
+/**
+ * Marking data for a point near one end of a road, as if the road ran straight on
+ * past its end. Lets a gap-filling disc carry the road's lines across.
+ */
+function endAux(r: Road, atStart: boolean, total: number, mark: number): (q: Point) => Vec4 {
+  const pts = r.points;
+  const [a, b] = atStart ? [pts[0], pts[1]] : [pts[pts.length - 2], pts[pts.length - 1]];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const d: Point = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+  const p = atStart ? pts[0] : pts[pts.length - 1];
+  const u = atStart ? 0 : total;
+  return ([x, y]) => [u + (x - p[0]) * d[0] + (y - p[1]) * d[1], (x - p[0]) * -d[1] + (y - p[1]) * d[0], r.w / 2, mark];
+}
+
+/**
+ * Roads, junction polygons, sidewalks and crossings into the road layer; flyover
+ * structure into its own layer.
+ */
+function addRoads(roads: MeshBuilder, structures: MeshBuilder, map: MapData, drive: DeckStyle, walk: DeckStyle) {
+  // Road ends that meet other roads but have no junction polygon get a disc to fill
+  // the wedge-shaped gap. Counted per network so footways don't trigger road discs.
+  const shared = new Map<string, number>();
+  for (const r of map.roads) {
+    const net = r.cls === 'path' ? 'w' : 'd';
+    for (const p of r.points) {
+      const k = `${net}${p[0]},${p[1]}`;
+      shared.set(k, (shared.get(k) ?? 0) + 1);
+    }
+  }
+
+  // Sidewalks first: they sit under the roads, so road corners and junctions cover them.
+  const sidewalk = col(PALETTE.sidewalk);
+  for (const r of map.roads) {
+    if (r.cls === 'path' || r.z) continue;
+    const sides = sidewalkBands(r);
+    const w = SIDEWALK_WIDTH[r.cls];
+    if (sides.left) addSidewalk(roads, r.points, r.w, w, 'left', SIDEWALK_Y, sidewalk);
+    if (sides.right) addSidewalk(roads, r.points, r.w, w, 'right', SIDEWALK_Y, sidewalk);
+  }
+
+  // Paths first so higher classes land on top in the merged buffer too.
+  const order: RoadClass[] = ['path', 'service', 'minor', 'major'];
+  for (const cls of order) {
+    const color = col(PALETTE.road[cls]);
+    for (const r of map.roads) {
+      if (r.cls !== cls) continue;
+      const mark = cls === 'path' ? 0 : markCode(MARK.lanes, { lanes: laneCount(r), oneway: r.oneway, rank: RANK[cls] });
+      addRoadRibbon(roads, r.points, r.w, ROAD_Y[cls], color, { z: r.z, trim: r.trim, mark });
+      // The cut-back ends as plain asphalt, so curves and merges never leave a gap.
+      for (const piece of cutBackPieces(r.points, r.z, r.trim)) addRoadRibbon(roads, piece.pts, r.w, ROAD_Y[cls], color, { z: piece.zs });
+      const net = cls === 'path' ? 'w' : 'd';
+      const total = length(r.points);
+      for (const atStart of [true, false]) {
+        if ((r.trim?.[atStart ? 0 : 1] ?? -1) >= 0) continue; // a junction polygon covers this end
+        const i = atStart ? 0 : r.points.length - 1;
+        const p = r.points[i];
+        if ((shared.get(`${net}${p[0]},${p[1]}`) ?? 0) < 2) continue;
+        // A hair below the ribbons, so only the wedge gaps show.
+        addDisc(roads, p, r.w / 2, ROAD_Y[cls] - 0.015 + (r.z?.[i] ?? 0), color, 8, endAux(r, atStart, total, mark));
+      }
+      if (r.z) addDeckStructure(structures, r.points, r.w, r.z, cls === 'path' ? walk : drive);
+    }
+  }
+
+  for (const j of map.junctions ?? []) {
+    addFlatPolygon(roads, [j.ring], (j.patch ? PATCH_Y : ROAD_Y[j.cls]) + j.z, col(PALETTE.road[j.cls]));
+  }
+
+  // Zebras: white bars over the road's own asphalt color, so lane lines don't show through.
+  for (const c of map.crossings ?? []) addZebra(roads, c.c, c.dir, c.half, c.w, CROSSING_Y + c.z, col(PALETTE.road[c.cls]));
 }

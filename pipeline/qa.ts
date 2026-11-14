@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../src/geometry/polygon';
 import { SegmentGrid } from '../src/geometry/spatialGrid';
 import type { Building, MapData, Point, Road } from '../src/map/types';
+import { roadIssues } from './qaRoads';
 
 export interface Issue {
   kind: string;
@@ -126,6 +127,7 @@ export function runQa(map: MapData): Issue[] {
     }
   }
 
+  issues.push(...roadIssues(map));
   return issues;
 }
 

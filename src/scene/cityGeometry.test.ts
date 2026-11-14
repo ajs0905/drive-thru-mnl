@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { MapData } from '../map/types';
-import { buildCity, buildingColor, landuseHeights, PALETTE } from './cityGeometry';
+import { decodeMark, MARK } from '../geometry/road';
+import { buildCity, buildingColor, CROSSING_Y, landuseHeights, PALETTE, SIDEWALK_Y } from './cityGeometry';
 
 const sample: MapData = {
-  version: 3,
+  version: 5,
+  junctions: [],
+  crossings: [],
   origin: { lat: 14.5509, lon: 121.0503 },
   bounds: { minX: -100, minY: -100, maxX: 100, maxY: 100 },
   buildings: [
@@ -47,6 +50,33 @@ describe('buildCity', () => {
       expect(layer.position.every(Number.isFinite)).toBe(true);
       expect(layer.normal.every(Number.isFinite)).toBe(true);
     }
+  });
+
+  it('gives every road vertex marking data', () => {
+    expect(city.roads.aux!.length).toBe((city.roads.position.length / 3) * 4);
+  });
+
+  it('draws junction polygons, sidewalks and zebra crossings into the road layer', () => {
+    const modes = (m: MapData) => {
+      const { aux, position } = buildCity(m).roads;
+      const out = new Map<number, number[]>(); // mode -> heights
+      for (let v = 0; v < aux!.length / 4; v++) {
+        const mode = decodeMark(aux![v * 4 + 3]).mode;
+        out.set(mode, [...(out.get(mode) ?? []), position[v * 3 + 1]]);
+      }
+      return out;
+    };
+    const base = modes(sample);
+    expect(base.get(MARK.lanes)?.length).toBeGreaterThan(0);
+    expect(base.get(MARK.sidewalk)!.every((y) => Math.abs(y - SIDEWALK_Y) < 1e-6)).toBe(true); // major road, both sides by default
+
+    const more = modes({
+      ...sample,
+      crossings: [{ c: [-50, -10], dir: [1, 0], half: 5, w: 3, z: 0, cls: 'major' }],
+      junctions: [{ id: 'j0', ring: [[-5, -15], [5, -15], [5, -5], [-5, -5]], z: 0, cls: 'major' }],
+    });
+    expect(more.get(MARK.zebra)!.every((y) => Math.abs(y - CROSSING_Y) < 1e-6)).toBe(true);
+    expect(more.get(MARK.plain)!.length).toBeGreaterThan(base.get(MARK.plain)?.length ?? 0);
   });
 
   it('builds no fence when there is no playable area', () => {

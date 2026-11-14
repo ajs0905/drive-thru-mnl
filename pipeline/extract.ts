@@ -7,9 +7,9 @@
 import type { Feature, FeatureCollection, Geometry, Position } from 'geojson';
 import { createProjection, type LatLon, type Projection } from '../src/geo/projection';
 import { polygonArea } from '../src/geometry/polygon';
-import type { Area, AreaKind, Building, MapData, Point, Ring, Road, RoadClass } from '../src/map/types';
+import type { Area, AreaKind, Building, MapData, Point, Ring, Road, RoadClass, SidewalkSides } from '../src/map/types';
 import { estimateHeight, LEVEL_HEIGHT } from './heights';
-import { roadWidth } from './roadWidth';
+import { isOneway, parseLanes, roadWidth } from './roadWidth';
 
 const ROAD_CLASSES: Record<string, RoadClass> = {
   motorway: 'major', motorway_link: 'major',
@@ -143,6 +143,19 @@ function isIndoor(highway: string, t: Tags): boolean {
   return t.level != null && t.bridge == null && t.layer == null;
 }
 
+/** Sides with a sidewalk, from `sidewalk=*` (and `sidewalk:left/right/both=*`). */
+export function sidewalkSides(t: Tags): SidewalkSides | undefined {
+  const has = (v: unknown) => v === 'yes' || v === 'separate';
+  const left = has(t['sidewalk:left']) || has(t['sidewalk:both']);
+  const right = has(t['sidewalk:right']) || has(t['sidewalk:both']);
+  const v = str(t.sidewalk);
+  if (v === 'both' || v === 'separate' || v === 'yes' || (left && right)) return 'both';
+  if (v === 'left' || left) return 'left';
+  if (v === 'right' || right) return 'right';
+  if (v === 'no' || v === 'none') return 'none';
+  return undefined;
+}
+
 export interface ExtractOptions {
   origin?: LatLon;
 }
@@ -226,12 +239,22 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
         return skip('highway-area');
       }
       if (isIndoor(highway, t)) return skip('indoor');
+      // Sidewalks mapped as their own ways are drawn as bands along the road instead
+      // (from the road's sidewalk tags), and parking aisles are just clutter.
+      const onBridge = t.bridge != null && t.bridge !== 'no';
+      if (t.footway === 'sidewalk' && !onBridge && highway !== 'steps') return skip('sidewalk-way');
+      if (t.service === 'parking_aisle') return skip('parking-aisle');
+      const crossing = t.footway === 'crossing' || t.cycleway === 'crossing';
       const layer = parseLayer(t.layer);
       const tunnel = t.tunnel != null && t.tunnel !== 'no' && t.tunnel !== 'culvert';
       // Underground walkways can't be seen and nobody drives on them.
       if (tunnel && cls === 'path' && t.tunnel !== 'building_passage') return skip('underground');
       const bridge = typeof t.bridge === 'string' && BRIDGES.has(t.bridge);
       const w = roadWidth(highway, cls, t);
+      const drivable = cls !== 'path';
+      const lanes = drivable ? parseLanes(t.lanes) : undefined;
+      const oneway = drivable && isOneway(t);
+      const sidewalk = drivable ? sidewalkSides(t) : undefined;
       lines.forEach((line, j) => {
         const points = projectLine(line, proj);
         if (!points) return skip('degenerate-line');
@@ -244,6 +267,10 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
           ...(layer !== undefined && { layer }),
           ...(bridge && { bridge: true as const }),
           ...(tunnel && { tunnel: true as const }),
+          ...(lanes !== undefined && { lanes }),
+          ...(oneway && { oneway: true as const }),
+          ...(sidewalk && { sidewalk }),
+          ...(crossing && { crossing: true as const }),
           points,
         });
       });
@@ -266,10 +293,12 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
   });
 
   return {
-    version: 3,
+    version: 5,
     origin: proj.origin,
     bounds: computeBounds(roads, buildings, areas),
     roads,
+    junctions: [],
+    crossings: [],
     buildings,
     areas,
     stats: {

@@ -14,13 +14,16 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 
 ## Highlights
 
-- **Real city from raw map data.** 25,900 OpenStreetMap features become 12,500 buildings, 3,800 roads and 366 land-use areas, clipped to a hand-drawn playable area.
+- **Real city from raw map data.** 25,900 OpenStreetMap features become 12,500 buildings, 4,100 road segments and 366 land-use areas, clipped to a hand-drawn playable area.
 - **Messy data, handled.** Only 3% of buildings have a height in OSM, so heights are estimated by rules. Indoor walkways, basements and skywalks mapped through malls are cleaned up. Roads are narrowed to fit between the houses along them.
 - **Flyovers worked out from tags.** OSM only says "bridge, layer 1". The pipeline decides which bridges are really raised (only those crossing a road), builds ramps on the approach roads that stop at junctions, and adds decks, barriers and pillars.
-- **Fast to render.** The whole city draws in 8 draw calls (230k triangles), built in about 200 ms.
-- **Tested and checked.** 220+ unit tests, an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
+- **Clean intersections, painted roads.** Roads are split into a graph and every junction gets its own polygon, worked out from where the road edges meet; junctions of divided roads merge into one, and leftover gaps are found by rasterizing the road surface and paved. Lane lines, center lines, zebra crossings and curbs are drawn by a shader from per-vertex data: no textures, no extra draw calls.
+- **Fast to render.** The whole city and sky draw in 9 draw calls (about 210k triangles), built in about 250 ms.
+- **Tested and checked.** 260+ unit tests, an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
 
 ![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags](docs/images/flyover.png)
+
+![Junction polygons, lane markings, zebra crossings and sidewalks, all generated from OSM tags](docs/images/streets.png)
 
 ## Roadmap
 
@@ -28,7 +31,7 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - [x] 3D city: playable area, extruded buildings with estimated heights, road surfaces, land use
 - [x] Flyovers and footbridges with ramps and pillars, road widths fitted to the street, map cleanup
 - [x] Map QA, architecture docs, CI
-- [ ] Better roads: lane markings, clean intersections, curbs; procedural sky
+- [x] Better roads: lane markings, clean intersections, zebra crossings, sidewalks and curbs; physically based sky with clouds
 - [ ] Better buildings: windows, roof details
 - [ ] Walls and fences from OSM
 - [ ] Drivable car with NFS-style limits (solid buildings, barriers, surface grip, respawn)

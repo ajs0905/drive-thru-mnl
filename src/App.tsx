@@ -5,6 +5,8 @@ import { loadMap, type MapSource } from './map/loadMap';
 import type { MapData } from './map/types';
 import { City } from './scene/City';
 import { PALETTE, type CityMeshes } from './scene/cityGeometry';
+import { Sky } from './scene/Sky';
+import { SKY } from './scene/skyConfig';
 
 type State =
   | { status: 'loading' }
@@ -92,10 +94,9 @@ export default function App() {
           flat
           dpr={[1, 2]}
         >
-          <color attach="background" args={[PALETTE.sky]} />
-          <fog attach="fog" args={[PALETTE.sky, 1800, 5500]} />
-          <hemisphereLight args={['#dfeaf5', '#8f8a78', 1.15]} />
-          <directionalLight position={[-700, 1000, 450]} intensity={2.1} color="#fff4e0" />
+          <color attach="background" args={[SKY.horizon]} />
+          <fog attach="fog" args={[SKY.horizon, 1800, 5500]} />
+          <Sky />
           <MapControls makeDefault target={view.target} maxPolarAngle={Math.PI / 2.15} minDistance={40} maxDistance={6000} />
           {state.status === 'ready' && <City map={state.map} onBuilt={onBuilt} />}
           <PerfProbe onSample={setPerf} />

@@ -14,7 +14,9 @@ const building = (id: string, cx: number, cy: number): Building => ({
 });
 
 const map: MapData = {
-  version: 3,
+  version: 5,
+  junctions: [],
+  crossings: [],
   origin: { lat: 14.55, lon: 121.05 },
   bounds: { minX: -1000, minY: -1000, maxX: 1000, maxY: 1000 },
   buildings: [

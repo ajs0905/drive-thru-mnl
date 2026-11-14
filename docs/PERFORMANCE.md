@@ -20,20 +20,20 @@ Targets the game should meet once tiles and tiers are in. "Phone" means the refe
 
 ### 2026-11-14, before tiles (whole map at once)
 
-Headless Chrome on a desktop CPU with a software renderer (no GPU), so frame rate here is meaningless; everything else is representative.
+Headless Chrome on a desktop CPU with a software renderer (no GPU), so frame rate here is meaningless; everything else is representative. Updated after the Better roads + sky milestone (previous values in brackets).
 
 | What | Value | Notes |
 | --- | --- | --- |
-| JS bundle | 1.18 MB, **321 KB gzipped** | Mostly three.js, React Three Fiber and drei (drei is only used for `MapControls`) |
-| Map data (`bgc.json`) | 2.70 MB, **657 KB gzipped** | Whole map in one JSON file |
-| City mesh build | **213 ms**, main thread | Freezes the page while it runs |
-| Draw calls | **8** | One merged mesh per layer |
-| Triangles | **230,112** | Whole city, always on the GPU |
-| GPU buffers (estimated) | ~25 MB | 230k triangles x 3 vertices x 36 bytes (position, normal, color) |
-| JS heap after load | **44 MB used**, 56 MB total | MapData objects + typed arrays |
-| Pipeline | 0.67 s processing, 1.4 s total | `npm run pipeline`, output byte-identical on re-run |
+| JS bundle | 1.19 MB, **327 KB gzipped** (321) | Mostly three.js, React Three Fiber and drei (drei is only used for `MapControls`) |
+| Map data (`bgc.json`) | 3.06 MB, **736 KB gzipped** (657) | Whole map in one JSON file; junction polygons, gap patches, zebras and lane/sidewalk tags added about 80 KB |
+| City mesh build | **about 250 ms** (213), main thread | Freezes the page while it runs; sidewalks and junction polygons are new work |
+| Draw calls | **9** (8) | One merged mesh per layer, plus the sky (clouds are part of the sky shader) |
+| Triangles | **213,170** (230,112) | Whole city, always on the GPU. Fewer than before: dropped sidewalk ways and parking aisles, and junction polygons replace the gap-filling discs, which pays for the new sidewalk bands and the paved cut-back road ends |
+| GPU buffers (estimated) | ~25 MB | 213k triangles x 3 vertices x 36 bytes (position, normal, color), plus 16 bytes per road vertex for marking data |
+| JS heap after load | **44 MB used**, 57 MB total | MapData objects + typed arrays |
+| Pipeline | 2.5 s processing (0.67) | `npm run pipeline`, output byte-identical on re-run. Most of the increase is the 0.5 m paving raster around every junction (run twice); offline, so it doesn't affect players |
 
-**Against the Low budget:** draw calls and memory are fine. Triangles (230k) are over the 150k Low budget because the whole city is always drawn, and the 213 ms build on the main thread would be several times longer on a phone. Both are what tiles, distance-based detail and a Web Worker build are for.
+**Against the Low budget:** draw calls and memory are fine. Triangles (213k) are over the 150k Low budget because the whole city is always drawn, and the 250 ms build on the main thread would be several times longer on a phone. Both are what tiles, distance-based detail and a Web Worker build are for.
 
 ### Desktop with a GPU
 
@@ -69,12 +69,14 @@ To fill in (see below for how).
 | Cost | Fix | Milestone |
 | --- | --- | --- |
 | Whole map in memory and on the GPU | Tile streaming, dispose far tiles | Tiles, streaming, tiers |
-| 213 ms main-thread build | Build tiles in a Web Worker, spread work across frames | Tiles, streaming, tiers |
-| 657 KB JSON parsed at once | Binary tiles (typed arrays, quantized), loaded on demand | Tiles, streaming, tiers |
-| 230k triangles always drawn | Distance-based detail: far scenery as boxes or hidden, simplified outlines (Ramer-Douglas-Peucker) | Tiles, streaming, tiers |
+| 250 ms main-thread build | Build tiles in a Web Worker, spread work across frames | Tiles, streaming, tiers |
+| 736 KB JSON parsed at once | Binary tiles (typed arrays, quantized), loaded on demand | Tiles, streaming, tiers |
+| 213k triangles always drawn | Distance-based detail: far scenery as boxes or hidden, simplified outlines (Ramer-Douglas-Peucker) | Tiles, streaming, tiers |
 | Logarithmic depth buffer (costly on mobile GPUs) | Off on Low/Medium, tighter near/far planes instead | Tiles, streaming, tiers |
 | drei pulled in for one component | Import `MapControls` directly from three.js examples | Any time |
 | Garbage collection pauses while driving | Pre-allocate and reuse per-frame objects | Drivable car |
+| Road shader cost on phones (`fwidth`, a few branches per road pixel) | Simpler marking path on Low (no antialiasing, no dashes in the distance) | Tiles, streaming, tiers |
+| Sky shader with procedural clouds runs on every sky pixel (fbm noise) | Lower cloud detail or a static sky on Low | Tiles, streaming, tiers |
 
 ## Lessons from Slow Roads
 

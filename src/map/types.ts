@@ -22,11 +22,57 @@ export interface Road {
   bridge?: true;
   /** Underpass or covered section. Drawn at ground level for now. */
   tunnel?: true;
+  /** Lane count (tagged, or derived from the width). Drivable roads only. */
+  lanes?: number;
+  /** One-way carriageway (half of a divided road, a ramp, a roundabout). */
+  oneway?: true;
+  /** Which sides have a sidewalk. Drivable roads only. */
+  sidewalk?: SidewalkSides;
+  /** Mapped pedestrian crossing. The pipeline turns these into `crossings` and drops the way. */
+  crossing?: true;
   /** Outside the playable area: rendered, but not drivable. */
   scenery?: true;
   points: Point[];
   /** Height of each point above the ground, in meters. Missing = all at ground level. */
   z?: number[];
+  /**
+   * Meters to leave undrawn at the start and end, where a junction polygon covers the
+   * road instead. -1 means that end isn't at a junction polygon. Missing = [-1, -1].
+   */
+  trim?: [start: number, end: number];
+}
+
+export type SidewalkSides = 'both' | 'left' | 'right' | 'none';
+
+/** The paved area where roads meet, drawn as one polygon instead of overlapping road ends. */
+export interface Junction {
+  id: string;
+  ring: Ring;
+  /** Height above the ground (junctions on raised roads). */
+  z: number;
+  /** Highest class among the roads that meet here (decides its draw order). */
+  cls: RoadClass;
+  /** A patch filling a small gap between roads: drawn just under the road surfaces. */
+  patch?: true;
+}
+
+/**
+ * A zebra crossing: a straight band across one road, edge to edge, where a mapped
+ * crossing footway cuts across it.
+ */
+export interface Crossing {
+  /** Where the crossing meets the road's centerline. */
+  c: Point;
+  /** Unit direction of the road there (the zebra's bars run this way). */
+  dir: Point;
+  /** Half the road's width: the zebra spans from -half to +half across it. */
+  half: number;
+  /** Width of the band along the road. */
+  w: number;
+  /** Height of the road surface there. */
+  z: number;
+  /** Class of the road it crosses (its asphalt shows between the bars). */
+  cls: RoadClass;
 }
 
 /** Where a building's render height came from. */
@@ -79,12 +125,15 @@ export interface MapStats {
 }
 
 export interface MapData {
-  version: 3;
+  version: 5;
   origin: { lat: number; lon: number };
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   /** Outline of the drivable area, if one was given to the pipeline. */
   playable?: Ring;
   roads: Road[];
+  /** Junction polygons between drivable roads. */
+  junctions: Junction[];
+  crossings: Crossing[];
   buildings: Building[];
   areas: Area[];
   stats: MapStats;

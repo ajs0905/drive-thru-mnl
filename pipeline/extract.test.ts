@@ -158,6 +158,33 @@ describe('extractMap: elevation, widths and junk', () => {
     expect(byId(m.roads, 'one')!.w).toBeLessThan(byId(m.roads, 'two')!.w);
   });
 
+  it('reads lanes, one-way and sidewalk tags on drivable roads', () => {
+    const m = fc([
+      { id: 'a', props: { highway: 'secondary', lanes: '3', oneway: 'yes', sidewalk: 'both' }, geometry: line },
+      { id: 'b', props: { highway: 'residential', sidewalk: 'no' }, geometry: line },
+      { id: 'c', props: { highway: 'tertiary', 'sidewalk:left': 'separate' }, geometry: line },
+      { id: 'd', props: { highway: 'primary', junction: 'roundabout' }, geometry: line },
+    ]);
+    expect(byId(m.roads, 'a')).toMatchObject({ lanes: 3, oneway: true, sidewalk: 'both' });
+    expect(byId(m.roads, 'b')).toMatchObject({ sidewalk: 'none' });
+    expect(byId(m.roads, 'b')?.oneway).toBeUndefined();
+    expect(byId(m.roads, 'c')?.sidewalk).toBe('left');
+    expect(byId(m.roads, 'd')?.oneway).toBe(true);
+  });
+
+  it('drops separately mapped sidewalks and parking aisles, keeps crossings as zebras', () => {
+    const m = fc([
+      { id: 'sw', props: { highway: 'footway', footway: 'sidewalk' }, geometry: line },
+      { id: 'swbridge', props: { highway: 'footway', footway: 'sidewalk', bridge: 'yes', layer: '1' }, geometry: line },
+      { id: 'aisle', props: { highway: 'service', service: 'parking_aisle' }, geometry: line },
+      { id: 'zebra', props: { highway: 'footway', footway: 'crossing' }, geometry: line },
+      { id: 'drive', props: { highway: 'service', service: 'driveway' }, geometry: line },
+    ]);
+    expect(m.roads.map((r) => r.id).sort()).toEqual(['drive', 'swbridge', 'zebra']);
+    expect(byId(m.roads, 'zebra')?.crossing).toBe(true);
+    expect(m.stats.skipped).toEqual({ 'sidewalk-way': 1, 'parking-aisle': 1 });
+  });
+
   it('skips indoor corridors and underground walkways, keeps building passages', () => {
     const m = fc([
       { id: 'corr', props: { highway: 'corridor' }, geometry: line },

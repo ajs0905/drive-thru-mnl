@@ -10,6 +10,10 @@ import type { MapData, Point, Ring } from '../src/map/types';
 import { clipToPlayable } from './clip';
 import { elevateRoads } from './elevation';
 import { dropBuildingsOnRoads, fitRoadWidths } from './fitWidths';
+import { placeCrossings } from './crossings';
+import { buildJunctions } from './junctions';
+import { closeMedianGaps } from './medians';
+import { patchHoles } from './paving';
 import { settleRaised } from './settleRaised';
 import { extractMap } from './extract';
 
@@ -81,12 +85,19 @@ const elevation = elevateRoads(map.roads);
 const settled = settleRaised(elevation.roads, map.buildings);
 const fitted = fitRoadWidths(settled.roads, map.buildings);
 const cleared = dropBuildingsOnRoads(map.buildings, fitted.roads);
+const medians = closeMedianGaps(fitted.roads);
+const graph = buildJunctions(medians.roads);
+const zebras = placeCrossings(graph.roads, graph.junctions);
 map = {
   ...map,
-  roads: fitted.roads,
+  roads: zebras.roads,
+  junctions: graph.junctions,
+  crossings: zebras.crossings,
   buildings: cleared.buildings,
-  stats: { ...map.stats, roads: fitted.roads.length, buildings: cleared.buildings.length },
+  stats: { ...map.stats, roads: zebras.roads.length, buildings: cleared.buildings.length },
 };
+const paved = patchHoles(map);
+map = { ...map, junctions: paved.junctions };
 if (map.stats.clip) {
   const sceneryLeft = cleared.buildings.filter((b) => b.scenery).length;
   map.stats.clip = { ...map.stats.clip, playableBuildings: cleared.buildings.length - sceneryLeft, sceneryBuildings: sceneryLeft };
@@ -125,5 +136,19 @@ console.log(
 );
 console.log(`  road widths: ${fitted.stats.narrowed} of ${fitted.stats.checked} roads narrowed to fit between buildings`);
 console.log(`  buildings standing on a road removed: ${cleared.dropped}`);
+console.log(`  medians: ${medians.stats.widened} carriageways widened to close slivers under ${1.2} m`);
+const g = graph.stats;
+console.log(
+  `  junctions: ${g.junctions} polygons (${g.clusters} merged from ${g.merged} nearby junctions), ${g.split} road splits, ` +
+    `${g.continuations} plain continuations, ${g.failed} left as overlaps`,
+);
+const pv = paved.stats;
+console.log(`  paving: ${pv.paved} of ${pv.holes} enclosed gaps filled with ${pv.patches} patches, the rest left as islands`);
+const z = zebras.stats;
+console.log(
+  `  crossings: ${z.placed} zebras from ${z.ways} crossing ways (${z.moved} moved out of junctions; ` +
+    `${z.waysWithoutRoad} cross no road, ${z.skippedShallow} hits too shallow, ${z.skippedRaised} under a flyover, ` +
+    `${z.droppedOverlap} overlapping, ${z.droppedNoRoom} no room)`,
+);
 const skipped = Object.entries(stats.skipped).sort((a, b) => b[1] - a[1]);
 if (skipped.length) console.log(`  skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(', ')}`);

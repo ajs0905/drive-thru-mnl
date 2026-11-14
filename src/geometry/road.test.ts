@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Point } from '../map/types';
 import { MeshBuilder, triangleNormal } from './meshBuilder';
-import { addDeckStructure, addDisc, addRoadRibbon, dedupe, offsetPolyline } from './road';
+import { addDeckStructure, addDisc, addRoadRibbon, addSidewalk, addZebra, decodeMark, dedupe, MARK, markCode, offsetPolyline, trimPolyline } from './road';
 
 const dist = (a: Point, b: Point) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
@@ -94,7 +94,7 @@ const style = {
 describe('addRoadRibbon with heights', () => {
   it('follows the height of each point', () => {
     const mb = new MeshBuilder();
-    addRoadRibbon(mb, [[0, 0], [50, 0], [100, 0]], 8, 0.1, [0.2, 0.2, 0.2], [0, 3.5, 7]);
+    addRoadRibbon(mb, [[0, 0], [50, 0], [100, 0]], 8, 0.1, [0.2, 0.2, 0.2], { z: [0, 3.5, 7] });
     const ys = Array.from(mb.build().position).filter((_, i) => i % 3 === 1);
     expect(Math.min(...ys)).toBeCloseTo(0.1, 5);
     expect(Math.max(...ys)).toBeCloseTo(7.1, 5);
@@ -102,7 +102,7 @@ describe('addRoadRibbon with heights', () => {
 
   it('keeps heights lined up when duplicate points are dropped', () => {
     const mb = new MeshBuilder();
-    addRoadRibbon(mb, [[0, 0], [0, 0], [100, 0]], 8, 0, [0.2, 0.2, 0.2], [0, 0, 7]);
+    addRoadRibbon(mb, [[0, 0], [0, 0], [100, 0]], 8, 0, [0.2, 0.2, 0.2], { z: [0, 0, 7] });
     expect(mb.triangleCount).toBe(2);
     const ys = Array.from(mb.build().position).filter((_, i) => i % 3 === 1);
     expect(Math.max(...ys)).toBeCloseTo(7, 5);
@@ -154,5 +154,92 @@ describe('addDeckStructure', () => {
     addDeckStructure(mb, [[0, 0], [50, 0], [100, 0]], 8, [0.5, 3, 7], style);
     const ys = Array.from(mb.build().position).filter((_, i) => i % 3 === 1);
     expect(Math.min(...ys)).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('trimPolyline', () => {
+  const line: [number, number][] = [[0, 0], [10, 0], [10, 10]];
+
+  it('cuts both ends by distance and interpolates heights', () => {
+    const t = trimPolyline(line, [0, 4, 8], 2, 3)!;
+    expect(t.pts).toEqual([[2, 0], [10, 0], [10, 7]]);
+    expect(t.zs[0]).toBeCloseTo(0.8);
+    expect(t.zs[2]).toBeCloseTo(6.8);
+    expect(t.u0).toBe(2);
+  });
+
+  it('treats negative trims as no trim', () => {
+    expect(trimPolyline(line, [0, 0, 0], -1, -1)!.pts).toEqual(line);
+  });
+
+  it('returns null when the trims eat the whole line', () => {
+    expect(trimPolyline(line, [0, 0, 0], 12, 9)).toBeNull();
+  });
+});
+
+describe('road markings data', () => {
+  it('packs and unpacks a marking style', () => {
+    const code = markCode(MARK.lanes, { lanes: 3, oneway: true, rank: 2 });
+    expect(decodeMark(code)).toEqual({ mode: MARK.lanes, oneway: true, rank: 2, lanes: 3 });
+    expect(decodeMark(markCode(MARK.zebra))).toEqual({ mode: MARK.zebra, oneway: false, rank: 0, lanes: 1 });
+  });
+
+  it('gives ribbon vertices distance along and offset across the road', () => {
+    const mb = new MeshBuilder({ aux: true });
+    const mark = markCode(MARK.lanes, { lanes: 2, rank: 1 });
+    addRoadRibbon(mb, [[0, 0], [10, 0], [20, 0]], 8, 0, [0, 0, 0], { mark, trim: [3, -1] });
+    const aux = mb.build().aux!;
+    const us = aux.filter((_, i) => i % 4 === 0);
+    const vs = aux.filter((_, i) => i % 4 === 1);
+    expect(Math.min(...us)).toBeCloseTo(3); // starts where the trim ends, keeping dashes in step
+    expect(Math.max(...us)).toBeCloseTo(20);
+    expect(new Set(vs)).toEqual(new Set([4, -4]));
+    expect(aux.filter((_, i) => i % 4 === 3).every((m) => m === mark)).toBe(true);
+  });
+
+  it('draws nothing for a road fully covered by its junctions', () => {
+    const mb = new MeshBuilder({ aux: true });
+    expect(addRoadRibbon(mb, [[0, 0], [5, 0]], 8, 0, [0, 0, 0], { trim: [3, 3] })).toBe(0);
+  });
+
+  it('runs markings on across a disc', () => {
+    const mb = new MeshBuilder({ aux: true });
+    addDisc(mb, [0, 0], 4, 0, [0, 0, 0], 8, ([x, y]) => [10 + x, y, 4, 1]);
+    const aux = mb.build().aux!;
+    expect(Math.max(...aux.filter((_, i) => i % 4 === 0))).toBeCloseTo(14);
+  });
+});
+
+describe('addSidewalk', () => {
+  it('puts the band outside the road edge on the asked side, facing up', () => {
+    for (const side of ['left', 'right'] as const) {
+      const mb = new MeshBuilder({ aux: true });
+      expect(addSidewalk(mb, [[0, 0], [10, 0]], 8, 2, side, 0.1, [0.5, 0.5, 0.5])).toBe(2);
+      const { position, aux } = mb.build();
+      const zs = position.filter((_, i) => i % 3 === 2).map((z) => -z); // back to map y
+      if (side === 'left') expect([Math.min(...zs), Math.max(...zs)]).toEqual([4, 6]);
+      else expect([Math.min(...zs), Math.max(...zs)]).toEqual([-6, -4]);
+      expect(Math.max(...aux!.filter((_, i) => i % 4 === 1))).toBe(2);
+      expectFacing(mb);
+    }
+  });
+});
+
+describe('addZebra', () => {
+  it('spans the road short of its edges, faces up, and stripes across the road', () => {
+    const mb = new MeshBuilder({ aux: true });
+    expect(addZebra(mb, [0, 0], [1, 0], 5, 3, 0.28, [1, 1, 1])).toBe(2);
+    const { position, aux } = mb.build();
+    const xs = position.filter((_, i) => i % 3 === 0);
+    const ys = position.filter((_, i) => i % 3 === 2).map((z) => -z);
+    expect([Math.min(...xs), Math.max(...xs)]).toEqual([-1.5, 1.5]);
+    expect([Math.min(...ys), Math.max(...ys)]).toEqual([-4.5, 4.5]);
+    expect(Math.max(...aux!.filter((_, i) => i % 4 === 0))).toBeCloseTo(4.5); // u runs across
+    expect(decodeMark(aux![3]).mode).toBe(MARK.zebra);
+    expectFacing(mb);
+  });
+
+  it('skips roads too narrow for one', () => {
+    expect(addZebra(new MeshBuilder({ aux: true }), [0, 0], [1, 0], 0.8, 3, 0, [1, 1, 1])).toBe(0);
   });
 });
