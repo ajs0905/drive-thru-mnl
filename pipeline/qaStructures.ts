@@ -9,6 +9,8 @@
  *                          it leans on (it floats)
  *   deck-joint-gap         two deck pieces meeting end to end with a gap between their edges
  *   flickering-overlap     two overlapping roads of a class drawn in the same plane
+ *   parked-car-in-the-way  a parked car in a junction, another road's lanes, a crossing,
+ *                          a building, a wall or the playable edge (the parking step's own check)
  */
 import { distanceToSegment } from '../src/geometry/polygon';
 import { DECKS, DECK_SIDES_FROM, deckEdges, deckJoins, dedupeWithZ, offsetPolyline } from '../src/geometry/road';
@@ -16,6 +18,7 @@ import { SegmentGrid } from '../src/geometry/spatialGrid';
 import type { MapData, Point, Road } from '../src/map/types';
 import { TREE_ROOM } from './barriers';
 import type { Issue } from './qa';
+import { carFootprint, parkingBlockers, PARKING, SLOT_LENGTH } from './parking';
 import { overlapGraph } from './roadLayers';
 import { SUPPORTS } from './structures';
 
@@ -149,6 +152,18 @@ export function structureIssues(map: MapData): Issue[] {
       issues.push({ kind: 'flickering-overlap', at: map.roads[i].points[0], detail: `${map.roads[i].id} / ${map.roads[j].id}`, severity: 1 });
     }
   });
+
+  // Parked cars standing in the way.
+  if (map.parked?.length) {
+    const { blocked } = parkingBlockers(map);
+    for (const car of map.parked) {
+      // Its own street is whichever road it stands on (a street can be split into pieces right there).
+      const foot = carFootprint(car.p, car.rot, SLOT_LENGTH, PARKING.carWidth);
+      const own = new Set(drive.query(car.p, car.p, 15).filter(({ a, b, item: [r] }) => distanceToSegment(car.p, a, b) < r.w / 2).map((e) => e.item[0]));
+      const reasons = own.size ? [...own].map((r) => blocked(r, foot, car.p)) : [blocked(undefined, foot, car.p)];
+      if (reasons.every((why) => why)) issues.push({ kind: 'parked-car-in-the-way', at: car.p, detail: reasons[0]!, severity: 1 });
+    }
+  }
 
   return issues;
 }

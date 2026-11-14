@@ -28,6 +28,8 @@ export interface Road {
   oneway?: true;
   /** Which sides have a sidewalk. Drivable roads only. */
   sidewalk?: SidewalkSides;
+  /** Sides where the street parking tags rule out parking. */
+  noParking?: 'both' | 'left' | 'right';
   /** Mapped pedestrian crossing. The pipeline turns these into `crossings` and drops the way. */
   crossing?: true;
   /** Outside the playable area: rendered, but not drivable. */
@@ -165,6 +167,16 @@ export interface Pillar {
   cap?: Point;
 }
 
+/** A car parked at the curb (pipeline/parking.ts). */
+export interface ParkedCar {
+  /** Center on the ground (map space) and heading (radians counter-clockwise from east). */
+  p: Point;
+  rot: number;
+  /** Model and paint: indices into PARKED_MODELS and PARKED_PAINTS (src/car/parked.ts). */
+  v: number;
+  c: number;
+}
+
 export interface MapStats {
   features: number;
   roads: number;
@@ -183,6 +195,7 @@ export interface MapStats {
   /** Filled in when barriers and trees from the second export were added. */
   extras?: { barriers: number; barrierMeters: number; gapsCut: number; trees: number; treesMoved: number; treesClearedOfDecks?: number; fixtures: number; dropped: Record<string, number> };
   structures?: { deckPillars: number; moved: number; outriggers: number; skipped: number; raisedBuildings: number; supports: number };
+  parking?: { roads: number; slots: number; cars: number };
 }
 
 export interface MapData {
@@ -203,5 +216,7 @@ export interface MapData {
   fixtures?: Fixture[];
   /** Pillars under decks and posts under raised buildings (pipeline/structures.ts). */
   pillars?: Pillar[];
+  /** Cars parked along the curbs. */
+  parked?: ParkedCar[];
   stats: MapStats;
 }

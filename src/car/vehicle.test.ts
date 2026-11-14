@@ -7,6 +7,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DriveInput } from './controls';
 import { SEDAN } from './spec';
+import { createParkedBody, PARKED } from './parked';
 import { buildCollision } from '../geometry/collision';
 import type { MapData, Point } from '../map/types';
 import bgc from '../../public/data/bgc.json?raw';
@@ -377,5 +378,41 @@ describe('the Sedan on the real map', () => {
     expect(car.body.translation().y).toBeLessThan(1);
     expect(car.state.impacts).toBe(0);
     expect(car.maxTilt).toBeLessThan(10);
+  });
+});
+
+describe('parked cars in the physics world', () => {
+  // A parked sedan on the road ahead of the car (map -y is three.js +z: ahead).
+  const parkedAhead = (car: Car, distance: number) => createParkedBody(RAPIER, car.world, { p: [0, -distance], rot: -Math.PI / 2, v: 0 }, 0.2);
+  const offset = (b: RAPIER.RigidBody, x: number, z: number) => Math.hypot(b.translation().x - x, b.translation().z - z);
+  const tilt = (b: RAPIER.RigidBody) => {
+    const r = b.rotation();
+    return (Math.acos(Math.min(1, 1 - 2 * (r.x * r.x + r.z * r.z))) * 180) / Math.PI;
+  };
+
+  it('stays put and asleep on its spot when nothing touches it', () => {
+    const car = makeCar();
+    const parked = parkedAhead(car, 40);
+    drive(car, {}, 3);
+    expect(offset(parked, 0, 40)).toBeLessThan(0.02);
+    expect(parked.isSleeping()).toBe(true);
+  });
+
+  it('gets shoved when hit, stays on its wheels, and the hit counts as a crash', () => {
+    const car = makeCar(12);
+    const parked = parkedAhead(car, 20);
+    drive(car, { throttle: 1 }, 2.5);
+    expect(offset(parked, 0, 20)).toBeGreaterThan(1);
+    expect(tilt(parked)).toBeLessThan(30);
+    expect(car.maxImpact).toBeGreaterThan(3);
+    expect(car.maxTilt).toBeLessThan(30);
+  });
+
+  it('only budges a little from a slow nudge', () => {
+    const car = makeCar(2);
+    const parked = parkedAhead(car, 8);
+    drive(car, {}, 4);
+    expect(offset(parked, 0, 8)).toBeLessThan(1.5);
+    expect(PARKED.mass).toBeLessThan(SEDAN.mass); // lighter than the player's car, so it gives way
   });
 });

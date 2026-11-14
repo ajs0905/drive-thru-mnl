@@ -4,6 +4,8 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { loadMap, type MapSource } from './map/loadMap';
 import type { MapData } from './map/types';
 import { City } from './scene/City';
+import { ParkedCars } from './scene/ParkedCars';
+import { ParkedPoses } from './scene/parkedPoses';
 import { PALETTE, type CityMeshes } from './scene/cityGeometry';
 import {
   alwaysRender,
@@ -119,6 +121,8 @@ export default function App() {
   const [perf, setPerf] = useState<Perf | null>(null);
   const [built, setBuilt] = useState<CityMeshes | null>(null);
   const onBuilt = useCallback((m: CityMeshes) => setBuilt(m), []);
+  // Where moved parked cars are: written by the physics while driving, read by the renderer.
+  const [poses] = useState(() => new ParkedPoses());
   const [quality, setQuality] = useState<Quality>(initialQuality);
   const settings = QUALITY[quality];
   // Performance factor: 1 = full resolution for the tier, lower when FPS drops.
@@ -235,7 +239,12 @@ export default function App() {
           />
           {state.status === 'ready' && <City map={state.map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} treeModels={settings.treeModels} />}
           {state.status === 'ready' && <Surroundings map={state.map} density={settings.filler} />}
-          <Suspense fallback={null}>{driving && state.status === 'ready' && <Drive map={state.map} onSpeed={onSpeed} />}</Suspense>
+          {state.status === 'ready' && state.map.parked && (
+            <Suspense fallback={null}>
+              <ParkedCars cars={state.map.parked} near={settings.parkedNear} far={settings.parkedFar} poses={poses} shadows={settings.shadowMap > 0} />
+            </Suspense>
+          )}
+          <Suspense fallback={null}>{driving && state.status === 'ready' && <Drive map={state.map} onSpeed={onSpeed} parked={poses} />}</Suspense>
           <FrameProbe onFrame={onFrame} />
         </Canvas>
       )}

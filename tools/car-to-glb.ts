@@ -24,7 +24,7 @@ import { BufferAttribute, BufferGeometry, Color, Group, Matrix4, Mesh, MeshStand
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 
-const SCALE = 0.0085;
+export const SCALE = 0.0085;
 const MIN_LINEAR = 0.012; // darkest allowed channel value (linear), about #1c1c1c
 
 const WHEELS: Record<string, string> = {
@@ -45,8 +45,9 @@ const LAMPS: Record<string, string> = { headlights: 'headlights', 'rear lights':
 /**
  * The mesh's geometry with its rotation and scale applied, in meters, colors baked per
  * vertex, split into parts: lamp materials into their own part, everything else into `main`.
+ * With `isPaint`, each part also gets a `paint` attribute: 1 on vertices of paint materials.
  */
-function bake(mesh: Mesh): Record<string, BufferGeometry> {
+export function bake(mesh: Mesh, isPaint?: (materialName: string) => boolean): Record<string, BufferGeometry> {
   const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
   mesh.updateMatrixWorld(true);
   const pos = new Vector3();
@@ -60,11 +61,12 @@ function bake(mesh: Mesh): Record<string, BufferGeometry> {
   const groups = src.groups.length ? src.groups : [{ start: 0, count, materialIndex: 0 }];
   const position = src.getAttribute('position');
   const normal = src.getAttribute('normal');
-  const parts: Record<string, { p: number[]; n: number[]; c: number[] }> = {};
+  const parts: Record<string, { p: number[]; n: number[]; c: number[]; k: number[] }> = {};
   for (const g of groups) {
     const m = materials[g.materialIndex ?? 0] as Material & { color?: Color };
     const part = LAMPS[m.name] ?? 'main';
-    const out = (parts[part] ??= { p: [], n: [], c: [] });
+    const out = (parts[part] ??= { p: [], n: [], c: [], k: [] });
+    const paint = isPaint?.(m.name) ? 1 : 0;
     const c = (m.color ?? new Color(1, 1, 1)).clone();
     c.r = Math.max(c.r, MIN_LINEAR);
     c.g = Math.max(c.g, MIN_LINEAR);
@@ -73,6 +75,7 @@ function bake(mesh: Mesh): Record<string, BufferGeometry> {
       out.p.push(position.getX(i), position.getY(i), position.getZ(i));
       out.n.push(normal.getX(i), normal.getY(i), normal.getZ(i));
       out.c.push(c.r, c.g, c.b);
+      out.k.push(paint);
     }
   }
   return Object.fromEntries(
@@ -81,13 +84,14 @@ function bake(mesh: Mesh): Record<string, BufferGeometry> {
       out.setAttribute('position', new BufferAttribute(new Float32Array(a.p), 3));
       out.setAttribute('normal', new BufferAttribute(new Float32Array(a.n), 3));
       out.setAttribute('color', new BufferAttribute(new Float32Array(a.c), 3));
+      if (isPaint) out.setAttribute('paint', new BufferAttribute(new Float32Array(a.k), 1));
       return [name, out];
     }),
   );
 }
 
 /** GLTFExporter's binary output reads a Blob with FileReader, which Node doesn't have. */
-function polyfillFileReader() {
+export function polyfillFileReader() {
   const g = globalThis as unknown as { FileReader?: unknown };
   if (g.FileReader) return;
   g.FileReader = class {
@@ -144,4 +148,5 @@ async function main() {
   console.log(`${output}: ${(glb as ArrayBuffer).byteLength} bytes, ${tris} triangles, parts ${names.join(', ')}`);
 }
 
-void main();
+// Run as a script, not when another tool imports the helpers above.
+if (process.argv[1]?.endsWith('car-to-glb.ts')) void main();

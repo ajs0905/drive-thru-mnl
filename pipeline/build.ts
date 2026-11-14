@@ -13,6 +13,7 @@ import { clipToPlayable } from './clip';
 import { elevateRoads } from './elevation';
 import { layerRoads } from './roadLayers';
 import { smoothRaisedCurves } from './smoothRaised';
+import { placeParkedCars } from './parking';
 import { placeStructures } from './structures';
 import { dropBuildingsOnRoads, fitRoadWidths } from './fitWidths';
 import { placeCrossings } from './crossings';
@@ -118,6 +119,8 @@ if (extrasPath) {
 }
 const structures = placeStructures(map.roads, map.buildings);
 map = { ...map, pillars: structures.pillars, stats: { ...map.stats, structures: structures.stats } };
+const parking = placeParkedCars(map);
+map = { ...map, parked: parking.parked, stats: { ...map.stats, parking: { roads: parking.stats.roads, slots: parking.stats.slots, cars: parking.stats.cars } } };
 if (map.stats.clip) {
   const sceneryLeft = cleared.buildings.filter((b) => b.scenery).length;
   map.stats.clip = { ...map.stats.clip, playableBuildings: cleared.buildings.length - sceneryLeft, sceneryBuildings: sceneryLeft };
@@ -186,6 +189,11 @@ if (extras) {
     `  structures: ${st.deckPillars} deck pillars (${st.moved} moved off a road below, ${st.outriggers} beside the deck with a cap beam, ${st.skipped} left out), ` +
       `${st.supports} posts under ${st.raisedBuildings} raised buildings and canopies`,
   );
+}
+{
+  const p = parking.stats;
+  const why = Object.entries(p.skipped).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
+  console.log(`  parked cars: ${p.cars} on ${p.roads} streets (${p.slots} curb slots; skipped: ${why})`);
 }
 const skipped = Object.entries(stats.skipped).sort((a, b) => b[1] - a[1]);
 if (skipped.length) console.log(`  skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(', ')}`);

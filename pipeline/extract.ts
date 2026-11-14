@@ -156,6 +156,19 @@ export function sidewalkSides(t: Tags): SidewalkSides | undefined {
   return undefined;
 }
 
+/**
+ * Sides where parking is ruled out, from the street parking tags (`parking:<side>=no`,
+ * the older `parking:lane:<side>=no_parking` and the like, or a `:restriction`). Absent: no tag.
+ */
+export function noParkingSides(t: Tags): 'both' | 'left' | 'right' | undefined {
+  const NO = new Set(['no', 'no_parking', 'no_stopping', 'no_standing', 'fire_lane', 'separate']);
+  const banned = (side: string) =>
+    [`parking:${side}`, `parking:lane:${side}`, `parking:${side}:restriction`, `parking:condition:${side}`].some((k) => NO.has(str(t[k]) ?? ''));
+  const left = banned('both') || banned('left');
+  const right = banned('both') || banned('right');
+  return left && right ? 'both' : left ? 'left' : right ? 'right' : undefined;
+}
+
 export interface ExtractOptions {
   origin?: LatLon;
 }
@@ -255,6 +268,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
       const lanes = drivable ? parseLanes(t.lanes) : undefined;
       const oneway = drivable && isOneway(t);
       const sidewalk = drivable ? sidewalkSides(t) : undefined;
+      const noParking = drivable ? noParkingSides(t) : undefined;
       lines.forEach((line, j) => {
         const points = projectLine(line, proj);
         if (!points) return skip('degenerate-line');
@@ -270,6 +284,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
           ...(lanes !== undefined && { lanes }),
           ...(oneway && { oneway: true as const }),
           ...(sidewalk && { sidewalk }),
+          ...(noParking && { noParking }),
           ...(crossing && { crossing: true as const }),
           points,
         });

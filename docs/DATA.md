@@ -47,6 +47,7 @@ To change the drivable area, open `data/playable-area.geojson` at geojson.io, dr
 - Road widths from tags ([`roadWidth.ts`](../pipeline/roadWidth.ts)): `width`, else `lanes` x 3.2 m plus shoulders, else typical lanes for the road type (fewer if one-way). Driveways 3.5 m, alleys 3 m. BGC's avenues are mapped as two one-way carriageways, so each half is sized as half a road.
 - Building heights (see [Building heights](#building-heights)).
 - Reads `lanes`, `oneway` and `sidewalk` (`sidewalk:left/right/both`) for drivable roads, and flags `footway=crossing` / `cycleway=crossing` ways (turned into zebras in step 7).
+- Keeps the street parking tags that rule parking out (`parking:<side>=no` and the older `parking:lane:<side>=no_parking` forms) as `noParking`.
 - Drops clutter the renderer covers in other ways: 452 separately mapped sidewalks (the road's own sidewalk tag draws a sidewalk band instead; footbridges and stairs are kept) and 80 parking aisles.
 - Drops what shouldn't be drawn outdoors: 29 indoor corridors and mall stairs, 5 underground walkways, 4 basement-level buildings. Canopies (`building=roof`: gas stations, covered walkways) float at 3.6 m as thin slabs.
 - Cleans up duplicate points, repeated closing points and degenerate shapes. Everything skipped is counted with a reason.
@@ -148,6 +149,14 @@ Placed once here, so the renderer and the car's collisions use the same ones (`p
 - **Posts under raised buildings.** Buildings that start above the ground (canopies over driveways, a building over a passage) used to float. They get slim posts (0.35 m for canopies, 0.8 m for whole buildings) along their outline every 10 m at most, except along walls that lean on another building (skybridges, wings) and except on roads.
 - Result: 238 deck pillars (81 moved off a road below, 25 on outrigger piers, 12 spots spanned instead, mostly footbridges over wide roads) and 254 posts under 26 raised buildings and canopies.
 
+### 14. Parked cars (`pipeline/parking.ts`)
+
+OSM barely maps street parking in BGC: 25 ways carry parking tags, all "no parking" or "no stopping" (kept by extract as `noParking` and respected here). So the cars are placed by rule.
+
+- Only minor streets, and only where a car can still get past: at least 3.2 m of road left beside the parked cars on a one-way street, 5.6 m on a two-way one. Most village streets are about 3.6 m wide and stay empty (a parked car would block them). One-way streets park on the right first (traffic keeps right); two-way streets on both sides, or one if there's only room for one, each side facing its own traffic.
+- Along each side, slots are 6.2 m apart and filled by a seeded coin (60%), so there are natural gaps. A slot is skipped near a junction (4 m past the junction polygon), on a sharp bend, near a crossing, a gate, boom or bollard (likely a driveway), a tree trunk or a pillar, and anywhere the car would stand in a junction, another road's lanes, a building, across a wall or the playable edge.
+- Model (sedan, hatchback, SUV, pickup, van, taxi) and paint (mostly white, silver, grey and black, some reds and blues) are picked by weight from the same seed, so the same map always gets the same cars.
+- Result: 1,705 cars on 365 streets out of 3,683 curb slots (skipped: crossing 319, another road joining 138, bend 16, junction 12, fixture 7, wall 2, outside 1).
 ## Projection
 
 Equirectangular around a fixed origin (14.5509 N, 121.0503 E):
@@ -195,6 +204,7 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Raised buildings with nothing holding them up | (new) 13 | 0 |
 | Gaps where two deck pieces meet | (new) | 0 |
 | Overlapping same-class roads drawn in one plane (flicker) | (new) 758 pairs | 0 |
+| Parked cars in the way (junction, another road, crossing, building, wall, edge) | (new) 2 | 0 |
 
 Most remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs). The rest are houses closer than 2.8 m to the street center, or roads mapped straight through a building.
 

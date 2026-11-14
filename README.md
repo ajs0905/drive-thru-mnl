@@ -22,6 +22,7 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - **Walls and trees that respect the streets.** Walls, fences and hedges from OSM are cut open wherever a road or path passes, street trees mapped a meter into the road are moved to the curb, and gates and parking booms turn to span the road they sit on. 900+ trees (palms where the species says so) and 300 street fixtures, drawn as GPU instances; trees are low-poly models built in code (three broadleaf shapes and palms with drooping fronds).
 - **No edge of the world.** Past the mapped area the city continues as filler blocks out to the haze, with the real skylines of Makati and Ortigas where they actually are, and the Rizal hills on the eastern horizon.
 - **Lighting that scales with the device.** Sun shadows that follow the camera on Medium and High; tone mapping and baked contact shading everywhere. A Low / Medium / High switch plus resolution that adapts to the frame rate keeps phones smooth, and nothing is drawn while nothing moves.
+- **Parked cars you can shove.** 1,700 cars line the curbs of streets wide enough to still drive past, placed by rule (clear of junctions, crossings, driveways and trees) in six models and realistic paint. Near the player they're real physics bodies; a car you knock out of place slides back to its spot once it's off screen. Far ones are 30-triangle boxes, and past the draw distance there are none.
 - **Drive it.** Press Drive (or Enter) and a car appears on the nearest road. Arcade handling on real physics (Rapier): speed-sensitive steering, handbrake drifts with a drift assist that keeps them controllable, a body that squats, dips and leans, a kick at every gear change, glowing brake lights, and a chase camera that swings around corners, reacts to acceleration and braking, and shakes on a crash. Buildings, walls and posts are solid, and the flyovers are drivable. The physics engine only downloads when you start driving.
 - **Fast to render.** The city is merged into a few big meshes per layer and grid cell (about 50 to 80 draw calls), cells off screen are skipped, and an idle view costs nothing. Built in about 300 ms.
 - **Tested and checked.** 500+ unit tests (the car's handling runs in the real physics engine in tests), an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
@@ -47,6 +48,7 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - [x] Solid buildings, walls, posts and the playable edge
 - [x] Drivable flyovers and ramps; a steadier camera in crashes
 - [x] Flyover fixes: ramps out of other lanes, pillars off the roads, no flickering lane lines
+- [x] Parked cars along the curbs, with physics near the player
 - [ ] Touch controls and respawn
 - [ ] Time trials and races through real streets
 - [ ] Tile streaming and quality tiers for phones
@@ -93,4 +95,4 @@ Press **Drive here** (or Enter) to drive from where the camera looks: W A S D or
 - Code: [MIT](LICENSE), Adrian Joseph B. Salva
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the Open Database License (ODbL)
 - Polygon triangulation: [earcut](https://github.com/mapbox/earcut)
-- Car: Sedan from the [Free Low Poly Vehicles Pack](https://rgsdev.itch.io/free-low-poly-vehicles-pack) by Rgsdev (CC0), converted with `tools/car-to-glb.ts`
+- Cars: the Sedan you drive and six parked models from the [Free Low Poly Vehicles Pack](https://rgsdev.itch.io/free-low-poly-vehicles-pack) by Rgsdev (CC0), converted with `tools/car-to-glb.ts` and `tools/parked-cars-to-glb.ts`

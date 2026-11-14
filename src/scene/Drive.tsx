@@ -8,6 +8,7 @@
  * built from the map when driving starts (geometry/collision.ts) as two static triangle
  * meshes: walls (buildings, walls and fences, the playable edge), which the chase camera
  * keeps in front of, and structures (flyover decks and ramps, footbridge sides, posts).
+ * Parked cars near the player are physics bodies too (ParkedPhysics.tsx).
  */
 import { useThree } from '@react-three/fiber';
 import { CuboidCollider, Physics, RigidBody, TrimeshCollider, type RapierCollider } from '@react-three/rapier';
@@ -19,12 +20,14 @@ import { buildCollision } from '../geometry/collision';
 import type { MapData } from '../map/types';
 import { Car } from './Car';
 import { ROAD_Y } from './cityGeometry';
+import { ParkedPhysics } from './ParkedPhysics';
+import type { ParkedPoses } from './parkedPoses';
 
 /** Top of the physics ground: about where roads are drawn (0.16 to 0.24 m), so tires sit on them. */
 const GROUND_Y = 0.2;
 const GROUND_HALF = 6000;
 
-export default function Drive({ map, onSpeed }: { map: MapData; onSpeed?: (speed: number) => void }) {
+export default function Drive({ map, onSpeed, parked }: { map: MapData; onSpeed?: (speed: number) => void; parked?: ParkedPoses }) {
   const get = useThree((s) => s.get);
   // Decided once, when driving starts.
   const spawn = useMemo(() => {
@@ -37,6 +40,7 @@ export default function Drive({ map, onSpeed }: { map: MapData; onSpeed?: (speed
   }, [map, get]);
 
   const solid = useMemo(() => buildCollision(map, { surfaceY: ROAD_Y }), [map]);
+  const spawnAt = useMemo((): [number, number] => [spawn.position[0], -spawn.position[2]], [spawn]);
   const walls = useRef<RapierCollider>(null);
 
   return (
@@ -50,6 +54,7 @@ export default function Drive({ map, onSpeed }: { map: MapData; onSpeed?: (speed
         {solid.structures.indices.length > 0 && <TrimeshCollider args={[solid.structures.vertices, solid.structures.indices]} friction={1} restitution={0.1} />}
       </RigidBody>
       <Car spec={SEDAN} spawn={spawn} onSpeed={onSpeed} cameraBlockers={walls} />
+      {parked && map.parked && <ParkedPhysics cars={map.parked} poses={parked} spawn={spawnAt} />}
     </Physics>
   );
 }
