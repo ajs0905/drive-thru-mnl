@@ -42,16 +42,18 @@ describe('slipAngle', () => {
 
 describe('nextDrifting', () => {
   it('starts with the handbrake while steering at speed', () => {
-    expect(nextDrifting(false, true, 1, 15, 0)).toBe(true);
-    expect(nextDrifting(false, true, 0, 15, 0)).toBe(false); // no steering: just a brake
-    expect(nextDrifting(false, true, 1, DRIFT_START_SPEED - 1, 0)).toBe(false); // too slow
-    expect(nextDrifting(false, false, 1, 15, 0.5)).toBe(false); // a slide alone doesn't start one
+    expect(nextDrifting(false, true, 1, 0, 15, 0)).toBe(true);
+    expect(nextDrifting(false, true, 0, 0, 15, 0)).toBe(false); // no steering: just a brake
+    expect(nextDrifting(false, true, 1, 0, DRIFT_START_SPEED - 1, 0)).toBe(false); // too slow
+    expect(nextDrifting(false, false, 1, 1, 15, 0.5)).toBe(false); // a slide alone doesn't start one
   });
-  it('lasts while the handbrake is held or the car is still sideways', () => {
-    expect(nextDrifting(true, false, 1, 15, 0.3)).toBe(true);
-    expect(nextDrifting(true, true, 0, 15, 0)).toBe(true);
-    expect(nextDrifting(true, false, 1, 15, 0.02)).toBe(false); // straightened out
-    expect(nextDrifting(true, true, 1, 2, 0.5)).toBe(false); // nearly stopped
+  it('lasts while the handbrake is held, the player steers on the throttle, or the car is still sideways', () => {
+    expect(nextDrifting(true, true, 0, 0, 15, 0)).toBe(true);
+    expect(nextDrifting(true, false, 1, 1, 15, 0)).toBe(true); // a quick tap, car not rotated yet: keeps going
+    expect(nextDrifting(true, false, 0, 0, 15, 0.3)).toBe(true); // let go, still sideways
+    expect(nextDrifting(true, false, 0, 1, 15, 0.02)).toBe(false); // let go of the steering and straightened out
+    expect(nextDrifting(true, false, 1, 0, 15, 0.02)).toBe(false); // off the throttle and straight
+    expect(nextDrifting(true, true, 1, 1, 2, 0.5)).toBe(false); // nearly stopped
   });
 });
 

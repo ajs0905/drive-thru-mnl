@@ -49,8 +49,8 @@ export interface CarModel {
 
 /** Halo size (m) and strength: tail halos dim and small, bigger and full while braking; headlights in between. */
 export const HALO = {
-  tail: { color: '#ff3a22', idle: { size: 0.55, opacity: 0.45 }, braking: { size: 1.25, opacity: 1 } },
-  head: { color: '#fff1d0', size: 0.9, opacity: 0.7 },
+  tail: { color: '#ff3a22', idle: { size: 0.4, opacity: 0.3 }, braking: { size: 0.8, opacity: 0.65 } },
+  head: { color: '#fff1d0', size: 0.6, opacity: 0.45 },
   /** How far in front of the lamp face the glow sits (m). */
   offset: 0.08,
 };

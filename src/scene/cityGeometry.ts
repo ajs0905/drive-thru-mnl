@@ -5,7 +5,7 @@
 import { addFlatPolygon, addWalls, extrudeBuilding, FLOOR_HEIGHT, windowCode, WINDOWS } from '../geometry/extrude';
 import { hexToRgb, MeshBuilder, shade, srgbToLinear, type RGB } from '../geometry/meshBuilder';
 import type { Area, BarrierKind, Building, MapData, Point, Road, RoadClass } from '../map/types';
-import { addDeckStructure, addDisc, addRoadRibbon, addSidewalk, addZebra, cutBackPieces, MARK, markCode, type DeckStyle } from '../geometry/road';
+import { addDeckStructure, addDisc, addRoadRibbon, addSidewalk, addZebra, cutBackPieces, DECKS, MARK, markCode, type DeckStyle } from '../geometry/road';
 import { laneCount, RANK, sidewalkBands } from '../map/roads';
 import type { Vec4 } from '../geometry/meshBuilder';
 import { ChunkedBuilder, chunkKey, type Chunk } from '../geometry/chunks';
@@ -222,11 +222,9 @@ export function buildCity(map: MapData): CityMeshes {
     if (b.rings[0]?.length) extrudeBuilding((b.scenery ? scenery : buildings).at(b.rings[0][0]), b.rings, b.h - base, colors, base);
   }
 
-  const drive: DeckStyle = {
-    depth: 1.2, barrier: 1, pillarEvery: 30, pillarSize: 1.8,
-    color: col(PALETTE.concrete), underside: col(PALETTE.concreteUnder),
-  };
-  const walk: DeckStyle = { ...drive, depth: 0.5, barrier: 1.1, pillarEvery: 14, pillarSize: 0.6 };
+  const concrete = { color: col(PALETTE.concrete), underside: col(PALETTE.concreteUnder) };
+  const drive: DeckStyle = { ...DECKS.drive, ...concrete };
+  const walk: DeckStyle = { ...DECKS.walk, ...concrete };
   addRoads(roads, structures, map, drive, walk);
 
   const landuseY = landuseHeights(map.areas);

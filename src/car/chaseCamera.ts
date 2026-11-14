@@ -38,7 +38,28 @@ export const CHASE = {
   /** Field of view (degrees) at a standstill, and how much it widens per m/s up to `maxSpeed`. */
   fov: 50,
   fovPerSpeed: 0.12,
+  /**
+   * When a wall is between the car and the camera, the camera moves in front of it:
+   * `clipMargin` meters short of the wall, never closer than `minDistance` to the car,
+   * snapping in at once and easing back out at `clipRelease` per second.
+   */
+  clipMargin: 0.4,
+  minDistance: 1.5,
+  clipRelease: 3,
+  /** The camera's view line starts this high above the car's base (about its roof). */
+  focusHeight: 1.3,
 };
+
+/**
+ * How far along the line from the car to the camera the camera goes this frame: all the
+ * way (`full`) when nothing is in between, else just in front of the wall at `hit`.
+ * Moves in at once (never shows the inside of a wall) and back out smoothly.
+ */
+export function clipDistance(current: number, hit: number | null, full: number, dt: number): number {
+  const goal = hit === null ? full : Math.min(full, Math.max(CHASE.minDistance, hit - CHASE.clipMargin));
+  if (goal <= current) return goal;
+  return Math.min(goal, current + (goal - current) * damp(CHASE.clipRelease, dt));
+}
 
 /** Extra distance behind the car (m) for its forward acceleration (m/s^2): positive is farther. */
 export function cameraPull(forwardAccel: number): number {

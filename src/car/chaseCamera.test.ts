@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHASE, cameraPull, chaseView, damp, speedFov, turnToward } from './chaseCamera';
+import { CHASE, cameraPull, chaseView, clipDistance, damp, speedFov, turnToward } from './chaseCamera';
 
 describe('chaseView', () => {
   it('sits behind and above the car, looking ahead of it', () => {
@@ -69,5 +69,25 @@ describe('camera reaction to acceleration and speed', () => {
     expect(speedFov(30)).toBeGreaterThan(CHASE.fov);
     expect(speedFov(1000) - CHASE.fov).toBeLessThanOrEqual(7);
     expect(speedFov(-20)).toBe(speedFov(20));
+  });
+});
+
+describe('clipDistance', () => {
+  it('stays at full distance when nothing is in the way', () => {
+    expect(clipDistance(7, null, 7, 1 / 60)).toBe(7);
+  });
+  it('jumps in front of a wall at once, keeping a margin', () => {
+    expect(clipDistance(7, 4, 7, 1 / 60)).toBeCloseTo(4 - CHASE.clipMargin);
+  });
+  it('never comes closer than the minimum, even with a wall right behind the car', () => {
+    expect(clipDistance(7, 0.3, 7, 1 / 60)).toBe(CHASE.minDistance);
+  });
+  it('eases back out once the wall is gone', () => {
+    const next = clipDistance(3, null, 7, 1 / 60);
+    expect(next).toBeGreaterThan(3);
+    expect(next).toBeLessThan(3.3);
+    let d = 3;
+    for (let i = 0; i < 180; i++) d = clipDistance(d, null, 7, 1 / 60);
+    expect(d).toBeCloseTo(7, 1);
   });
 });

@@ -24,7 +24,7 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - **Lighting that scales with the device.** Sun shadows that follow the camera on Medium and High; tone mapping and baked contact shading everywhere. A Low / Medium / High switch plus resolution that adapts to the frame rate keeps phones smooth, and nothing is drawn while nothing moves.
 - **Drive it.** Press Drive (or Enter) and a car appears on the nearest road. Arcade handling on real physics (Rapier): speed-sensitive steering, handbrake drifts with a drift assist that keeps them controllable, a body that squats, dips and leans, a kick at every gear change, glowing brake lights, and a chase camera that swings around corners and reacts to acceleration and braking. The physics engine only downloads when you start driving.
 - **Fast to render.** The city is merged into a few big meshes per layer and grid cell (about 50 to 80 draw calls), cells off screen are skipped, and an idle view costs nothing. Built in about 300 ms.
-- **Tested and checked.** 430+ unit tests (the car's handling runs in the real physics engine in tests), an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
+- **Tested and checked.** 450+ unit tests (the car's handling runs in the real physics engine in tests), an automated map QA scan whose counts gate CI, import rules between modules enforced by a test, and generated data checked against the code on every push.
 
 ![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags](docs/images/flyover.png)
 
@@ -44,7 +44,8 @@ A low-poly, browser-based driving game set in Metro Manila, built from real Open
 - [x] Performance: reversed depth, grid-cell culling, render on demand
 - [x] Walls, fences, trees, gates and parking booms from OSM; low-poly tree models built in code
 - [x] Drivable car, first step: Rapier physics with arcade handling, chase camera, brake lights
-- [ ] Solid buildings, walls and the playable edge; drivable flyovers; touch controls and respawn
+- [x] Solid buildings, walls, posts and the playable edge
+- [ ] Drivable flyovers; touch controls and respawn
 - [ ] Time trials and races through real streets
 - [ ] Tile streaming and quality tiers for phones
 - [ ] Minimap, landmarks, polish
@@ -61,7 +62,7 @@ npm run dev
 
 The BGC map data is already in the repo, so that's all you need. Drag to pan, right-drag to rotate, scroll to zoom.
 
-Press **Drive here** (or Enter) to drive from where the camera looks: W A S D or the arrow keys, Space for the handbrake (tap it while steering to start a drift, then hold throttle and steer to keep it going), R to reset the car, Esc to go back to the map. Buildings aren't solid yet (next step).
+Press **Drive here** (or Enter) to drive from where the camera looks: W A S D or the arrow keys, Space for the handbrake (tap it while steering to start a drift, then hold throttle and steer to keep it going), R to reset the car, Esc to go back to the map. Buildings, walls and posts are solid; flyovers aren't drivable yet (next step).
 
 | Command | What it does |
 | --- | --- |

@@ -115,7 +115,7 @@ export function stepVehicle(vc: VehicleController, body: RAPIER.RigidBody, spec:
 
   s.slip = slipAngle(local.x, local.z);
   s.gearbox = stepGearbox(s.gearbox, speed, dt, t);
-  s.drifting = nextDrifting(s.drifting, input.handbrake, input.steer, speed, s.slip);
+  s.drifting = nextDrifting(s.drifting, input.handbrake, input.steer, input.throttle, speed, s.slip);
   s.grip = nextRearGrip(s.grip, input.handbrake, input.throttle, s.drifting, dt, t);
   s.steer = nextSteer(s.steer, input.steer, speed, dt, t);
   const steer = Math.max(-t.maxSteer, Math.min(t.maxSteer, s.steer + countersteer(s.slip, t)));

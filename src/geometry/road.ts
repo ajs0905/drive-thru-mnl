@@ -303,7 +303,8 @@ export function addDisc(mb: MeshBuilder, [cx, cy]: Point, radius: number, y: num
   return sides;
 }
 
-export interface DeckStyle {
+/** Shape of a raised deck (what the renderer and the car's collisions both need). */
+export interface DeckShape {
   /** Thickness of the deck below the road surface. */
   depth: number;
   /** Height of the side barriers above the road surface. 0 = none. */
@@ -312,8 +313,49 @@ export interface DeckStyle {
   pillarEvery: number;
   /** Pillar width. */
   pillarSize: number;
+}
+
+/** Flyovers and ramps for cars, and footbridges (lighter, more pillars). */
+export const DECKS: { drive: DeckShape; walk: DeckShape } = {
+  drive: { depth: 1.2, barrier: 1, pillarEvery: 30, pillarSize: 1.8 },
+  walk: { depth: 0.5, barrier: 1.1, pillarEvery: 14, pillarSize: 0.6 },
+};
+
+export interface DeckStyle extends DeckShape {
   color: RGB;
   underside: RGB;
+}
+
+/** A square pillar under a deck: center (map), top height, width. */
+export interface DeckPillar {
+  x: number;
+  y: number;
+  top: number;
+  size: number;
+}
+
+/**
+ * Pillars along a raised road's centerline: every `pillarEvery` meters (starting half
+ * a spacing in), wherever the deck's underside is more than 2 m up.
+ */
+export function deckPillars(points: Point[], z: number[], shape: DeckShape): DeckPillar[] {
+  const { pts, zs } = dedupeWithZ(points, z);
+  const out: DeckPillar[] = [];
+  let next = shape.pillarEvery / 2;
+  let d = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const seg = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    while (next <= d + seg) {
+      const t = (next - d) / seg;
+      const top = zs[i] + (zs[i + 1] - zs[i]) * t - shape.depth;
+      if (top > 2) {
+        out.push({ x: pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, y: pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t, top, size: shape.pillarSize });
+      }
+      next += shape.pillarEvery;
+    }
+    d += seg;
+  }
+  return out;
 }
 
 /** Quad from a to b (top edge) down to bottom heights, facing `n`. Wound to match n. */
@@ -382,25 +424,11 @@ export function addDeckStructure(mb: MeshBuilder, points: Point[], width: number
   }
 
   // Pillars along the centerline, wherever the deck is high enough to need one.
-  let next = style.pillarEvery / 2;
-  let d = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const seg = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
-    while (next <= d + seg) {
-      const t = (next - d) / seg;
-      const zc = zs[i] + (zs[i + 1] - zs[i]) * t;
-      const top = zc - style.depth;
-      if (top > 2) {
-        const cx = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t;
-        const cy = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t;
-        const s = style.pillarSize / 2;
-        const c: Point[] = [[cx - s, cy - s], [cx + s, cy - s], [cx + s, cy + s], [cx - s, cy + s]];
-        const normals: [number, number, number][] = [[0, 0, 1], [1, 0, 0], [0, 0, -1], [-1, 0, 0]];
-        for (let k = 0; k < 4; k++) wall(mb, c[k], c[(k + 1) % 4], top, top, 0, 0, normals[k], style.color);
-      }
-      next += style.pillarEvery;
-    }
-    d += seg;
+  for (const { x, y, top, size } of deckPillars(points, z, style)) {
+    const s = size / 2;
+    const c: Point[] = [[x - s, y - s], [x + s, y - s], [x + s, y + s], [x - s, y + s]];
+    const normals: [number, number, number][] = [[0, 0, 1], [1, 0, 0], [0, 0, -1], [-1, 0, 0]];
+    for (let k = 0; k < 4; k++) wall(mb, c[k], c[(k + 1) % 4], top, top, 0, 0, normals[k], style.color);
   }
 
   return mb.triangleCount - start;

@@ -25,7 +25,7 @@ A side-by-side prototype of 1 and 2 was offered and skipped in favor of deciding
 - **One step function** (`stepVehicle` in `src/car/vehicle.ts`) runs the controls, drift assist and gearbox for both the game and the physics tests, so the tests drive exactly what the player drives.
 - **Fixed 60 Hz physics step** with interpolated rendering (`@react-three/rapier`), so handling doesn't depend on frame rate.
 - **Loaded on demand:** the physics engine (about 870 KB gzipped, WebAssembly embedded) is in its own chunk that downloads only when the player starts driving; the map shows as fast as before.
-- **Colliders from our data**, added in steps: flat ground first; then buildings as static colliders near the car (by grid cell), the playable edge, walls and fences; then flyover decks and ramps from road heights.
+- **Colliders from our data**, added in steps: flat ground first; then one static triangle mesh for everything solid on the map (`src/geometry/collision.ts`: building walls, walls and fences, the playable edge, posts); then flyover decks and ramps from road heights. For BGC the whole mesh is about 73k triangles and takes about 110 ms to build when driving starts, so splitting it into cells near the car isn't needed yet; that comes with tile streaming. Rapier's triangle meshes collide from both sides, and with continuous collision detection on the car, thin walls hold even at 180 km/h (tested).
 - **Tests run the real engine:** `src/car/vehicle.test.ts` drives the car in Rapier in Node with the game's setup code and checks acceleration, top speed, braking distance, cornering grip, the handbrake and that it doesn't roll over in hard corners.
 
 ## The full car, planned now so every feature has a place
@@ -35,7 +35,8 @@ A side-by-side prototype of 1 and 2 was offered and skipped in favor of deciding
 | Driving | Throttle, brake, reverse, handbrake, speed-sensitive steering, grip and understeer, wheels that spin and steer, suspension travel | Done in 8a |
 | Driving | Drift assist; automatic gears (not shown on screen) with a short drive drop on upshifts; body pitch and roll on a spring, with a kick at each upshift | Done (feel step) |
 | Driving | Curb bumps, surface grip (road, grass, sidewalk) | 8d |
-| World | Collisions with buildings, walls, fences and the playable edge; booms that block; flyovers and ramps | 8b, 8c |
+| World | Collisions with buildings, walls, fences, the playable edge, pillars, trunks, bollards, blocks and gate pillars; camera kept out of walls | Done in 8b |
+| World | Flyovers and ramps; booms that open as the car comes | 8c, 8d |
 | Recovery | Reset (R), automatic reset when upside down or fallen through the world | Done in 8a |
 | Recovery | Respawn on the nearest road with a fade | 8d |
 | Camera | Chase camera that trails the car's direction and pulls back with speed | Done in 8a |

@@ -65,12 +65,13 @@ const DRIFT_END_SPEED = 4;
 
 /**
  * Whether the car is drifting after this step: starts with the handbrake while steering
- * at speed; ends once the handbrake is off and the car has straightened out (or slowed down).
+ * at speed (a quick tap is enough); lasts while the player keeps steering on the
+ * throttle; ends once they let go and the car has straightened out (or slowed down).
  */
-export function nextDrifting(drifting: boolean, handbrake: boolean, steer: number, speed: number, slip: number): boolean {
+export function nextDrifting(drifting: boolean, handbrake: boolean, steer: number, throttle: number, speed: number, slip: number): boolean {
   if (speed < DRIFT_END_SPEED) return false;
   if (handbrake && steer !== 0 && speed > DRIFT_START_SPEED) return true;
-  return drifting && (handbrake || Math.abs(slip) > 0.06);
+  return drifting && (handbrake || (steer !== 0 && throttle > 0) || Math.abs(slip) > 0.06);
 }
 
 /**

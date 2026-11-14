@@ -100,7 +100,7 @@ describe('halos', async () => {
     updateHalos(model, false, 1, 0);
     const idle = { size: model.halos.tail[0].scale.x, opacity: model.halos.tail[0].material.opacity };
     updateHalos(model, true, 1, 0);
-    expect(model.halos.tail[0].scale.x).toBeGreaterThan(idle.size * 2);
+    expect(model.halos.tail[0].scale.x).toBeGreaterThan(idle.size * 1.5);
     expect(model.halos.tail[0].material.opacity).toBeGreaterThan(idle.opacity);
     expect(model.halos.tail[0].material.opacity).toBe(HALO.tail.braking.opacity);
   });

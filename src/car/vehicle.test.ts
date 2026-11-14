@@ -7,6 +7,8 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DriveInput } from './controls';
 import { SEDAN } from './spec';
+import { buildCollision } from '../geometry/collision';
+import type { MapData } from '../map/types';
 import { chassisCollider, chassisInertia, downforce, newDriveState, setupWheels, stepVehicle } from './vehicle';
 
 const DT = 1 / 60;
@@ -15,12 +17,18 @@ beforeAll(async () => {
   await RAPIER.init();
 });
 
-function makeCar(speed = 0) {
+type Solids = Parameters<typeof buildCollision>[0];
+
+function makeCar(speed = 0, solids?: Solids) {
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   world.createCollider(RAPIER.ColliderDesc.cuboid(5000, 0.5, 5000).setTranslation(0, -0.3, 0)); // ground top at 0.2, as in Drive.tsx
+  if (solids) {
+    const mesh = buildCollision(solids); // the same static mesh Drive.tsx builds from the map
+    world.createCollider(RAPIER.ColliderDesc.trimesh(mesh.vertices, mesh.indices).setFriction(0.2).setRestitution(0.1));
+  }
   const t = SEDAN.tuning;
   const body = world.createRigidBody(
-    RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 0.4, 0).setAngularDamping(t.angularDamping).setLinearDamping(t.linearDamping).setCanSleep(false),
+    RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 0.4, 0).setAngularDamping(t.angularDamping).setLinearDamping(t.linearDamping).setCcdEnabled(true).setCanSleep(false),
   );
   world.createCollider(chassisCollider(RAPIER, SEDAN), body);
   const vc = world.createVehicleController(body);
@@ -113,13 +121,21 @@ describe('the Sedan in Rapier', () => {
     expect(car.maxSlip).toBeLessThan(0.1);
   });
 
+  it('starts a drift from a quick tap of the handbrake', () => {
+    const car = makeCar(20);
+    drive(car, { steer: 1, handbrake: true }, 0.15);
+    drive(car, { steer: 1, throttle: 1 }, 1.2);
+    expect(car.state.drifting).toBe(true);
+    expect(car.maxSlip).toBeGreaterThan(0.35);
+  });
+
   it('drifts with a handbrake kick and holds the slide on throttle, without spinning out', () => {
     const car = makeCar(20);
     drive(car, { steer: 1, handbrake: true }, 0.3);
     drive(car, { steer: 1, throttle: 1 }, 1.5);
     expect(car.state.drifting).toBe(true);
     expect(car.maxSlip).toBeGreaterThan(0.45); // a real slide: past 25 degrees
-    expect(car.maxSlip).toBeLessThan(1.1); // held near the limit, not spun out
+    expect(car.maxSlip).toBeLessThan(0.8); // held near the limit (about 30 degrees), not spun out
     const v = car.body.linvel();
     expect(Math.hypot(v.x, v.z)).toBeGreaterThan(12); // keeps most of its 72 km/h
     expect(car.maxTilt).toBeLessThan(15);
@@ -186,5 +202,57 @@ describe('chassis', () => {
   it('adds downforce with the square of speed', () => {
     expect(downforce(SEDAN, 20)).toBeCloseTo(4 * downforce(SEDAN, 10));
     expect(downforce(SEDAN, 0)).toBe(0);
+  });
+});
+
+describe('the Sedan against the map', () => {
+  // Three.js z is map -y, and the car starts at the origin facing +z: map points ahead of it have negative y.
+  const wallAcross = (z: number, kind: 'wall' | 'fence' = 'wall'): Solids => ({
+    buildings: [],
+    roads: [],
+    barriers: [{ id: 'w', kind, h: 2.4, points: [[-30, -z], [30, -z]] }],
+  });
+  const buildingAhead = (z: number): Solids => ({
+    buildings: [{ id: 'b', type: 'yes', h: 20, hSrc: 'estimate', rings: [[[-30, -z], [30, -z], [30, -z - 20], [-30, -z - 20]]] } as MapData['buildings'][number]],
+    roads: [],
+  });
+  const front = (car: Car) => car.body.translation().z + SEDAN.halfExtents[2];
+
+  it('stops at a building instead of driving through it', () => {
+    const car = makeCar(25, buildingAhead(30));
+    drive(car, { throttle: 1 }, 3);
+    expect(front(car)).toBeLessThan(30.3);
+    expect(Math.abs(car.vc.currentVehicleSpeed())).toBeLessThan(3);
+  });
+
+  it("doesn't tunnel through a thin wall even at 180 km/h", () => {
+    const car = makeCar(50, wallAcross(40));
+    drive(car, { throttle: 1 }, 2);
+    expect(front(car)).toBeLessThan(40.3);
+  });
+
+  it('stops at a thin wall from its back side too', () => {
+    // A wall the car meets from the other side of its quad (the line runs the other way).
+    const car = makeCar(25, { buildings: [], roads: [], barriers: [{ id: 'w', kind: 'fence', h: 1.8, points: [[30, -30], [-30, -30]] }] });
+    drive(car, { throttle: 1 }, 3);
+    expect(front(car)).toBeLessThan(30.3);
+  });
+
+  it('scrapes along a wall it hits at a shallow angle instead of stopping dead', () => {
+    // A wall along the car's path, slightly angled into it.
+    const solids: Solids = { buildings: [], roads: [], barriers: [{ id: 'w', kind: 'wall', h: 2.4, points: [[-1.2, 0], [4, -120]] }] };
+    const car = makeCar(25, solids);
+    drive(car, { throttle: 1 }, 2.5);
+    expect(car.vc.currentVehicleSpeed()).toBeGreaterThan(12);
+    expect(car.body.translation().z).toBeGreaterThan(40);
+    expect(car.maxTilt).toBeLessThan(30);
+  });
+
+  it('can still drive away after a crash', () => {
+    const car = makeCar(20, buildingAhead(25));
+    drive(car, { throttle: 1 }, 2);
+    drive(car, { brake: 1 }, 2); // reverse out
+    expect(car.vc.currentVehicleSpeed()).toBeLessThan(-2);
+    expect(front(car)).toBeLessThan(24);
   });
 });

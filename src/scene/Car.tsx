@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Quaternion, Vector3, type PerspectiveCamera } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { kick, STILL, stepBody } from '../car/bodyMotion';
-import { CHASE, cameraPull, chaseView, damp, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
+import { CHASE, cameraPull, chaseView, clipDistance, damp, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
 import { inputFromKeys, KEY_BINDINGS, NO_KEYS } from '../car/controls';
 import { wheelHardPoint, type CarSpec } from '../car/spec';
 import { chassisCollider, newDriveState, setupWheels, stepVehicle, type VehicleController } from '../car/vehicle';
@@ -56,6 +56,7 @@ export function Car({
     dir: [0, 1] as [number, number],
     placed: false,
     pull: 0,
+    clip: Infinity,
     body: STILL,
     upshifts: 0,
     pos: new Vector3(),
@@ -165,8 +166,15 @@ export function Car({
     v.pull += (cameraPull(drive.accel.forward) - v.pull) * (v.placed ? damp(CHASE.pullRate, dt) : 1);
     v.placed = true;
     const cam = chaseView([v.pos.x, v.pos.y, v.pos.z], v.dir[0], v.dir[1], speed, v.pull);
+    // Keep walls from coming between the car and the camera.
+    const from = { x: v.pos.x, y: v.pos.y + CHASE.focusHeight, z: v.pos.z };
+    const to = { x: cam.position[0] - from.x, y: cam.position[1] - from.y, z: cam.position[2] - from.z };
+    const full = Math.hypot(to.x, to.y, to.z);
+    const dir = { x: to.x / full, y: to.y / full, z: to.z / full };
+    const hit = world.castRay(new rapier.Ray(from, dir), full, true, undefined, undefined, undefined, body.current ?? undefined);
+    v.clip = clipDistance(Math.min(v.clip, full), hit ? hit.timeOfImpact : null, full, dt);
     const camera = state.camera as PerspectiveCamera;
-    camera.position.set(...cam.position);
+    camera.position.set(from.x + dir.x * v.clip, from.y + dir.y * v.clip, from.z + dir.z * v.clip);
     camera.lookAt(...cam.lookAt);
     const fov = speedFov(speed);
     if (Math.abs(camera.fov - fov) > 0.01) {

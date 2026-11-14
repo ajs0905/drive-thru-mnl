@@ -62,7 +62,7 @@ src/
   geo/        projection: lat/long <-> local meters             pure TS
   geometry/   polygons, clipping, spatial grid, extrusion,      pure TS, no three.js, no React
               road ribbons, junction polygons, mesh builder
-              (typed arrays)
+              (typed arrays), the car's collision mesh
   map/        data contract (types.ts), loader, hashing,         pure TS (loader uses fetch)
               shared road rules (lanes, sidewalks)
   car/        car spec and tuning, arcade controls, drift         pure TS, no three.js, no React
@@ -201,6 +201,8 @@ sequenceDiagram
   end
 ```
 
+**Collisions:** `geometry/collision.ts` builds everything the car can hit as one static triangle mesh in three.js space when driving starts: upright walls along every playable building outline (roof height), along walls, fences, hedges and rails, along the playable edge (30 m), and small prisms for flyover pillars (placed by the same `deckPillars` the renderer uses), tree trunks, bollards, blocks and gate pillars. Booms stay open and skybridges stay overhead. For BGC that's about 73k triangles, built in about 40 ms plus about 70 ms for Rapier to index it. The chase camera casts a ray from the car's roof to where it wants to be and stops in front of anything in between.
+
 The map controls stay mounted while driving, without input and with their limits opened up so they leave the chase camera alone; their target follows the car, and the sun's shadow area and the prop distance limits follow that target.
 
 **Planned runtime** (tiles, tiers, events):
@@ -327,7 +329,7 @@ One page each in [decisions/](decisions/):
 | Better buildings (done) | Per-wall coordinates in the mesh builder, window shader by building type and height, instanced roof details (housings, AC units, water tanks) |
 | Lighting and surroundings (done) | Tone mapping, wall contact darkening, a low morning sun with shadows around the camera's focus, a manual Low / Medium / High switch with adaptive resolution, reversed depth buffer, grid-cell meshes, render on demand; filler city with real skylines past the map, hills on the horizon |
 | Barrier data (done) | Second Overpass export (`data/barriers.overpassql`), `pipeline/barriers.ts` (walls cut open at roads, curbside trees moved, gates and booms turned across their road), data contract v6, walls in the structures layer, instanced trees and fixtures, three new QA checks. See [ADR 0012](decisions/0012-barriers-and-trees-from-a-second-export.md). Then tree models built in code for Medium and High ([ADR 0013](decisions/0013-tree-models-built-in-code.md)) |
-| Drivable car | In steps. Feel (done): drift assist, hidden automatic gears with a shift kick, body pitch and roll, lamp halos, a camera that reacts to acceleration. 8a (done): `src/car` (spec, arcade controls, chase camera, spawn, Rapier vehicle), lazy drive mode with the Sedan on flat ground, brake lights, blob shadow. 8b: colliders from playable buildings, the edge wall and barriers. 8c: flyovers and ramps. 8d: surface grip, curbs, respawn with a fade, touch and gamepad. See ADRs 0008 and 0014 |
+| Drivable car | In steps. 8a (done): `src/car` (spec, arcade controls, chase camera, spawn, Rapier vehicle), lazy drive mode with the Sedan on flat ground, brake lights, blob shadow. Feel (done): drift assist, hidden automatic gears with a shift kick, body pitch and roll, lamp halos, a camera that reacts to acceleration. 8b (done): `geometry/collision.ts` turns playable buildings, walls and fences, the playable edge and posts (flyover pillars, trunks, bollards, blocks, gate pillars) into one static triangle mesh; the chase camera stays in front of walls. 8c: flyovers and ramps. 8d: surface grip, curbs, respawn with a fade, touch and gamepad, booms that open. See ADRs 0008 and 0014 |
 | Tiles, streaming, tiers | Tile format (section 5), worker build, tile manager, quality manager (section 8), Ramer-Douglas-Peucker simplification for far tiles, billboards for far trees rendered from the tree models |
 | Polish | Minimap (reuses `src/scene/MapLines.tsx`), street names, landmarks, props, day/night |
 | Ship | Vercel deploy, measured budgets in PERFORMANCE.md, README media |
