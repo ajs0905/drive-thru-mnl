@@ -7,7 +7,7 @@
   --sign-blue: #1d4f91;
   --sign-orange: #ff7d22;
   --limit-red: #d42a1f;
-  --sign-font: Overpass, 'Helvetica Neue', Arial, sans-serif;
+  --sign-font: 'Overpass Variable', 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* A road sign: colored plate, white inner border. Buttons use it too. */
