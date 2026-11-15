@@ -15,7 +15,7 @@ import { roofProps } from '../geometry/roofProps';
 import type { Prop, PropKind } from '../geometry/props';
 import { fixtureProps, treeModelProps, treeProps } from '../geometry/streetProps';
 import { treeTint, type TreeModel } from '../geometry/treeShapes';
-import { addBarrier, BARRIER_THICKNESS } from '../geometry/barrier';
+import { addBarrier, addBarrierBand, BARRIER_POSTS, BARRIER_THICKNESS, postsAlong } from '../geometry/barrier';
 import { polygonArea, vertexCentroid, withWinding } from '../geometry/polygon';
 
 export const EDGE_HEIGHT = 6;
@@ -30,6 +30,8 @@ export const PALETTE = {
   scenery: '#a7adb6',
   park: '#6fa75a',
   plaza: '#d9cfbd',
+  /** Open parking yards (pipeline/lots.ts): asphalt, a touch lighter than the roads. */
+  parking: '#55595e',
   concrete: '#c4c0b6',
   concreteUnder: '#8f8c85',
   water: '#4f8fcf',
@@ -101,7 +103,14 @@ export const BARRIER_COLORS: Record<BarrierKind, { side: string; top: string }> 
   fence: { side: '#4a4f52', top: '#4a4f52' },
   hedge: { side: '#4c7a34', top: '#5d8e3e' },
   rail: { side: '#b9bcbf', top: '#cfd2d4' },
+  // Construction hoarding (green painted metal, dark steel posts) and a plastered lot wall.
+  hoarding: { side: '#3f7a5f', top: '#2f5d49' },
+  lotwall: { side: '#ddd6c6', top: '#c3bba9' },
 };
+
+/** Post colors along hoarding and lot walls (BARRIER_POSTS), and the hoarding's dark top band. */
+const POST_COLORS: Partial<Record<BarrierKind, string>> = { hoarding: '#3b3f42', lotwall: '#cec6b4' };
+const HOARDING_BAND = { height: 0.35, color: '#2c4f40' };
 
 // Small steps up so overlapping layers don't flicker. Major roads sit on top where
 // pieces still overlap; sidewalks sit under everything so road corners cover them.
@@ -148,6 +157,7 @@ export function windowStyle(b: Building): number {
 }
 
 function areaColor(a: Area): string {
+  if (a.kind === 'parking') return PALETTE.parking;
   if (a.kind === 'park') return PALETTE.park;
   if (a.kind === 'plaza') return PALETTE.plaza;
   if (a.kind === 'water') return PALETTE.water;
@@ -169,6 +179,7 @@ export function landuseHeights(areas: Area[]): Map<Area, number> {
 }
 
 function areaY(a: Area, landuseY: Map<Area, number>): number {
+  if (a.kind === 'parking') return 0.095; // over sidewalks, under every road
   if (a.kind === 'water') return 0.09;
   if (a.kind === 'plaza') return 0.08;
   if (a.kind === 'park') return 0.07;
@@ -245,7 +256,17 @@ export function buildCity(map: MapData): CityMeshes {
 
   for (const b of map.barriers ?? []) {
     const c = BARRIER_COLORS[b.kind];
-    addBarrier(structures.at(b.points[Math.floor(b.points.length / 2)]), b.points, BARRIER_THICKNESS[b.kind], b.h, col(c.side), col(c.top));
+    const mb = structures.at(b.points[Math.floor(b.points.length / 2)]);
+    addBarrier(mb, b.points, BARRIER_THICKNESS[b.kind], b.h, col(c.side), col(c.top));
+    if (b.kind === 'hoarding') addBarrierBand(mb, b.points, BARRIER_THICKNESS.hoarding + 0.02, b.h - HOARDING_BAND.height, b.h, col(HOARDING_BAND.color));
+    const posts = BARRIER_POSTS[b.kind];
+    if (posts) {
+      const pc = col(POST_COLORS[b.kind] ?? c.side);
+      for (const { p, dir } of postsAlong(b.points, posts.every)) {
+        const half = posts.size / 2;
+        addBarrier(mb, [[p[0] - dir[0] * half, p[1] - dir[1] * half], [p[0] + dir[0] * half, p[1] + dir[1] * half]], posts.size, b.h + posts.rise, pc);
+      }
+    }
   }
 
   const out = {

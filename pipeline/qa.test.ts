@@ -49,6 +49,19 @@ describe('runQa', () => {
     expect(kinds).toEqual({ 'tree-on-road': 1, 'tree-in-building': 1, 'barrier-on-road': 1 });
   });
 
+  it('finds solid street furniture in a road or a building, but not flat stall lines', () => {
+    const m: MapData = {
+      ...map([road({})], [box(40, 20, 50, 30)]),
+      dressing: [
+        { k: 'bin', p: [10, 3], rot: 0 },
+        { k: 'kiosk', p: [45, 25], rot: 0 },
+        { k: 'bench', p: [10, 30], rot: 0 },
+        { k: 'stall', p: [20, 0], rot: 0 },
+      ],
+    };
+    expect(countByKind(runQa(m))).toEqual({ 'dressing-in-the-way': 2 });
+  });
+
   it('reports nothing for a clean map', () => {
     expect(runQa(map([road({})], [box(40, 20, 50, 30)]))).toEqual([]);
   });

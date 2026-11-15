@@ -82,6 +82,21 @@ Collisions (8b, 8c): two static triangle meshes (walls; decks, ramps, pillars an
 - **Loading**: the map download reports real progress when the server sends its size uncompressed; with compression it shows the megabytes read instead.
 - Main bundle 379 KB gzipped (was 368): the menu, loading screens, HUD, map drawing and touch controls. The Drive chunk is unchanged.
 
+### Lots and street furniture
+
+Closing off empty lots and the sidewalk furniture ([ADR 0018](decisions/0018-world-channelling.md)). Headless Chrome, software renderer, 1280x720, Medium, map view, the overlay's idle counts (draw calls / triangles), before and after:
+
+| View (`?cam=`) | Before | After |
+| --- | --- | --- |
+| Over a construction site (`-190,60,190,-273,0,169`) | 46 / 161k | 56 / 216k |
+| Overview (`-500,400,800,0,0,0`) | 100 / 386k | 105 / 460k |
+| Street level on an avenue (`-560,12,-560,-544,1,-573`) | 69 / 305k | 79 / 351k |
+
+- The walls are barriers in the existing structure cells (no new draw calls); hoarding posts and lot wall pillars are a few boxes each. Most of the extra triangles are the walls and the containers (288 triangles each, all 64 drawn within the landmark distance).
+- The dressing is one instanced mesh per kind for the whole map (18 at most), each holding only the pieces within reach of the focus, refilled when it moves 20 m (a loop over 2,876 pieces). The first version used a mesh per kind per 160 m cell and added 20 to 50 draw calls in the same views. On Low only the four landmark kinds are drawn.
+- Collisions: about 87k to 113k triangles (the furniture is 8 triangles a box, the new bollards hexagonal prisms), 3.2 to 4.1 MB.
+- Map data 3.25 MB, 766 KB gzipped (was 3.05 MB, 723 KB); `props.glb` 21 KB gzipped, loaded after the city like the parked cars. Main bundle 383 KB gzipped (was 382).
+
 ### Desktop with a GPU
 
 Run `npm run dev`, open the page with `?debug` at the end of the address, and read the overlay (FPS, draw calls, triangles, build time): top middle on the menu and while driving, bottom left in the map view (`?view=map`). On laptops with two GPUs, check that the browser runs on the dedicated one (`chrome://gpu`, or Windows Settings > Display > Graphics > browser > High performance).

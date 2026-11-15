@@ -216,8 +216,13 @@ export function Car({
       camera.fov = fov;
       camera.updateProjectionMatrix();
     }
+    // The map controls stay mounted while driving and turn the camera toward their target on
+    // every frame, enabled or not. Their target is the point the chase camera looks at, so
+    // that turn changes nothing; it was the car's origin, and once paused (this frame no
+    // longer running) the camera tipped down toward the wheels. The target also centers the
+    // sun's shadows and the prop distances.
     const controls = state.controls as unknown as { target?: Vector3 } | null;
-    controls?.target?.copy(v.pos);
+    controls?.target?.set(...cam.lookAt);
 
     // Blob shadow on the ground under the wheels that touch it.
     let y = 0;

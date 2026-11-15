@@ -3,6 +3,7 @@ import { CONCRETE_SIZE, roadblockLayout } from './roadblocks';
 import type { Building, Road } from '../map/types';
 import { buildCollision as build, COLLISION, propFootprint, type CollisionInput } from './collision';
 import type { Prop } from './props';
+import { DRESSING } from './dressing';
 
 const square = (x: number, y: number, s: number): [number, number][] => [
   [x, y],
@@ -97,6 +98,18 @@ describe('buildCollision', () => {
     expect(w.structures.indices.length / 3).toBe(16); // four sides each; cap beams are overhead and left out
     const ys = Array.from(w.structures.vertices).filter((_, i) => i % 3 === 1);
     expect(Math.max(...ys)).toBeCloseTo(5.8);
+  });
+
+  it('makes street furniture solid at its drawn size, but not the clutter behind lot walls', () => {
+    const w = build({ ...empty, dressing: [{ k: 'shed', p: [0, 0], rot: 0 }, { k: 'container', p: [20, 0], rot: 0, c: 1 }, { k: 'stall', p: [40, 0], rot: 0 }] }, { surfaceY: SURFACE });
+    expect(w.counts.dressing).toBe(1);
+    expect(w.structures.indices.length / 3).toBe(8);
+    const v = Array.from(w.structures.vertices);
+    const xs = v.filter((_, i) => i % 3 === 0);
+    const zs = v.filter((_, i) => i % 3 === 2);
+    expect(Math.max(...v.filter((_, i) => i % 3 === 1))).toBeCloseTo(DRESSING.shed.size[2]);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(DRESSING.shed.size[0]);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeCloseTo(DRESSING.shed.size[1]);
   });
 });
 

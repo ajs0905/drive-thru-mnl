@@ -7,6 +7,7 @@
  *   npm run qa -- --json                            counts per kind, as JSON
  *   npm run qa -- --check data/qa-baseline.json     exit 1 if any count is above the baseline (CI)
  */
+import { DRESSING, dressingCorners } from '../src/geometry/dressing';
 import { readFileSync } from 'node:fs';
 import { distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../src/geometry/polygon';
 import { SegmentGrid } from '../src/geometry/spatialGrid';
@@ -143,8 +144,9 @@ export function runQa(map: MapData): Issue[] {
 }
 
 /**
- * 6. Trees standing on a road or inside a building, and walls, fences or hedges across a
- * road or path (guard rails and jersey barriers line roads on purpose, so they're left out).
+ * 6. Trees standing on a road or inside a building, walls, fences or hedges across a road or
+ * path (guard rails and jersey barriers line roads on purpose, so they're left out), and
+ * solid street furniture in a road, on a path or in a building.
  */
 function extrasIssues(map: MapData, ground: SegmentGrid<Road>, inside: (p: Point) => number | undefined): Issue[] {
   const issues: Issue[] = [];
@@ -161,7 +163,8 @@ function extrasIssues(map: MapData, ground: SegmentGrid<Road>, inside: (p: Point
     else if (inside(t.p) !== undefined) issues.push({ kind: 'tree-in-building', at: t.p, detail: `tree at ${t.p.join(', ')}`, severity: 1 });
   }
   for (const b of map.barriers ?? []) {
-    if (b.kind === 'rail') continue;
+    // Rails run along roads, and a lot's gate (pipeline/lots.ts) closes one on purpose.
+    if (b.kind === 'rail' || b.id.endsWith('/gate')) continue;
     let worst = 0;
     let at: Point = b.points[0];
     for (let i = 0; i < b.points.length - 1; i++) {
@@ -174,6 +177,14 @@ function extrasIssues(map: MapData, ground: SegmentGrid<Road>, inside: (p: Point
       }
     }
     if (worst > 0) issues.push({ kind: 'barrier-on-road', at, detail: `${b.id} ${b.kind} ${worst.toFixed(1)} m in`, severity: worst });
+  }
+  // Solid street and park furniture (pipeline/lots.ts, pipeline/sidewalks.ts) in a road, on a footpath or in a building.
+  for (const d of map.dressing ?? []) {
+    if (!DRESSING[d.k].solid) continue;
+    const foot = dressingCorners(d.k, d.p, d.rot);
+    const worst = Math.max(...[...foot, d.p].map((p) => Math.max(depth(p, ground), depth(p, paths))));
+    if (worst > 0.05) issues.push({ kind: 'dressing-in-the-way', at: d.p, detail: `${d.k} ${worst.toFixed(1)} m into a road or path`, severity: worst });
+    else if (inside(d.p) !== undefined) issues.push({ kind: 'dressing-in-the-way', at: d.p, detail: `${d.k} in a building`, severity: 1 });
   }
   return issues;
 }

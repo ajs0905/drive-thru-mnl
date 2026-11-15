@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Ring } from '../map/types';
+import type { Point, Ring } from '../map/types';
 import {
   clipPolylineToRect,
   clipRingToRect,
@@ -14,6 +14,8 @@ import {
   polygonArea,
   ringArea,
   signedArea,
+  simplifyPolyline,
+  simplifyRing,
   vertexCentroid,
   withWinding,
 } from './polygon';
@@ -196,5 +198,25 @@ describe('convexHull', () => {
 
   it('handles fewer than three points', () => {
     expect(convexHull([[1, 1], [0, 0]])).toEqual([[0, 0], [1, 1]]);
+  });
+});
+
+describe('simplifyPolyline / simplifyRing (Ramer-Douglas-Peucker)', () => {
+  it('drops points within the tolerance and keeps the corners', () => {
+    const stairs: Point[] = [];
+    for (let i = 0; i <= 10; i++) stairs.push([i, i % 2 ? 0.3 : 0]);
+    stairs.push([10, 10]);
+    expect(simplifyPolyline(stairs, 0.5)).toEqual([[0, 0], [10, 0], [10, 10]]);
+    expect(simplifyPolyline(stairs, 0.1).length).toBeGreaterThan(3);
+  });
+  it('turns a traced staircase square into its four corners', () => {
+    const ring: Ring = [];
+    for (let x = 0; x < 10; x++) ring.push([x, 0]);
+    for (let y = 0; y < 10; y++) ring.push([10, y]);
+    for (let x = 10; x > 0; x--) ring.push([x, 10]);
+    for (let y = 10; y > 0; y--) ring.push([0, y]);
+    const out = simplifyRing(ring, 0.5);
+    expect(out).toHaveLength(4);
+    expect(new Set(out.map((p) => p.join(',')))).toEqual(new Set(['0,0', '10,0', '10,10', '0,10']));
   });
 });

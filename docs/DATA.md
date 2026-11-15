@@ -20,7 +20,7 @@ ODbL lets us use and adapt the data, including in a public project, as long as i
 | [`data/barriers.overpassql`](../data/barriers.overpassql) | Second query, same box: walls, fences, hedges, guard rails, gates, booms, bollards, trees, plus traffic lights and street lamps for later |
 | `data/raw/bgc-barriers.geojson` | Its raw export (550 KB, 1,634 features). Optional: without it the map has no walls or trees. |
 | [`data/playable-area.geojson`](../data/playable-area.geojson) | 15-point polygon around BGC, 3.51 km². Where the car can drive. |
-| `public/data/bgc.json` | The processed map the game loads (3.0 MB, 723 KB gzipped). Generated: don't edit by hand. |
+| `public/data/bgc.json` | The processed map the game loads (3.2 MB, 766 KB gzipped). Generated: don't edit by hand. |
 | `public/data/sample.json` | Tiny map built from the test fixture, used when `bgc.json` is missing |
 | `data/qa-baseline.json` | Accepted map QA counts; CI fails if a count goes above it |
 
@@ -150,7 +150,17 @@ Placed once here, so the renderer and the car's collisions use the same ones (`p
 - **Posts under raised buildings.** Buildings that start above the ground (canopies over driveways, a building over a passage) used to float. They get slim posts (0.35 m for canopies, 0.8 m for whole buildings) along their outline every 10 m at most, except along walls that lean on another building (skybridges, wings) and except on roads.
 - Result: 279 deck pillars (99 moved off a road below, 29 on outrigger piers, 12 spots spanned instead, mostly footbridges over wide roads) and 265 posts under 22 raised buildings and canopies.
 
-### 14. Parked cars (`pipeline/parking.ts`)
+### 14. Empty lots, walls and open zones (`pipeline/lots.ts`)
+
+BGC has a lot of empty land: construction sites, vacant blocks, mapped grass. Driving into one used to be a short cut across open dirt that broke the streets up. Now most of it is closed off at the back of the sidewalk, the way a street racer channels the player down its roads, and three places are left open on purpose.
+
+- **Which land.** Construction land use gets ribbed metal **hoarding** (2.4 m, posts every 2.4 m); greenfield, brownfield, vacant land and mapped grass a plastered **lot wall** (2.2 m, pillars every 4 m); other parks a 1.1 m **hedge**. Two big parks stay as they are (Track 30th and Burgos Circle), and three zones are opened up: **Terra 28th** (lamps along its edge, benches by its paths, a pavilion and tree clusters), the **Simon Mann sports field**, and the **surface parking by Kalayaan Avenue** (paved, 232 stalls from the mapped parking aisles, wheel stops, a booth by the entrance and 125 parked cars, half full).
+- **Where the wall goes.** Each lot is drawn on a 1 m grid: cells inside its outline, minus anything within a road's half width plus its sidewalk plus 1 m (OSM's land use often runs to the middle of the street), minus buildings and land outside the playable area. Lots under 1,200 m² or narrower than 12 m are skipped. The free cells are traced into outlines (through the middles of the cell sides, so a diagonal edge comes out straight rather than as a staircase) and simplified by 0.8 m, less than the 1 m kept from the sidewalk, so a wall never reaches a street. Edges backing onto a building or the playable edge get no wall.
+- **Ways in.** Every wall piece is sampled every 25 cm: where it would cross a footpath it becomes a row of bollards (open to people, closed to cars), and where it crosses a driveway that runs into the lot it becomes a gate piece of its own (`lot/<id>/<n>/gate`), so map QA knows it closes the road on purpose.
+- **Inside.** Construction yards get stacked shipping containers, pipe stacks, crates, dumpsters, work lights and dirt mounds, and the biggest (12,000 m² and up) a tower crane, at most 3. Vacant lots get a few mounds. None of it is solid: the car can't get in.
+- Result: 51 lots closed (16 construction, 14 vacant, 21 gardens): 6.4 km of hoarding, 4.6 km of lot wall, 4.5 km of hedge, 31.8 ha closed off, with 97 footpath openings and 11 gates; 4.0 ha opened up. Why and what it costs: [ADR 0018](decisions/0018-world-channelling.md).
+
+### 15. Parked cars (`pipeline/parking.ts`)
 
 OSM barely maps street parking in BGC: 25 ways carry parking tags, all "no parking" or "no stopping" (kept by extract as `noParking` and respected here). So the cars are placed by rule.
 
@@ -158,6 +168,14 @@ OSM barely maps street parking in BGC: 25 ways carry parking tags, all "no parki
 - Along each side, slots are 6.2 m apart, grouped into stretches of 3 to 8 slots. 40% of stretches stay empty and the rest are half filled by a seeded coin: about 30% of slots overall, with long empty runs as well as gaps (the first version filled 60% evenly, which looked crowded). A slot is skipped near a junction (4 m past the junction polygon), on a sharp bend, near a crossing, a gate, boom or bollard (likely a driveway), a tree trunk or a pillar, and anywhere the car would stand in a junction, another road's lanes, a building, across a wall or the playable edge.
 - Model (sedan, hatchback, SUV, pickup, van, taxi) and paint (mostly white, silver, grey and black, some reds and blues) are picked by weight from the same seed, so the same map always gets the same cars.
 - Result: 981 cars on 448 streets out of 4,341 curb slots (skipped: crossing 119, another road joining 60, outside the playable area 50, bend 12, fixture 10, wall 3).
+
+### 16. Sidewalk furniture (`pipeline/sidewalks.ts`)
+
+Solid street furniture, so the sidewalks read as the edge of the street rather than an extra lane.
+
+- Waiting sheds along the avenues (about every 260 m, against the back of the sidewalk, facing the road), planters along the avenues' curbs (every 34 m), bins (90 m) and fire hydrants (160 m) on every street with a sidewalk, and a few snack kiosks by the open parks. Each spacing is varied by a seeded amount per street side, so the streets don't line up.
+- A piece is skipped near a junction, a crossing, a driveway (gate, boom or bollard), a tree trunk or a pillar, on a sharp bend, on a footpath, in another road or a building, across a wall, outside the playable area, and where it would crowd another piece (1 m kept between them).
+- Result: 883 bins, 654 planters, 498 hydrants, 79 waiting sheds and 4 kiosks (skipped: another road 347, outside the playable area 343, building 119, crowded 109, crossing 88, junction 41, bend 17, pillar 14, footpath 14, wall 8, tree 3, fixture 3).
 ## Projection
 
 Equirectangular around a fixed origin (14.5509 N, 121.0503 E):
@@ -209,6 +227,8 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Overlapping same-class roads drawn in one plane (flicker) | (new) 758 pairs | 0 |
 | Parked cars in the way (junction, another road, crossing, building, wall, edge) | (new) 2 | 0 |
 | Buildings hidden inside another, or a construction outline around a finished one | (new) 6 | 0 |
+| Lot walls across a road or path (beyond their gates) | (new) 30 | 0 |
+| Solid street furniture in a road, on a path or in a building | (new) | 0 |
 
 Most remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs). The rest are houses closer than 2.8 m to the street center, or roads mapped straight through a building.
 

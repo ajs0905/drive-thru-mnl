@@ -13,15 +13,15 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | | |
 | --- | --- |
 | **Input** | 25,930 OpenStreetMap features (a 19 MB GeoJSON export), plus 1,634 more for walls, trees and street fixtures |
-| **Output** | 11,687 buildings, 3,536 roads, 1,384 junction polygons, 511 zebra crossings, 70 raised flyover and footbridge pieces on 279 pillars, 922 trees, 981 parked cars: one 723 KB (gzipped) file |
-| **Missing data, filled by rules** | 97% of buildings have no height in OSM, bridges have no height or ramps, and street parking isn't mapped. All of it is worked out by the pipeline |
-| **Pipeline** | 14 steps, a few seconds, deterministic: CI rebuilds the map and fails if the output differs by a byte |
-| **Map QA** | 24 kinds of map problem scanned on every push, with counts that can only go down. Examples: 758 flickering road overlaps, 226 trees standing on roads and 55 pillars in the lanes below them, all now 0 |
-| **Rendering** | The whole city in about 50 to 90 draw calls, built in the browser in about 300 to 400 ms; an idle view costs nothing |
+| **Output** | 11,687 buildings, 3,536 roads, 1,384 junction polygons, 511 zebra crossings, 70 raised flyover and footbridge pieces on 279 pillars, 938 trees, 51 walled-off lots, 2,876 pieces of street and lot furniture, 1,106 parked cars: one 766 KB (gzipped) file |
+| **Missing data, filled by rules** | 97% of buildings have no height in OSM, bridges have no height or ramps, street parking isn't mapped, and empty lots are just outlines that run onto the streets. All of it is worked out by the pipeline |
+| **Pipeline** | 16 steps, a few seconds, deterministic: CI rebuilds the map and fails if the output differs by a byte |
+| **Map QA** | 25 kinds of map problem scanned on every push, with counts that can only go down. Examples: 758 flickering road overlaps, 226 trees standing on roads and 55 pillars in the lanes below them, all now 0 |
+| **Rendering** | The whole city in about 55 to 105 draw calls, built in the browser in about 300 to 400 ms; an idle view costs nothing |
 | **Performance work** | High on the development laptop went from 23 FPS to the screen's 144 Hz limit after two measured passes |
-| **Physics** | Collision meshes (82k triangles) built from the map data when you start driving, matching exactly what's drawn; the flyovers are drivable |
-| **Tests** | 593 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
-| **Download** | 381 KB (gzipped) to see the city; the 859 KB physics chunk loads only when you start driving |
+| **Physics** | Collision meshes (113k triangles) built from the map data when you start driving, matching exactly what's drawn; the flyovers are drivable |
+| **Tests** | 619 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
+| **Download** | 383 KB (gzipped) to see the city; the 859 KB physics chunk loads only when you start driving |
 
 ## Algorithms and techniques
 
@@ -33,7 +33,8 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Road graph with union-find to merge nearby junctions, and graph walks along roads | `pipeline/junctions.ts` |
 | Junction polygons built from where the road edges meet, with a fallback when they don't | `src/geometry/junction.ts` |
 | Rasterization plus flood fill to find unpaved holes between roads, then the same detector reused to pave them | `pipeline/paving.ts`, `pipeline/qaRoads.ts` |
-| Separating axis tests for placement (parked cars, roadblocks), ray casts to keep the chase camera out of walls | `pipeline/parking.ts`, `src/geometry/roadblocks.ts`, `src/car/chaseCamera.ts` |
+| Rasterized free land, a breadth-first distance transform, contour tracing and Ramer-Douglas-Peucker simplification to wall off empty lots at the back of the sidewalk | `pipeline/lots.ts`, `src/geometry/polygon.ts` |
+| Separating axis tests for placement (parked cars, roadblocks, street furniture), ray casts to keep the chase camera out of walls | `pipeline/parking.ts`, `src/geometry/roadblocks.ts`, `src/car/chaseCamera.ts` |
 | Catmull-Rom splines to round flyovers and ramps, constrained search to place pillars out of the lanes below | `pipeline/smoothRaised.ts`, `pipeline/structures.ts` |
 | Greedy graph coloring to give overlapping roads a draw order (no flicker) | `pipeline/roadLayers.ts` |
 | GLSL shaders for lane markings, zebras, windows and car paint reflections, all from per-vertex data with no textures | `src/scene/` |
@@ -47,6 +48,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 - **Clean intersections, painted roads.** Roads are split into a graph and every junction gets its own polygon, worked out from where the road edges meet; leftover gaps are found by rasterizing the road surface and paved. Lane lines, zebra crossings and curbs are drawn by a shader from per-vertex data: no textures, no extra draw calls.
 - **Windows without textures.** Every building gets windows from its type and height (glass towers, offices, apartments, houses, parking decks), drawn by a shader; roofs get stair housings, AC units and water tanks.
 - **Walls and trees that respect the streets.** Walls and fences from OSM are cut open wherever a road passes, street trees mapped into the road are moved to the curb, gates and parking booms turn to span their road. Trees are low-poly models built in code and drawn as GPU instances.
+- **Streets that hold you.** Most empty lots (construction sites, vacant blocks, gardens) are closed off at the back of the sidewalk with hoarding, lot walls or hedges, traced from the free land so they never stand on a street; footpaths into them get bollards. Three places are left open on purpose: a park, a sports field and a surface parking yard with its stalls and cars. Waiting sheds, planters, bins and hydrants line the sidewalks, and they're solid.
 - **Parked cars placed by rule.** Only on streets wide enough to still drive past, clear of junctions, crossings, driveways and trees, in stretches with gaps. Two levels of detail plus distance and view culling; near the player they're physics bodies, and a car you knock out of place goes back to its spot once it's off screen.
 - **Scales with the device.** Low, Medium and High tiers plus a resolution that adapts to the frame rate. Shadows, MSAA, tree models and the speed blur are switched by tier; the map and the handling never are.
 - **No edge of the world.** Past the mapped area the city continues as filler blocks out to the haze, with the real skylines of Makati and Ortigas where they actually are. Where the drivable area ends, roads are closed off by roadblocks (concrete barriers, a "road under construction" sign, and barricades, drums and cones you can send flying) and a construction fence runs between them.
@@ -65,16 +67,16 @@ Free-roam arcade driving on BGC's real streets, for once without the traffic (he
 
 ## What's built
 
-- Map pipeline: OSM export to one compact, deterministic map file, with heights, flyovers, junctions, crossings, trees, walls and parked cars worked out by rule
-- Map QA: 24 checks run in CI, each with a baseline that can only go down
+- Map pipeline: OSM export to one compact, deterministic map file, with heights, flyovers, junctions, crossings, trees, walls, walled-off lots, street furniture and parked cars worked out by rule
+- Map QA: 25 checks run in CI, each with a baseline that can only go down
 - 3D city: buildings with windows and roof details, painted roads with clean intersections, a physically based sky, shadows, and filler city and real skylines past the edge
 - Performance: three quality tiers, adaptive resolution, grid culling, render on demand, reversed depth
-- Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, parked cars and roadblocks you can push around
+- Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, walled-off lots and solid street furniture, parked cars and roadblocks you can push around
 - UI: a road sign menu, loading screens, a road sign HUD with a heading-up minimap and a full map, a pause menu, touch controls for phones
 
 ## Planned
 
-- Measure it on a phone, then street lights and traffic lights, roads you can't leave, fuller empty lots, better buildings and sounds
+- Measure it on a phone, then street lights and traffic lights, utility poles, better buildings and sounds
 - First deploy on Vercel
 - Game modes: sprint from A to B, ride-hailing, light traffic, a police chase
 - Tile streaming, then more of Metro Manila: the districts around BGC and the highways between them
@@ -129,4 +131,5 @@ The BGC map data is already in the repo, so that's all you need.
 - Polygon triangulation: [earcut](https://github.com/mapbox/earcut)
 - Cars: the Sedan you drive and six parked models from the [Free Low Poly Vehicles Pack](https://rgsdev.itch.io/free-low-poly-vehicles-pack) by Rgsdev (CC0), converted with `tools/car-to-glb.ts` and `tools/parked-cars-to-glb.ts`
 - Traffic cone and concrete barrier: [City Kit Roads](https://kenney.nl/assets/city-kit-roads) by Kenney (CC0), baked with `tools/kenney-to-ts.ts`
+- Street lamp, dumpster, work light, planter and kiosk awning: [City Kit Roads](https://kenney.nl/assets/city-kit-roads), [City Kit Suburban](https://kenney.nl/assets/city-kit-suburban) and [City Kit Commercial](https://kenney.nl/assets/city-kit-commercial) by Kenney (CC0), merged with the props built in code into `public/models/props.glb` by `tools/props-to-glb.ts`
 - Font: [Overpass](https://github.com/RedHatOfficial/Overpass) by The Overpass Project Authors (SIL Open Font License 1.1), bundled through [Fontsource](https://fontsource.org/fonts/overpass)

@@ -7,6 +7,7 @@ import { loadMap, type MapSource } from './map/loadMap';
 import { BACKDROP, backdropReady } from './ui/backdrop';
 import type { MapData } from './map/types';
 import { City } from './scene/City';
+import { Dressing } from './scene/Dressing';
 import { ParkedCars } from './scene/ParkedCars';
 import { ParkedPoses } from './scene/parkedPoses';
 import { Roadblocks } from './scene/Roadblocks';
@@ -366,6 +367,11 @@ export default function App() {
           {map && buildNow && <City map={map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} treeModels={settings.treeModels} showEdgeOutline={screen === 'map'} />}
           {map && built && <Surroundings map={map} density={settings.filler} />}
           {roadblocks && built && <Roadblocks props={roadblocks.props} loose={roadblocks.loose} poses={blockPoses} far={settings.parkedFar} shadows={settings.shadowMap > 0} />}
+          {map?.dressing && built && (
+            <Suspense fallback={null}>
+              <Dressing pieces={map.dressing} near={settings.dressingNear} far={settings.dressingFar} shadows={settings.shadowMap > 0} />
+            </Suspense>
+          )}
           {map?.parked && built && (
             <Suspense fallback={null}>
               <ParkedCars cars={map.parked} near={settings.parkedNear} far={settings.parkedFar} poses={poses} shadows={settings.shadowMap > 0} />

@@ -13,7 +13,9 @@ import { clipToPlayable } from './clip';
 import { elevateRoads } from './elevation';
 import { layerRoads } from './roadLayers';
 import { smoothRaisedCurves } from './smoothRaised';
+import { placeLots } from './lots';
 import { placeParkedCars } from './parking';
+import { placeSidewalkDressing } from './sidewalks';
 import { placeStructures } from './structures';
 import { dropBuildingsOnRoads, fitRoadWidths } from './fitWidths';
 import { dropNestedBuildings } from './overlaps';
@@ -122,8 +124,24 @@ if (extrasPath) {
 }
 const structures = placeStructures(map.roads, map.buildings);
 map = { ...map, pillars: structures.pillars, stats: { ...map.stats, structures: structures.stats } };
+const lots = placeLots(map, fc);
+map = {
+  ...map,
+  areas: [...map.areas, ...lots.areas],
+  barriers: [...(map.barriers ?? []), ...lots.barriers],
+  fixtures: [...(map.fixtures ?? []), ...lots.fixtures],
+  trees: [...(map.trees ?? []), ...lots.trees],
+  dressing: lots.dressing,
+  stats: { ...map.stats, lots: lots.stats },
+};
 const parking = placeParkedCars(map);
-map = { ...map, parked: parking.parked, stats: { ...map.stats, parking: { roads: parking.stats.roads, slots: parking.stats.slots, cars: parking.stats.cars } } };
+map = {
+  ...map,
+  parked: [...parking.parked, ...lots.parked],
+  stats: { ...map.stats, parking: { roads: parking.stats.roads, slots: parking.stats.slots, cars: parking.stats.cars } },
+};
+const sidewalks = placeSidewalkDressing(map);
+map = { ...map, dressing: [...(map.dressing ?? []), ...sidewalks.dressing], stats: { ...map.stats, sidewalks: sidewalks.stats } };
 if (map.stats.clip) {
   const sceneryLeft = cleared.buildings.filter((b) => b.scenery).length;
   map.stats.clip = { ...map.stats.clip, playableBuildings: cleared.buildings.length - sceneryLeft, sceneryBuildings: sceneryLeft };
@@ -198,6 +216,19 @@ if (extras) {
   const p = parking.stats;
   const why = Object.entries(p.skipped).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
   console.log(`  parked cars: ${p.cars} on ${p.roads} streets (${p.slots} curb slots; skipped: ${why})`);
+}
+{
+  const l = lots.stats;
+  const kinds = Object.entries(l.byKind).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
+  const walls = Object.entries(l.wallMeters).map(([k, v]) => `${v} m of ${k}`).join(', ');
+  const dressed = Object.entries(lots.dressing.reduce<Record<string, number>>((m, d) => ({ ...m, [d.k]: (m[d.k] ?? 0) + 1 }), {})).map(([k, v]) => `${k} ${v}`).join(', ');
+  console.log(`  lots: ${kinds}; ${walls} (${l.openings ?? 0} footpath openings with bollards, ${l.gates ?? 0} gates across roads); ${(l.openArea / 1e4).toFixed(1)} ha open, ${(l.closedArea / 1e4).toFixed(1)} ha closed off`);
+  console.log(`    parking yard: ${l.stalls} stalls, ${lots.parked.length} cars; ${lots.trees.length} park trees; dressing: ${dressed}`);
+}
+{
+  const w = sidewalks.stats;
+  const list = (r: Record<string, number>) => Object.entries(r).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
+  console.log(`  sidewalks: ${list(w.placed)} (skipped: ${list(w.skipped)})`);
 }
 const skipped = Object.entries(stats.skipped).sort((a, b) => b[1] - a[1]);
 if (skipped.length) console.log(`  skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(', ')}`);

@@ -20,16 +20,16 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readPng, type Png } from './png';
 
-interface Baked {
+export interface Baked {
   position: number[];
   normal: number[];
   color: number[];
 }
 
-const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+export const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
 /** Triangles of every mesh in a GLB, with per-vertex colors from the palette texture. */
-function readGlb(path: string, palette: Png): Baked {
+export function readGlb(path: string, palette: Png): Baked {
   const buf = readFileSync(path);
   const jsonLength = buf.readUInt32LE(12);
   const gltf = JSON.parse(buf.toString('utf8', 20, 20 + jsonLength));
@@ -67,7 +67,7 @@ function readGlb(path: string, palette: Png): Baked {
 }
 
 /** Scales to a target size (meters, x/y/z), optionally turning a quarter so the long side is along x. */
-function fit(b: Baked, size: [number, number, number], quarterTurn: boolean): Baked {
+export function fit(b: Baked, size: [number, number, number], quarterTurn: boolean): Baked {
   const pos = b.position.slice();
   const nor = b.normal.slice();
   if (quarterTurn) {

@@ -230,3 +230,38 @@ export function convexHull(points: Point[]): Ring {
   };
   return [...half(pts), ...half([...pts].reverse())];
 }
+
+/**
+ * Ramer-Douglas-Peucker: drops the points of a polyline that lie within `tolerance` (m) of
+ * the line through their neighbors, keeping the ends. Turns a traced staircase outline
+ * into a few straight runs.
+ */
+export function simplifyPolyline(points: Point[], tolerance: number): Point[] {
+  if (points.length <= 2) return points.slice();
+  const keep = new Uint8Array(points.length);
+  keep[0] = keep[points.length - 1] = 1;
+  const stack: [number, number][] = [[0, points.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    let [far, at] = [-1, -1];
+    for (let i = a + 1; i < b; i++) {
+      const d = distanceToSegment(points[i], points[a], points[b]);
+      if (d > far) [far, at] = [d, i];
+    }
+    if (far > tolerance) {
+      keep[at] = 1;
+      stack.push([a, at], [at, b]);
+    }
+  }
+  return points.filter((_, i) => keep[i]);
+}
+
+/** simplifyPolyline for a closed ring (no repeated first point): split at the point farthest from the first, simplified as two halves. */
+export function simplifyRing(ring: Ring, tolerance: number): Ring {
+  if (ring.length <= 3) return ring.slice();
+  let far = 0;
+  for (let i = 1; i < ring.length; i++) if (Math.hypot(ring[i][0] - ring[0][0], ring[i][1] - ring[0][1]) > Math.hypot(ring[far][0] - ring[0][0], ring[far][1] - ring[0][1])) far = i;
+  const a = simplifyPolyline(ring.slice(0, far + 1), tolerance);
+  const b = simplifyPolyline([...ring.slice(far), ring[0]], tolerance);
+  return [...a, ...b.slice(1, -1)];
+}

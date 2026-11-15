@@ -105,7 +105,7 @@ export interface Building {
   rings: Ring[];
 }
 
-export type AreaKind = 'park' | 'water' | 'landuse' | 'plaza';
+export type AreaKind = 'park' | 'water' | 'landuse' | 'plaza' | 'parking';
 
 export interface Area {
   id: string;
@@ -114,8 +114,12 @@ export interface Area {
   rings: Ring[];
 }
 
-/** Wall, fence, hedge or guard rail (OSM `barrier=*` ways), standing on the ground. */
-export type BarrierKind = 'wall' | 'fence' | 'hedge' | 'rail';
+/**
+ * Wall, fence, hedge or guard rail (OSM `barrier=*` ways), standing on the ground. Plus the
+ * two kinds pipeline/lots.ts puts around empty lots: construction hoarding (ribbed metal)
+ * and a plastered lot wall with pillars.
+ */
+export type BarrierKind = 'wall' | 'fence' | 'hedge' | 'rail' | 'hoarding' | 'lotwall';
 
 export interface Barrier {
   id: string;
@@ -167,6 +171,25 @@ export interface Pillar {
   cap?: Point;
 }
 
+/**
+ * Street and lot dressing (pipeline/lots.ts, pipeline/sidewalks.ts): things placed by rule
+ * that the map doesn't have. Sizes and which ones are solid: src/geometry/dressing.ts.
+ */
+export type DressingKind =
+  | 'container' | 'crane' | 'mound' | 'pipes' | 'crates' | 'dumpster' | 'worklight'
+  | 'lamp' | 'bench' | 'pavilion'
+  | 'booth' | 'stall' | 'wheelstop'
+  | 'shed' | 'kiosk' | 'planter' | 'hydrant' | 'bin';
+
+export interface Dressing {
+  k: DressingKind;
+  /** Center on the ground (map space), and the direction of its long side (radians counter-clockwise from east). */
+  p: Point;
+  rot: number;
+  /** Paint, for the kinds that come in colors (containers): an index into DRESSING_TINTS. */
+  c?: number;
+}
+
 /** A car parked at the curb (pipeline/parking.ts). */
 export interface ParkedCar {
   /** Center on the ground (map space) and heading (radians counter-clockwise from east). */
@@ -196,6 +219,23 @@ export interface MapStats {
   extras?: { barriers: number; barrierMeters: number; gapsCut: number; trees: number; treesMoved: number; treesClearedOfDecks?: number; fixtures: number; dropped: Record<string, number> };
   structures?: { deckPillars: number; moved: number; outriggers: number; skipped: number; raisedBuildings: number; supports: number };
   parking?: { roads: number; slots: number; cars: number };
+  lots?: LotStats;
+  sidewalks?: { placed: Record<string, number>; skipped: Record<string, number> };
+}
+
+/** What pipeline/lots.ts did with the empty land inside the drivable area. */
+export interface LotStats {
+  /** Lots by what they became: open (park, field, parking yard) or closed off. */
+  byKind: Record<string, number>;
+  /** Meters of wall by barrier kind. */
+  wallMeters: Record<string, number>;
+  /** Ground left open to drive on, and closed off (m2). */
+  openArea: number;
+  closedArea: number;
+  stalls: number;
+  /** Openings with bollards where a footpath goes in, and gates where a road does. */
+  openings?: number;
+  gates?: number;
 }
 
 export interface MapData {
@@ -218,7 +258,9 @@ export interface MapData {
   fixtures?: Fixture[];
   /** Pillars under decks and posts under raised buildings (pipeline/structures.ts). */
   pillars?: Pillar[];
-  /** Cars parked along the curbs. */
+  /** Cars parked along the curbs (and in the stalls of open parking lots). */
   parked?: ParkedCar[];
+  /** Construction yards, lot interiors, park and sidewalk furniture (placed by rule). */
+  dressing?: Dressing[];
   stats: MapStats;
 }

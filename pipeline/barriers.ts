@@ -28,7 +28,7 @@ const BARRIER_KINDS: Record<string, BarrierKind> = {
 };
 
 /** Typical heights when the way has no `height` tag. */
-export const BARRIER_HEIGHT: Record<BarrierKind, number> = { wall: 2.4, fence: 1.8, hedge: 1.3, rail: 0.8 };
+export const BARRIER_HEIGHT: Record<BarrierKind, number> = { wall: 2.4, fence: 1.8, hedge: 1.3, rail: 0.8, hoarding: 2.4, lotwall: 2.2 };
 const RETAINING_WALL_HEIGHT = 1.2;
 
 const FIXTURE_KINDS: Record<string, FixtureKind> = {

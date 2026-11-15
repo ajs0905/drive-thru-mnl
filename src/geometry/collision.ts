@@ -9,7 +9,8 @@
  *   roof in this map) and scenery outside the playable area are skipped.
  * - Walls, fences, hedges and guard rails, as thin upright strips. They were already cut
  *   open wherever a road or path passes (pipeline/barriers.ts), so streets stay open.
- * - The playable edge: a tall wall along its outline.
+ * - The playable edge: a tall wall along its outline. Lot walls and hoarding come in
+ *   with the barriers.
  *
  * **Structures** (the camera may pass these: thin, or overhead):
  * - Flyover decks and ramps, drivable: the road surface at the height it's drawn
@@ -25,11 +26,15 @@
  *   `pillars` in the data), tree trunks, bollards, concrete blocks and gate pillars, as
  *   small prisms matching what's drawn. Parking booms are left open (they
  *   don't lift yet), and so are gate openings.
+ * - Street and park furniture (`dressing`): lamps, benches, waiting sheds, kiosks, planters,
+ *   hydrants, bins, the yard's booth and the park pavilion, as boxes the size they're
+ *   drawn. Construction clutter stays behind the hoarding and isn't solid.
  *
  * Rapier's triangle meshes collide from either side (checked by the physics tests), so
  * thin walls need only one quad.
  */
 import { CONCRETE_SIZE, roadblockCorners, roadblockLayout } from './roadblocks';
+import { DRESSING, dressingCorners } from './dressing';
 import earcut from 'earcut';
 import type { MapData, Point, Road, RoadClass } from '../map/types';
 import { PROP_SHAPE, type Prop, type PropKind } from './props';
@@ -69,7 +74,7 @@ export interface CollisionWorld {
   /** Decks, their sides and barriers, footbridge sides, posts. */
   structures: TriMesh;
   /** What went in, for logging and tests. */
-  counts: { buildings: number; barriers: number; edge: number; posts: number; decks: number; footbridges: number; triangles: number };
+  counts: { buildings: number; barriers: number; edge: number; posts: number; dressing: number; decks: number; footbridges: number; triangles: number };
 }
 
 export interface CollisionOptions {
@@ -183,12 +188,12 @@ function addDeck(structures: Builder, road: Road, surface: number, drivable: boo
 }
 
 /** The parts of the map collisions are built from (the optional ones may be missing). */
-export type CollisionInput = Pick<MapData, 'buildings' | 'roads'> & Partial<Pick<MapData, 'playable' | 'barriers' | 'trees' | 'fixtures' | 'junctions' | 'pillars'>>;
+export type CollisionInput = Pick<MapData, 'buildings' | 'roads'> & Partial<Pick<MapData, 'playable' | 'barriers' | 'trees' | 'fixtures' | 'junctions' | 'pillars' | 'dressing'>>;
 
 export function buildCollision(map: CollisionInput, opts: CollisionOptions): CollisionWorld {
   const walls = new Builder();
   const structures = new Builder();
-  const counts = { buildings: 0, barriers: 0, edge: 0, posts: 0, decks: 0, footbridges: 0, triangles: 0 };
+  const counts = { buildings: 0, barriers: 0, edge: 0, posts: 0, dressing: 0, decks: 0, footbridges: 0, triangles: 0 };
 
   for (const bld of map.buildings) {
     if (bld.scenery || (bld.minH ?? 0) > COLLISION.clearance) continue;
@@ -236,6 +241,14 @@ export function buildCollision(map: CollisionInput, opts: CollisionOptions): Col
     if (!SOLID_PROPS.has(p.kind)) continue;
     structures.walls(propFootprint(p), p.base, p.base + p.size[1], true);
     counts.posts++;
+  }
+
+  // Street and park furniture that's solid (scene/Dressing.tsx draws it); lot clutter behind the walls isn't.
+  for (const d of map.dressing ?? []) {
+    const spec = DRESSING[d.k];
+    if (!spec.solid) continue;
+    structures.walls(dressingCorners(d.k, d.p, d.rot), 0, spec.size[2], true);
+    counts.dressing++;
   }
 
   const out = { walls: walls.mesh(), structures: structures.mesh() };

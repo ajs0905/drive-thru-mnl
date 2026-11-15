@@ -34,12 +34,19 @@ export interface QualitySettings {
   treeModels: boolean;
   /** Speed blur at the screen's edges while driving fast (two extra full-screen passes while it shows). */
   speedBlur: boolean;
+  /**
+   * Street and lot dressing (scene/Dressing.tsx): landmarks (cranes, containers, pavilions)
+   * out to `dressingFar` (m), street clutter (benches, bins, hydrants, sheds) out to
+   * `dressingNear`; 0 leaves the clutter out.
+   */
+  dressingNear: number;
+  dressingFar: number;
 }
 
 export const QUALITY: Record<Quality, QualitySettings> = {
-  low: { dpr: [0.6, 1], msaa: false, shadowMap: 0, shadowEvery: 0, filler: 0.4, clouds: false, propsDistance: 500, treeDistance: 1000, treeModels: false, parkedNear: 35, parkedFar: 170, speedBlur: false },
-  medium: { dpr: [0.75, 1.25], msaa: true, shadowMap: 1024, shadowEvery: 4, filler: 1, clouds: true, propsDistance: 900, treeDistance: 1800, treeModels: true, parkedNear: 70, parkedFar: 300, speedBlur: true },
-  high: { dpr: [1, 1.25], msaa: true, shadowMap: 2048, shadowEvery: 2, filler: 1, clouds: true, propsDistance: 1400, treeDistance: 3000, treeModels: true, parkedNear: 100, parkedFar: 450, speedBlur: true },
+  low: { dpr: [0.6, 1], msaa: false, shadowMap: 0, shadowEvery: 0, filler: 0.4, clouds: false, propsDistance: 500, treeDistance: 1000, treeModels: false, parkedNear: 35, parkedFar: 170, speedBlur: false, dressingNear: 0, dressingFar: 600 },
+  medium: { dpr: [0.75, 1.25], msaa: true, shadowMap: 1024, shadowEvery: 4, filler: 1, clouds: true, propsDistance: 900, treeDistance: 1800, treeModels: true, parkedNear: 70, parkedFar: 300, speedBlur: true, dressingNear: 90, dressingFar: 900 },
+  high: { dpr: [1, 1.25], msaa: true, shadowMap: 2048, shadowEvery: 2, filler: 1, clouds: true, propsDistance: 1400, treeDistance: 3000, treeModels: true, parkedNear: 100, parkedFar: 450, speedBlur: true, dressingNear: 120, dressingFar: 1400 },
 };
 
 /** Pixel ratio for a performance factor (1 = full) within a tier's range, never above the screen's. */
