@@ -25,6 +25,11 @@ export class DriveSession {
     return asked;
   }
 
+  /** A touch button pressed or let go. */
+  setTouch(key: keyof DriveKeys, held: boolean) {
+    this.touch[key] = held;
+  }
+
   /** Lets go of every touch button (when the controls hide or the game pauses). */
   releaseTouch() {
     Object.assign(this.touch, NO_KEYS);

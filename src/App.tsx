@@ -33,6 +33,8 @@ import { DriveLoading } from './ui/DriveLoading';
 import { Hud } from './ui/Hud';
 import { Menu, type LoadStatus } from './ui/Menu';
 import { AboutPanel, PauseMenu, SettingsPanel } from './ui/Panels';
+import { useSideways } from './ui/sideways';
+import { TouchControls } from './ui/TouchControls';
 import './ui/ui.css';
 
 // Drive mode and the physics engine load only when the player starts driving.
@@ -321,12 +323,14 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [screen, driving, loading, drive.waiting, bigMap, panel, paused, cityReady, startDriving, startPlaying]);
 
+  // Phones held upright: the drive is drawn turned a quarter, the menu stays upright.
+  const sideways = useSideways(driving && TOUCH);
   const view = map ? initialView(map) : null;
   const stats = map?.stats ?? null;
   const estimated = map ? map.buildings.filter((b) => b.hSrc === 'estimate').length : 0;
 
   return (
-    <div className="app">
+    <div className={TOUCH ? 'app touch' : 'app'} style={sideways}>
       {view && (
         <Canvas
           // A new canvas per quality: shadows and buffers are set up once, at creation.
@@ -338,6 +342,8 @@ export default function App() {
           // PCF, not the default soft PCF: sharper and cheaper; the light is low-poly anyway.
           shadows={settings.shadowMap > 0 ? 'percentage' : false}
           dpr={dpr}
+          // Measured without CSS transforms, so the sideways phone layout keeps the right shape.
+          resize={{ offsetSize: true }}
           onCreated={({ gl }) => {
             gl.toneMappingExposure = SKY.toneExposure;
             gl.info.autoReset = false; // PerfProbe resets once per frame, so stats cover every pass
@@ -441,7 +447,9 @@ export default function App() {
       )}
 
       {driving && viewData && streetAt && drive.step === STEP.done && !drive.waiting && (
-        <Hud session={session} view={viewData} streetAt={streetAt} onMap={() => setBigMap(true)} touch={TOUCH} />
+        <Hud session={session} view={viewData} streetAt={streetAt} onMap={() => setBigMap(true)} touch={TOUCH}>
+          {TOUCH && !paused && !bigMap && !panel && <TouchControls session={session} onPause={() => setPaused(true)} />}
+        </Hud>
       )}
 
       {driving && drive.loaderShown && (

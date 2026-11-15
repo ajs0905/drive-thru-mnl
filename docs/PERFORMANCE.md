@@ -78,7 +78,7 @@ Collisions (8b, 8c): two static triangle meshes (walls; decks, ramps, pillars an
 - **Menu**: a 92 KB still image instead of the live city, so the menu shows before the 3D city is ready. The city still builds behind it, so pressing Play needs no second wait for the map.
 - **HUD**: plain DOM over the canvas, updated outside React. The speed is written straight into its element every frame, the street name is looked up 4 times a second (a segment grid) and the minimap is a 2D canvas redrawn about 20 times a second, only the 100 m grid cells around the car. The big map pauses the game and draws only when moved or zoomed.
 - **Loading**: the map download reports real progress when the server sends its size uncompressed; with compression it shows the megabytes read instead.
-- Main bundle 378 KB gzipped (was 368): the menu, loading screens, HUD and map drawing. The Drive chunk is unchanged.
+- Main bundle 379 KB gzipped (was 368): the menu, loading screens, HUD, map drawing and touch controls. The Drive chunk is unchanged.
 
 ### Desktop with a GPU
 

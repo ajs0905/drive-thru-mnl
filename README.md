@@ -20,8 +20,8 @@ A data pipeline that turns raw OpenStreetMap data into a drivable 3D city in the
 | **Rendering** | The whole city in about 50 to 90 draw calls, built in the browser in about 300 to 400 ms; an idle view costs nothing |
 | **Performance work** | High on the development laptop went from 23 FPS to the screen's 144 Hz limit after two measured passes |
 | **Physics** | Collision meshes (82k triangles) built from the map data when you start driving, matching exactly what's drawn; the flyovers are drivable |
-| **Tests** | 577 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
-| **Download** | 378 KB (gzipped) to see the city; the 861 KB physics chunk loads only when you start driving |
+| **Tests** | 578 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
+| **Download** | 379 KB (gzipped) to see the city; the 861 KB physics chunk loads only when you start driving |
 
 ## How it works
 
@@ -46,7 +46,9 @@ The menu shows right away and the city loads behind it; the Play sign counts up 
 
 The HUD is made of Philippine road signs: the speed on a speed limit sign, the street you turn into on a green street sign, and a heading-up minimap. The big map (M) shows the whole drivable area with street names.
 
-Controls: W A S D or the arrow keys, Space for the handbrake (tap it while steering to start a drift, then hold throttle and steer to keep it going), R to reset the car, M for the big map, Esc to pause.
+Controls: W A S D or the arrow keys, Space for the handbrake (tap it while steering to start a drift, then hold throttle and steer to keep it going), R to reset the car, M for the big map, Esc to pause. A car stuck upside down resets itself after 2 seconds.
+
+On phones: steer with the buttons on the left, handbrake, brake and gas on the right, reset and pause at the top right; tap the minimap for the big map. The game is played sideways: if the phone is held upright, the game is drawn turned, so you just turn the phone (this works with rotation lock on too).
 
 ## Roadmap
 
@@ -64,7 +66,8 @@ Controls: W A S D or the arrow keys, Space for the handbrake (tap it while steer
 - [x] Parked cars along the curbs, with physics near the player
 - [x] A 1.2x map, shinier cars, speed blur, roadblocks and a construction fence at the edge of the drivable area
 - [x] Menu, loading screens, HUD made of road signs, minimap and big map, pause menu
-- [ ] Touch controls and respawn, measured on a phone
+- [x] Touch controls for a phone held sideways, reset button
+- [ ] Measured on a phone
 - [ ] Street lights and traffic lights, roads you can't leave, fuller empty areas, better buildings, sounds
 - [ ] Live on Vercel
 - [ ] Game modes: sprint from A to B, ride-hailing, light traffic, a police chase

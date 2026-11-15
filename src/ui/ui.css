@@ -732,3 +732,140 @@ kbd.wide {
   outline: 3px solid var(--sign-orange);
   outline-offset: 2px;
 }
+
+/* ---------- Touch screens: the HUD for a phone held sideways (844 x 390 and up) ---------- */
+.touch .minimap {
+  left: 16px;
+  top: 14px;
+  bottom: auto;
+  width: 118px;
+  height: 118px;
+  border-radius: 16px;
+}
+.touch .street {
+  top: 14px;
+}
+.touch .street .face {
+  font-size: 16px;
+  padding: 6px 12px 4px;
+}
+.touch .limit {
+  left: 50%;
+  right: auto;
+  bottom: 18px;
+  width: 78px;
+  height: 78px;
+  border-width: 8px;
+  transform: translateX(-50%);
+}
+.touch .limit b {
+  font-size: 27px;
+}
+.touch .limit small {
+  font-size: 9px;
+}
+.touch .perf.debug {
+  top: 60px;
+}
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.touch-controls .top,
+.touch-controls .steer,
+.touch-controls .pedals {
+  position: absolute;
+  display: flex;
+  pointer-events: auto;
+}
+.touch-controls .top {
+  top: 14px;
+  right: 16px;
+  gap: 10px;
+}
+.touch-controls .steer {
+  left: max(22px, env(safe-area-inset-left));
+  bottom: 20px;
+  gap: 14px;
+}
+.touch-controls .pedals {
+  right: max(22px, env(safe-area-inset-right));
+  bottom: 20px;
+  gap: 12px;
+  align-items: flex-end;
+}
+.touch-controls .pad {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgba(12, 16, 22, 0.45);
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  color: #fff;
+  font-family: var(--sign-font);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.touch-controls .pad.down {
+  background: rgba(255, 255, 255, 0.35);
+}
+.touch-controls .small {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+.touch-controls .round {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+}
+.touch-controls .round.hand {
+  width: 58px;
+  height: 58px;
+  margin-bottom: 4px;
+}
+.touch-controls .brake {
+  width: 70px;
+  height: 70px;
+  border-radius: 14px;
+}
+.touch-controls .gas {
+  width: 64px;
+  height: 104px;
+  border-radius: 14px;
+  gap: 5px;
+}
+.touch-controls .lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 34px;
+}
+.touch-controls .gas .lines {
+  gap: 5px;
+  width: 28px;
+}
+.touch-controls .lines i {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.85);
+}
+.touch canvas {
+  touch-action: none;
+}
+/* The map credit goes under the reset and pause buttons, clear of the pedals. */
+.touch .attribution {
+  top: 64px;
+  right: 16px;
+  bottom: auto;
+}
