@@ -1,4 +1,4 @@
-# Drive Thru MNL: No Traffic Edition
+# Drive Thru MNL: No Traffic Edition?
 
 [![CI](https://github.com/ajs0905/drive-thru-mnl/actions/workflows/ci.yml/badge.svg)](https://github.com/ajs0905/drive-thru-mnl/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -20,8 +20,8 @@ A data pipeline that turns raw OpenStreetMap data into a drivable 3D city in the
 | **Rendering** | The whole city in about 50 to 90 draw calls, built in the browser in about 300 to 400 ms; an idle view costs nothing |
 | **Performance work** | High on the development laptop went from 23 FPS to the screen's 144 Hz limit after two measured passes |
 | **Physics** | Collision meshes (82k triangles) built from the map data when you start driving, matching exactly what's drawn; the flyovers are drivable |
-| **Tests** | 562 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
-| **Download** | 368 KB (gzipped) to see the city; the 861 KB physics chunk loads only when you start driving |
+| **Tests** | 577 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
+| **Download** | 378 KB (gzipped) to see the city; the 861 KB physics chunk loads only when you start driving |
 
 ## How it works
 
@@ -42,9 +42,11 @@ A data pipeline that turns raw OpenStreetMap data into a drivable 3D city in the
 
 ## The game
 
-Press **Drive here** (or Enter) and a car appears on the road nearest to where the camera looks. Arcade handling on real physics (Rapier): speed-sensitive steering, handbrake drifts with a drift assist, a body that squats and leans, a chase camera that reacts to acceleration and shakes on a crash, and a subtle speed blur past 100 km/h. Buildings, walls and posts are solid, flyovers and their ramps are drivable, and parked cars can be shoved. The game world is 1.2x the size of the real BGC across the ground, so it doesn't feel small at speed.
+The menu shows right away and the city loads behind it; the Play sign counts up while it does. Press **Play** and the car starts near High Street. Arcade handling on real physics (Rapier): speed-sensitive steering, handbrake drifts with a drift assist, a body that squats and leans, a chase camera that reacts to acceleration and shakes on a crash, and a subtle speed blur past 100 km/h. Buildings, walls and posts are solid, flyovers and their ramps are drivable, and parked cars can be shoved. The game world is 1.2x the size of the real BGC across the ground, so it doesn't feel small at speed.
 
-Controls: W A S D or the arrow keys, Space for the handbrake (tap it while steering to start a drift, then hold throttle and steer to keep it going), R to reset the car, Esc to go back to the map.
+The HUD is made of Philippine road signs: the speed on a speed limit sign, the street you turn into on a green street sign, and a heading-up minimap. The big map (M) shows the whole drivable area with street names.
+
+Controls: W A S D or the arrow keys, Space for the handbrake (tap it while steering to start a drift, then hold throttle and steer to keep it going), R to reset the car, M for the big map, Esc to pause.
 
 ## Roadmap
 
@@ -61,7 +63,7 @@ Controls: W A S D or the arrow keys, Space for the handbrake (tap it while steer
 - [x] Solid buildings, walls, posts and the playable edge; drivable flyovers and ramps
 - [x] Parked cars along the curbs, with physics near the player
 - [x] A 1.2x map, shinier cars, speed blur, roadblocks and a construction fence at the edge of the drivable area
-- [ ] New HUD and menus, minimap
+- [x] Menu, loading screens, HUD made of road signs, minimap and big map, pause menu
 - [ ] Touch controls and respawn, measured on a phone
 - [ ] Street lights and traffic lights, roads you can't leave, fuller empty areas, better buildings, sounds
 - [ ] Live on Vercel
@@ -77,11 +79,11 @@ npm install
 npm run dev
 ```
 
-The BGC map data is already in the repo, so that's all you need. Drag to pan, right-drag to rotate, scroll to zoom.
+The BGC map data is already in the repo, so that's all you need.
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Start the game locally (add `?q=low`, `?q=medium` or `?q=high` to the URL to force a quality tier) |
+| `npm run dev` | Start the game locally (add `?q=low`, `?q=medium` or `?q=high` to the URL to force a quality tier, `?debug` for the frame rate, `?view=map` for the free camera map view that map QA's links open) |
 | `npm test` | Unit tests |
 | `npm run pipeline` | Rebuild `public/data/bgc.json` from the raw export |
 | `npm run qa` | Scan the map for known problems, with camera links |

@@ -73,9 +73,16 @@ Collisions (8b, 8c): two static triangle meshes (walls; decks, ramps, pillars an
 - **Playable edge**: keeping the hoarding and roadblocks clear of buildings adds about 60 ms to the city build and about 50 ms each to laying out the roadblocks (on load) and the collisions (when driving starts), measured in Node. The hoarding is a few hundred triangles in one mesh and one draw call (ripples and seams are in the shader), plus the old outline mesh for the map view. The roadblocks are 623 concrete barriers along the road crossings, plus 47 full roadblocks with a sign and 408 barricades, drums and cones (about 77k triangles over the whole edge), five instanced meshes drawn only within the parked-car draw distance (170 m on Low), so a view near the edge draws one to three roadblocks. In Drive mode the loose pieces within 45 m are physics bodies (asleep until hit); the concrete row adds to the walls collision mesh.
 - Main bundle 368 KB gzipped (was 355): the edge fence, roadblocks (with the baked Kenney shapes) and car shine code; the nested-building check is pipeline only. Map data 2.98 MB, 723 KB gzipped (was 751): the stretched map dropped some scenery past the 300 m ring.
 
+### Menus and HUD
+
+- **Menu**: a 92 KB still image instead of the live city, so the menu shows before the 3D city is ready. The city still builds behind it, so pressing Play needs no second wait for the map.
+- **HUD**: plain DOM over the canvas, updated outside React. The speed is written straight into its element every frame, the street name is looked up 4 times a second (a segment grid) and the minimap is a 2D canvas redrawn about 20 times a second, only the 100 m grid cells around the car. The big map pauses the game and draws only when moved or zoomed.
+- **Loading**: the map download reports real progress when the server sends its size uncompressed; with compression it shows the megabytes read instead.
+- Main bundle 378 KB gzipped (was 368): the menu, loading screens, HUD and map drawing. The Drive chunk is unchanged.
+
 ### Desktop with a GPU
 
-Run `npm run dev`, open the page, read the overlay at the bottom left (FPS, draw calls, triangles, build time). On laptops with two GPUs, check that the browser runs on the dedicated one (`chrome://gpu`, or Windows Settings > Display > Graphics > browser > High performance).
+Run `npm run dev`, open the page with `?debug` at the end of the address, and read the overlay (FPS, draw calls, triangles, build time): top middle on the menu and while driving, bottom left in the map view (`?view=map`). On laptops with two GPUs, check that the browser runs on the dedicated one (`chrome://gpu`, or Windows Settings > Display > Graphics > browser > High performance).
 
 | Date | Machine | Tier | FPS | Notes |
 | --- | --- | --- | --- | --- |
@@ -98,13 +105,13 @@ To fill in (see below for how).
 1. On the phone, enable Developer options: tap **Build number** seven times (under **Settings > About phone**, the exact path depends on the phone). Then turn on **USB debugging** in **Developer options**.
 2. Connect the phone to the PC by USB and allow debugging when the phone asks.
 3. On the PC, run `npm run dev` (or `npm run build` then `npm run preview` to measure the production build, which is what players get).
-4. On the PC, open `chrome://inspect` in Chrome, click **Port forwarding**, and forward the dev server port (for example `5173` to `localhost:5173`). Then open `localhost:5173` in Chrome on the phone.
+4. On the PC, open `chrome://inspect` in Chrome, click **Port forwarding**, and forward the dev server port (for example `5173` to `localhost:5173`). Then open `localhost:5173/?debug` in Chrome on the phone.
    - Alternative without USB forwarding: `npm run dev -- --host`, then open the `Network:` address it prints on the phone (same Wi-Fi).
 5. Back in `chrome://inspect`, the phone's tab appears; click **inspect**.
 6. In the DevTools window:
-   - **Performance** tab: record 10 s of moving the camera. Look at FPS, long tasks (red corners) and the main-thread flame chart.
+   - **Performance** tab: record 10 s of driving. Look at FPS, long tasks (red corners) and the main-thread flame chart.
    - **Memory** tab: take a heap snapshot after load for JS heap size.
-   - The game's own overlay shows FPS, draw calls, triangles and build time.
+   - The game's own overlay (`?debug`) shows FPS, draw calls, triangles and build time.
 
 ## Known costs and planned fixes
 

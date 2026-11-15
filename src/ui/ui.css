@@ -1,0 +1,734 @@
+/*
+ * The game's screens: the main menu, the panels, the drive loading screen and the HUD,
+ * in the style of Philippine road signs (see docs/ARCHITECTURE.md, Interface).
+ */
+:root {
+  --sign-green: #0b6b3a;
+  --sign-blue: #1d4f91;
+  --sign-orange: #ff7d22;
+  --limit-red: #d42a1f;
+  --sign-font: Overpass, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* A road sign: colored plate, white inner border. Buttons use it too. */
+.sign {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  background: var(--sign-green);
+  border-radius: 12px;
+  padding: 5px;
+  color: #fff;
+  font-family: var(--sign-font);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+}
+.sign.blue {
+  background: var(--sign-blue);
+}
+.sign > .face {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  border: 3px solid #fff;
+  border-radius: 8px;
+  padding: 12px 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+button.sign {
+  cursor: pointer;
+  transition: transform 0.08s ease, filter 0.15s ease;
+}
+button.sign:hover {
+  filter: brightness(1.12);
+}
+button.sign:active {
+  transform: scale(0.98);
+}
+button.sign:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+button.sign:disabled {
+  cursor: progress;
+}
+
+/* ---------- Main menu ---------- */
+.menu {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  color: #fff;
+  font-family: var(--sign-font);
+  background: #0e1217 center / cover no-repeat;
+}
+.menu::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(10, 14, 20, 0.5) 0%, rgba(10, 14, 20, 0.08) 35%, rgba(10, 14, 20, 0.2) 60%, rgba(10, 14, 20, 0.85) 100%);
+}
+.menu .inner {
+  position: relative;
+  height: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 56px 24px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.title .board {
+  background: var(--sign-orange);
+  border-radius: 12px;
+  padding: 7px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+.title .board div {
+  border: 4px solid #111;
+  border-radius: 7px;
+  padding: 14px 28px 10px;
+  color: #111;
+  font-size: clamp(34px, 6vw, 56px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.title .plate {
+  margin-top: -2px;
+  background: #111;
+  color: var(--sign-orange);
+  font-size: clamp(12px, 1.6vw, 15px);
+  font-weight: 800;
+  letter-spacing: 3px;
+  padding: 8px 16px 6px;
+  border-radius: 0 0 7px 7px;
+}
+.menu .spacer {
+  flex: 1 1 auto;
+}
+.menu .buttons {
+  width: 100%;
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+.menu .play {
+  flex: 1.6 1 0;
+  padding: 7px;
+}
+.menu .play .face {
+  justify-content: center;
+  padding: 22px 24px 18px;
+}
+.menu .play .go {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: clamp(40px, 6vw, 64px);
+  font-weight: 900;
+  letter-spacing: 3px;
+  line-height: 1;
+}
+.menu .play .loading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 900;
+  letter-spacing: 1px;
+  line-height: 1;
+}
+.bar {
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: #fff;
+  transition: width 0.25s ease;
+}
+/* Unknown size (a compressed download): stripes moving along the bar. The animation runs on the compositor, so it keeps going while the city is being built. */
+.bar.busy > i {
+  width: 100% !important;
+  background: repeating-linear-gradient(115deg, #fff 0 14px, rgba(255, 255, 255, 0.35) 14px 28px);
+  background-size: 200% 100%;
+  animation: bar-busy 0.9s linear infinite;
+}
+@keyframes bar-busy {
+  to {
+    background-position: -60px 0;
+  }
+}
+.step {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+.menu .side {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.menu .side .sign {
+  flex: 1 1 0;
+}
+.menu .side .face {
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  line-height: 1.1;
+}
+.menu .footer {
+  width: 100%;
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+.menu .footer a {
+  color: inherit;
+}
+.menu .error {
+  max-width: 520px;
+  margin-top: 24px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(17, 17, 17, 0.85);
+  color: #ffcf7a;
+  font-family: system-ui, sans-serif;
+}
+/* Phones and narrow windows: everything stacks. */
+@media (max-width: 720px) {
+  .menu .inner {
+    padding: 56px 18px 20px;
+  }
+  .menu .buttons {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .menu .side {
+    flex-direction: row;
+    gap: 12px;
+  }
+  .menu .side .face {
+    font-size: 17px;
+    align-items: center;
+    text-align: center;
+    padding: 14px 10px 11px;
+  }
+  .menu .footer span:last-child {
+    display: none;
+  }
+}
+
+/* ---------- Panels (settings, how it's built, pause) ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(8, 11, 16, 0.6);
+  font-family: var(--sign-font);
+  color: #fff;
+}
+.panel {
+  width: min(520px, 100%);
+  max-height: 100%;
+  overflow: auto;
+}
+.panel .face {
+  gap: 14px;
+  padding: 16px 18px 16px;
+}
+.panel h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.panel p {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.92);
+}
+.panel a {
+  color: #fff;
+  font-weight: 700;
+}
+.panel .row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.chip {
+  all: unset;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 16px 8px;
+  border-radius: 8px;
+  border: 2px solid #fff;
+  font-family: var(--sign-font);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.chip.on {
+  background: #fff;
+  color: var(--sign-blue);
+}
+.chip:focus-visible {
+  outline: 3px solid var(--sign-orange);
+  outline-offset: 2px;
+}
+.panel dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+}
+.panel dt {
+  font-weight: 800;
+  font-family: var(--sign-font);
+  font-size: 18px;
+  text-align: right;
+}
+.panel dd {
+  margin: 0;
+  align-self: center;
+  color: rgba(255, 255, 255, 0.9);
+}
+.panel .actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.panel .actions .chip {
+  text-align: center;
+}
+
+/* ---------- Drive loading screen ---------- */
+.loader {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  overflow: hidden;
+  font-family: var(--sign-font);
+  color: #fff;
+  background: #0e1217 center / cover no-repeat;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  padding: 18px max(22px, 6vw);
+  transition: opacity 0.35s ease;
+}
+.loader::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 11, 16, 0.62);
+}
+.loader > * {
+  position: relative;
+}
+.loader.out {
+  opacity: 0;
+  pointer-events: none;
+}
+.loader .row {
+  display: flex;
+  gap: 20px;
+  align-items: stretch;
+  width: min(1000px, 100%);
+  margin: 0 auto;
+}
+.loader .where {
+  flex: 1.3 1 0;
+}
+.loader .where .face {
+  gap: 12px;
+}
+.loader .head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.loader .head small {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.loader .head b {
+  display: block;
+  font-size: clamp(26px, 4vw, 48px);
+  font-weight: 900;
+  letter-spacing: 1px;
+  line-height: 1;
+}
+.loader hr {
+  border: 0;
+  height: 2px;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.35);
+}
+.loader ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: clamp(14px, 1.8vw, 18px);
+  font-weight: 700;
+}
+.loader li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.loader li.todo {
+  color: rgba(255, 255, 255, 0.6);
+}
+.loader .start {
+  background: #fff;
+  color: var(--sign-green);
+  border-radius: 6px;
+  padding: 11px 14px 8px;
+  text-align: center;
+  font-size: clamp(16px, 2vw, 22px);
+  font-weight: 900;
+  letter-spacing: 2px;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.75;
+  }
+}
+.loader .controls {
+  flex: 1 1 0;
+}
+.loader .controls h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 3px;
+}
+.keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 14px;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+.keys .caps {
+  display: flex;
+  gap: 5px;
+}
+kbd {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: #fff;
+  color: #111;
+  font: 900 13px var(--sign-font);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+kbd.wide {
+  min-width: 120px;
+}
+.touch-picture {
+  flex-grow: 1;
+  min-height: 110px;
+  position: relative;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.touch-picture .l,
+.touch-picture .r,
+.touch-picture .t {
+  position: absolute;
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+.touch-picture .l {
+  left: 10px;
+  bottom: 10px;
+}
+.touch-picture .r {
+  right: 10px;
+  bottom: 10px;
+}
+.touch-picture .t {
+  right: 10px;
+  top: 10px;
+}
+.touch-picture span {
+  border: 2px solid #fff;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.touch-picture .round {
+  border-radius: 50%;
+}
+.tip {
+  align-self: center;
+  max-width: min(1000px, 100%);
+  background: #111;
+  border-radius: 7px;
+  padding: 8px 16px 6px;
+  font-size: clamp(12px, 1.4vw, 16px);
+  font-weight: 700;
+  color: var(--sign-orange);
+  text-align: center;
+}
+/* Short screens (phones held sideways). */
+@media (max-height: 460px) {
+  .loader {
+    gap: 10px;
+    padding: 12px 22px;
+  }
+  .loader .where .face,
+  .loader .controls .face {
+    padding: 10px 14px 8px;
+    gap: 8px;
+  }
+}
+
+/* ---------- Driving HUD ---------- */
+.hud2 {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  font-family: var(--sign-font);
+  color: #fff;
+}
+.hud2 button {
+  pointer-events: auto;
+}
+.street {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 9px;
+  padding: 4px;
+  transition: opacity 0.5s ease;
+  white-space: nowrap;
+}
+.street .face {
+  border-width: 2px;
+  padding: 8px 18px 6px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+.street.hidden {
+  opacity: 0;
+}
+.limit {
+  position: absolute;
+  right: 28px;
+  bottom: 26px;
+  width: 128px;
+  height: 128px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: #fff;
+  border: 13px solid var(--limit-red);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #111;
+}
+.limit b {
+  font-size: 44px;
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+.limit small {
+  font-size: 13px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.minimap {
+  all: unset;
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  width: 196px;
+  height: 196px;
+  box-sizing: border-box;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 3px solid #fff;
+  background: #161c24;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.minimap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.minimap .me {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 16%;
+  height: 16%;
+  transform: translate(-50%, -50%);
+}
+.minimap .north {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: #fff;
+  color: #111;
+  font-size: 11px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pause-hint {
+  position: absolute;
+  top: 22px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.pause-hint kbd {
+  height: 24px;
+  font-size: 12px;
+}
+/* The ?debug frame rate while driving or on the menu: top middle, under the street sign. */
+.perf.debug {
+  left: 50%;
+  top: 84px;
+  bottom: auto;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 30;
+}
+
+/* ---------- Big map ---------- */
+.bigmap {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  background: #161c24;
+  touch-action: none;
+  font-family: var(--sign-font);
+  color: #fff;
+}
+.bigmap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+.bigmap canvas:active {
+  cursor: grabbing;
+}
+.bigmap .me {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  pointer-events: none;
+}
+.bigmap .bar-top {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.bigmap .bar-top > * {
+  pointer-events: auto;
+}
+.bigmap .hint {
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(17, 17, 17, 0.75);
+  padding: 6px 10px 4px;
+  border-radius: 6px;
+}
+.round-btn {
+  all: unset;
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 16, 22, 0.55);
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  color: #fff;
+  cursor: pointer;
+}
+.round-btn:focus-visible {
+  outline: 3px solid var(--sign-orange);
+  outline-offset: 2px;
+}

@@ -1,0 +1,136 @@
+/**
+ * Draws the map in 2D on a canvas, for the minimap (heading-up, around the car) and the
+ * big map (north-up, pan and zoom). Only what's in view is drawn (geometry/mapView.ts
+ * buckets roads and buildings into grid cells).
+ */
+import { inView, type MapRoadKind, type MapViewData } from '../geometry/mapView';
+import type { Point } from '../map/types';
+
+export const MAP_COLORS = {
+  ground: '#161c24',
+  building: '#2a3340',
+  edge: '#ff7d22',
+  label: '#e8edf2',
+  labelHalo: 'rgba(10,14,20,0.85)',
+  road: { service: '#4f5964', minor: '#87929e', major: '#c9d1d9' } as Record<MapRoadKind, string>,
+};
+
+export interface MapViewport {
+  /** Map point at the canvas center. */
+  center: Point;
+  /** Canvas pixels per map meter. */
+  scale: number;
+  /** Map rotation (radians): 0 = north up; heading-up views turn the map by headingUpRotation. */
+  rotation: number;
+}
+
+export interface DrawOptions {
+  buildings?: boolean;
+  labels?: boolean;
+  /** Smallest drawn road width (px), so thin streets stay visible zoomed out. */
+  minRoadPx?: number;
+}
+
+/** Canvas pixel of a map point, for a canvas `w` x `h` (device pixels). */
+export function toCanvas(p: Point, view: MapViewport, w: number, h: number): Point {
+  const [dx, dy] = [p[0] - view.center[0], p[1] - view.center[1]];
+  const [c, s] = [Math.cos(-view.rotation), Math.sin(-view.rotation)];
+  const [rx, ry] = [dx * c - dy * s, dx * s + dy * c];
+  return [w / 2 + rx * view.scale, h / 2 - ry * view.scale];
+}
+
+/** Map point of a canvas pixel (the inverse of toCanvas). */
+export function toMap(q: Point, view: MapViewport, w: number, h: number): Point {
+  const [rx, ry] = [(q[0] - w / 2) / view.scale, -(q[1] - h / 2) / view.scale];
+  const [c, s] = [Math.cos(view.rotation), Math.sin(view.rotation)];
+  return [view.center[0] + rx * c - ry * s, view.center[1] + rx * s + ry * c];
+}
+
+export function drawMap(ctx: CanvasRenderingContext2D, data: MapViewData, view: MapViewport, opts: DrawOptions = {}) {
+  const { width: w, height: h } = ctx.canvas;
+  ctx.fillStyle = MAP_COLORS.ground;
+  ctx.fillRect(0, 0, w, h);
+  // The box of map space the canvas shows (its corners, whatever the rotation).
+  const corners = [toMap([0, 0], view, w, h), toMap([w, 0], view, w, h), toMap([0, h], view, w, h), toMap([w, h], view, w, h)];
+  const xs = corners.map((p) => p[0]);
+  const ys = corners.map((p) => p[1]);
+  const pad = 20;
+  const near = inView(data, Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad);
+
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.scale(view.scale, -view.scale);
+  ctx.rotate(-view.rotation);
+  ctx.translate(-view.center[0], -view.center[1]);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (opts.buildings !== false) {
+    ctx.fillStyle = MAP_COLORS.building;
+    ctx.beginPath();
+    for (const i of near.buildings) {
+      const ring = data.buildings[i];
+      ring.forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+      ctx.closePath();
+    }
+    ctx.fill();
+  }
+
+  const minWidth = (opts.minRoadPx ?? 1.5) / view.scale;
+  for (const i of near.roads) {
+    const r = data.roads[i];
+    ctx.strokeStyle = MAP_COLORS.road[r.kind];
+    ctx.lineWidth = Math.max(minWidth, r.w * 0.9);
+    ctx.beginPath();
+    r.points.forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.stroke();
+  }
+
+  if (data.edge.length >= 3) {
+    ctx.strokeStyle = MAP_COLORS.edge;
+    ctx.lineWidth = Math.max(2.5 / view.scale, 3);
+    ctx.setLineDash([8 / view.scale, 6 / view.scale]);
+    ctx.beginPath();
+    data.edge.forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+
+  if (opts.labels) drawLabels(ctx, data, view);
+}
+
+/** Street names, biggest streets first, skipping any that would overlap one already drawn. */
+function drawLabels(ctx: CanvasRenderingContext2D, data: MapViewData, view: MapViewport) {
+  const { width: w, height: h } = ctx.canvas;
+  const dpr = Math.max(1, Math.min(3, w / Math.max(1, ctx.canvas.clientWidth || w)));
+  const size = Math.round(12 * dpr);
+  ctx.font = `700 ${size}px Overpass, 'Helvetica Neue', Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  const taken: { x: number; y: number; r: number }[] = [];
+  for (const l of data.labels) {
+    // Only names whose street is long enough on screen to hold them.
+    const text = ctx.measureText(l.name).width;
+    if (l.length * view.scale < text * 1.6) continue;
+    const [x, y] = toCanvas(l.p, view, w, h);
+    if (x < -text || y < -size || x > w + text || y > h + size) continue;
+    const r = text / 2 + size;
+    if (taken.some((t) => Math.hypot(t.x - x, t.y - y) < t.r + r)) continue;
+    taken.push({ x, y, r });
+    let angle = -(l.angle - view.rotation);
+    if (angle > Math.PI / 2) angle -= Math.PI;
+    if (angle < -Math.PI / 2) angle += Math.PI;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.strokeStyle = MAP_COLORS.labelHalo;
+    ctx.lineWidth = 4 * dpr;
+    ctx.strokeText(l.name, 0, 0);
+    ctx.fillStyle = MAP_COLORS.label;
+    ctx.fillText(l.name, 0, 0);
+    ctx.restore();
+  }
+}

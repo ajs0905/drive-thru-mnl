@@ -6,12 +6,43 @@ export const MAP_VERSION = 7;
 
 type FetchResult = { ok: true; map: MapData } | { ok: false; outdated: boolean };
 
-async function tryFetch(url: string): Promise<FetchResult> {
+/**
+ * Download progress: the share done (0..1) when the size is known, and the bytes so far.
+ * The share is unknown (undefined) when the server compresses the file on the way: then
+ * the size it announces isn't the size that arrives.
+ */
+export type LoadProgress = (done: number | undefined, bytes: number) => void;
+
+/** Reads a response's body, reporting progress as it arrives. */
+export async function readWithProgress(res: Response, onProgress?: LoadProgress): Promise<string> {
+  const length = Number(res.headers.get('content-length'));
+  const total = !res.headers.get('content-encoding') && length > 0 ? length : undefined;
+  if (!res.body || !onProgress) return res.text();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    bytes += value.length;
+    onProgress(total ? Math.min(1, bytes / total) : undefined, bytes);
+  }
+  const all = new Uint8Array(bytes);
+  let at = 0;
+  for (const c of chunks) {
+    all.set(c, at);
+    at += c.length;
+  }
+  return new TextDecoder().decode(all);
+}
+
+async function tryFetch(url: string, onProgress?: LoadProgress): Promise<FetchResult> {
   try {
     const res = await fetch(url);
     if (!res.ok) return { ok: false, outdated: false };
     // Vite's dev server answers missing files with index.html, so parse defensively.
-    const data = (await res.json()) as Partial<MapData> & { version?: number };
+    const data = JSON.parse(await readWithProgress(res, onProgress)) as Partial<MapData> & { version?: number };
     if (!data || !Array.isArray(data.roads)) return { ok: false, outdated: false };
     if (data.version !== MAP_VERSION) return { ok: false, outdated: true };
     return { ok: true, map: data as MapData };
@@ -21,9 +52,9 @@ async function tryFetch(url: string): Promise<FetchResult> {
 }
 
 /** Loads the real BGC map, falling back to the bundled sample if the pipeline hasn't been run. */
-export async function loadMap(): Promise<{ map: MapData; source: MapSource }> {
+export async function loadMap(onProgress?: LoadProgress): Promise<{ map: MapData; source: MapSource }> {
   const base = import.meta.env.BASE_URL;
-  const real = await tryFetch(`${base}data/bgc.json`);
+  const real = await tryFetch(`${base}data/bgc.json`, onProgress);
   if (real.ok) return { map: real.map, source: 'bgc' };
   if (real.outdated) throw new Error('Map data is from an older version. Run `npm run pipeline` to rebuild it.');
   const sample = await tryFetch(`${base}data/sample.json`);

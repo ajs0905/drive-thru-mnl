@@ -69,7 +69,8 @@ src/
               assist, gearbox, body lean, chase camera math,      (Rapier objects passed in)
               spawn point, Rapier vehicle setup and step
   scene/      three.js / React Three Fiber components            the only place that knows about rendering
-  App.tsx     HUD, camera, drive mode, wiring
+  ui/         menu, loading screens, HUD, maps, pause menu       DOM and 2D canvas, no three.js
+  App.tsx     screens, drive mode, wiring
 pipeline/     offline steps + CLI (build.ts) + map QA (qa.ts)    Node only
 tools/        one-off asset tools (car FBX -> GLB)               Node only, run by hand
 data/         raw OSM export, Overpass query, playable area
@@ -86,6 +87,7 @@ docs/         this folder
 | `src/geometry` | `src/map/types`, other geometry files | three.js, React, `src/scene`, `pipeline` |
 | `src/car` | `src/map/types`, Rapier (types; the engine is passed in) | three.js, React, `src/scene`, `pipeline` |
 | `src/scene` | `src/geometry`, `src/map`, three.js, React | `pipeline` |
+| `src/ui` | `src/geometry`, `src/map`, `src/car`, React, the drive session in `src/scene` | `pipeline` |
 | `pipeline` | `src/geo`, `src/geometry`, `src/map` | `src/scene`, three.js, React |
 | anything in `src` | | `pipeline`, Node built-ins (outside tests) |
 
@@ -194,7 +196,13 @@ sequenceDiagram
 
 `buildCity` is pure and synchronous (about 200 ms on a desktop CPU). It's written against plain arrays so it can move into a worker unchanged.
 
-**Drive mode** (in now): pressing Drive (or Enter) loads `scene/Drive.tsx` and the physics engine as a separate chunk, puts the car on the road nearest to where the camera looks (`car/spawn.ts`), and switches the canvas from on-demand to continuous rendering. Esc goes back to the map, with the camera lifted to an overview of where the car stopped.
+**Screens** (`src/ui`, wired in `App.tsx`): the menu shows at once over a still image while the map downloads (with real progress, `loadMap`'s `onProgress`) and the city builds behind it; the Play sign shows the steps and turns into Play when the city is built. There is no separate loading screen. Settings (the quality tier) and How it's built are panels over the menu.
+
+**Drive mode** (in now): Play shows the drive loading screen (the steps below, the controls, a tip), loads `scene/Drive.tsx` and the physics engine as a separate chunk, builds the collisions, and puts the car on the road nearest the middle of High Street (`startSpot` in `car/spawn.ts`). The canvas switches from on-demand to continuous rendering. The first drive waits for a key or a tap (remembered in the browser), later ones go straight in. Esc pauses (Resume, Reset car, Settings, Back to menu); the physics is paused while loading, paused or on the big map.
+
+**Drive session** (`scene/driveSession.ts`): one plain object the car writes every frame (map position, height, heading, speed) and the DOM HUD reads in its own animation loop, plus touch buttons and reset requests going the other way. Nothing goes through React state per frame. The HUD (`ui/Hud.tsx`) writes the speed straight into its element, looks up the street 4 times a second (`streetNameLookup` in `geometry/mapView.ts`, a segment grid that prefers roads at the car's level) and redraws the heading-up minimap about 20 times a second; the minimap and the big map (`ui/BigMap.tsx`) draw the same `mapViewData` (roads by class, low buildings, the drivable edge, one label per street) on a 2D canvas (`ui/mapCanvas.ts`), only the grid cells in view.
+
+**Debug map view** (`?cam=...` or `?view=map`): the old free camera view with the map legend and Drive here (Enter), which starts the car where the camera looks; Back to menu returns to it, with the camera lifted to an overview of where the car stopped. Map QA's camera links and the screenshot scripts use it. `?debug` shows the frame rate in either.
 
 ```mermaid
 sequenceDiagram
@@ -202,15 +210,15 @@ sequenceDiagram
   participant Drive as scene/Drive (lazy chunk)
   participant Car as scene/Car
   participant Rapier as Rapier world (60 Hz)
-  App->>Drive: Enter: load chunk, mount
-  Drive->>Car: spawn on nearest road
+  App->>Drive: Play: load chunk, mount
+  Drive->>Car: spawn near High Street
   loop every physics step
     Car->>Rapier: keys -> controls, drift assist, gearbox -> wheels (car/vehicle stepVehicle)
     Rapier-->>Car: chassis pose (interpolated), wheel states
   end
   loop every frame
     Car->>Car: wheels, body lean, chase camera, blob shadow, lights and halos
-    Car->>App: speed (written straight to the HUD)
+    Car->>App: position, heading, speed (drive session, read by the HUD)
   end
 ```
 
@@ -291,7 +299,7 @@ Same game and map everywhere; detail scales with the device.
 
 **Choosing a tier:** a first guess from device signals (`navigator.deviceMemory`, `hardwareConcurrency`, GPU renderer string, screen size), then live adjustment from measured frame times (step down after sustained drops, step up with headroom). Players can override it in settings.
 
-**In now** (`src/scene/quality.ts`): the guess from pointer type, memory and cores, a Low / Medium / High switch in the HUD (also `?q=low|medium|high`), remembered between visits, and render resolution that adapts to the frame rate within each tier's range. Switching tiers automatically comes with the tiles and tiers milestone.
+**In now** (`src/scene/quality.ts`): the guess from pointer type, memory and cores, a Low / Medium / High switch in Settings (also `?q=low|medium|high`), remembered between visits, and render resolution that adapts to the frame rate within each tier's range. Switching tiers automatically comes with the tiles and tiers milestone.
 
 Budgets per tier: [PERFORMANCE.md](PERFORMANCE.md).
 
@@ -355,7 +363,8 @@ One page each in [decisions/](decisions/):
 | Barrier data (done) | Second Overpass export (`data/barriers.overpassql`), `pipeline/barriers.ts` (walls cut open at roads, curbside trees moved, gates and booms turned across their road), data contract v6, walls in the structures layer, instanced trees and fixtures, three new QA checks. See [ADR 0012](decisions/0012-barriers-and-trees-from-a-second-export.md). Then tree models built in code for Medium and High ([ADR 0013](decisions/0013-tree-models-built-in-code.md)) |
 | Drivable car | In steps. 8a (done): `src/car` (spec, arcade controls, chase camera, spawn, Rapier vehicle), lazy drive mode with the Sedan on flat ground, brake lights, blob shadow. Feel (done): drift assist, hidden automatic gears with a shift kick, body pitch and roll, lamp halos, a camera that reacts to acceleration. 8b (done): `geometry/collision.ts` turns playable buildings, walls and fences, the playable edge and posts (flyover pillars, trunks, bollards, blocks, gate pillars) into one static triangle mesh; the chase camera stays in front of walls. 8c (done): drivable flyover decks and ramps, solid deck edges and barriers as drawn, a camera that shakes on a crash instead of jumping in. Flyover fixes (done): ramps kept out of other roads' lanes, rounded curves, pillars off the roads below and posts under raised buildings (placed in the pipeline), trees clear of decks, barriers that start soft and join without gaps, a drawing order for overlapping roads (no flicker); six new map QA checks. Parked cars (done): placed along curbs in the pipeline, near-and-far versions with distance culling, physics near the player with an off-screen reset. 8d: surface grip, curbs, respawn with a fade, touch and gamepad, booms that open. See ADRs 0008 and 0014 |
 | Tiles, streaming, tiers | Tile format (section 5), worker build, tile manager, quality manager (section 8), Ramer-Douglas-Peucker simplification for far tiles, billboards for far trees rendered from the tree models |
-| Polish | Minimap (reuses `src/scene/MapLines.tsx`), street names, landmarks, props, day/night |
+| Menus and HUD (done) | `src/ui`: menu over a still image with load progress, drive loading screen, road sign HUD, heading-up minimap and big map on a 2D canvas, pause menu, the drive session between the car and the HUD |
+| Polish | Landmarks, props, day/night |
 | Ship | Vercel deploy, measured budgets in PERFORMANCE.md, README media |
 | Expansion | New Overpass exports per area, tiles make size mostly irrelevant to memory |
 

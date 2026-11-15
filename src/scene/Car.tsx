@@ -8,7 +8,8 @@
  * car is interpolated between steps by @react-three/rapier, and after that, each frame,
  * the wheels, body lean, camera, shadow and lights are placed from it. Moving the map
  * controls' target along with the car keeps the sun's shadow area and the prop distance
- * limits centered on it.
+ * limits centered on it. Each frame the car also writes where it is to the drive session
+ * (for the HUD), and each physics step reads the touch buttons from it.
  */
 import { useFrame, useLoader, useThree } from '@react-three/fiber';
 import { RigidBody, useBeforePhysicsStep, useRapier, type RapierCollider, type RapierRigidBody } from '@react-three/rapier';
@@ -18,9 +19,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { kick, STILL, stepBody } from '../car/bodyMotion';
 import { CHASE, cameraPull, chaseView, clipDistance, crashShake, damp, shakeOffset, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
 import { inputFromKeys, KEY_BINDINGS, NO_KEYS } from '../car/controls';
+import { headingOfDirection } from '../car/spawn';
 import { wheelHardPoint, type CarSpec } from '../car/spec';
 import { chassisCollider, newDriveState, setupWheels, stepVehicle, type VehicleController } from '../car/vehicle';
 import { blobShadow, placeShadow, poseBody, prepareCarModel, setBrakeLights, updateHalos } from './carModel';
+import { mergeKeys, type DriveSession } from './driveSession';
 
 /** Seconds upside down (or fallen off the world) before the car puts itself back on its wheels. */
 const STUCK_RESET = 2;
@@ -32,6 +35,7 @@ export function Car({
   spawn,
   onSpeed,
   cameraBlockers,
+  session,
 }: {
   spec: CarSpec;
   spawn: { position: Vec3; yaw: number };
@@ -39,6 +43,8 @@ export function Car({
   onSpeed?: (speed: number) => void;
   /** The collider the chase camera keeps in front of (buildings and walls); anything if not given. */
   cameraBlockers?: RefObject<RapierCollider | null>;
+  /** Shared with the HUD and the touch controls. */
+  session?: DriveSession;
 }) {
   const gltf = useLoader(GLTFLoader, `${import.meta.env.BASE_URL}${spec.model}`);
   const model = useMemo(() => prepareCarModel(gltf.scene), [gltf]);
@@ -54,7 +60,7 @@ export function Car({
 
   const body = useRef<RapierRigidBody>(null);
   const { world, rapier } = useRapier();
-  const sim = useRef({ vc: null as VehicleController | null, drive: newDriveState(), keys: { ...NO_KEYS }, reset: false, stuck: 0 });
+  const sim = useRef({ vc: null as VehicleController | null, drive: newDriveState(), keys: { ...NO_KEYS }, held: { ...NO_KEYS }, reset: false, stuck: 0 });
   const view = useRef({
     dir: [0, 1] as [number, number],
     placed: false,
@@ -136,11 +142,13 @@ export function Car({
     const r = b.rotation();
     const upY = 1 - 2 * (r.x * r.x + r.z * r.z);
     s.stuck = upY < 0.3 || b.translation().y < -20 ? s.stuck + dt : 0;
+    if (session?.takeReset()) s.reset = true;
     if (s.reset || s.stuck > STUCK_RESET) {
       putBackOnWheels(b, spawn.position[1]);
       Object.assign(s, { reset: false, stuck: 0, drive: { ...newDriveState(), gearbox: { ...s.drive.gearbox, gear: 1, shifting: 0 } } });
     }
-    stepVehicle(s.vc, b, spec, s.drive, inputFromKeys(s.keys), dt);
+    const keys = session ? mergeKeys(s.keys, session.touch, s.held) : s.keys;
+    stepVehicle(s.vc, b, spec, s.drive, inputFromKeys(keys), dt);
   });
 
   useFrame((state, dt) => {
@@ -212,6 +220,7 @@ export function Car({
     v.toCamera.copy(camera.position).sub(v.pos).normalize();
     const facing = v.fwd.dot(v.toCamera);
     updateHalos(model, drive.braking, -facing, facing);
+    if (session) writeCar(session, v.pos, v.fwd, speed);
     onSpeed?.(speed);
   });
 
@@ -232,6 +241,17 @@ export function Car({
       <primitive object={shadow} />
     </>
   );
+}
+
+/** Where the car is, for the HUD (map space). */
+function writeCar(session: DriveSession, pos: Vector3, fwd: Vector3, speed: number) {
+  const c = session.car;
+  c.x = pos.x;
+  c.y = -pos.z;
+  c.height = pos.y;
+  c.heading = headingOfDirection(fwd.x, fwd.z);
+  c.speed = speed;
+  c.placed = true;
 }
 
 /** Upright, facing the way the car was heading, a little above where it was, at rest. */

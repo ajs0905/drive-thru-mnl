@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Road } from '../map/types';
-import { headingOfDirection, spawnOnRoad, yawForHeading } from './spawn';
+import { headingOfDirection, spawnOnRoad, startSpot, yawForHeading } from './spawn';
 
 const road = (id: string, points: [number, number][], extra: Partial<Road> = {}): Road => ({
   id,
@@ -69,5 +69,20 @@ describe('yawForHeading', () => {
       const yaw = yawForHeading(h);
       expect(headingOfDirection(Math.sin(yaw), Math.cos(yaw))).toBeCloseTo(h);
     }
+  });
+});
+
+describe('startSpot', () => {
+  const bounds = { minX: -500, minY: -500, maxX: 500, maxY: 500 };
+  it('starts on the road nearest the middle of the named street', () => {
+    const roads = [road('high', [[100, 200], [300, 200]], { name: 'Bonifacio High Street' }), road('other', [[-400, 0], [400, 0]])];
+    const s = startSpot({ roads, bounds }, 'High Street')!;
+    expect(s.p[0]).toBeCloseTo(200);
+    expect(Math.abs(s.p[1] - 200)).toBeLessThan(3);
+  });
+  it('falls back to the middle of the playable area, then of the map', () => {
+    const roads = [road('a', [[-400, 0], [400, 0]]), road('b', [[-400, 300], [400, 300]])];
+    expect(startSpot({ roads, bounds, playable: [[0, 250], [100, 250], [100, 350], [0, 350]] }, 'Nowhere')!.p[1]).toBeGreaterThan(290);
+    expect(Math.abs(startSpot({ roads, bounds }, 'Nowhere')!.p[1])).toBeLessThan(3);
   });
 });
