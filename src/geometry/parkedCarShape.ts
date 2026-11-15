@@ -5,7 +5,8 @@
  * triangles aren't worth it; this keeps hundreds of parked cars cheap.
  *
  * Same conventions as the car models: +Z forward, +Y up, standing on y = 0, centered.
- * `paint` is 1 on the painted parts (body, roof), 0 elsewhere, like the models.
+ * `paint` is 1 on the painted parts (body, roof), 0 elsewhere, like the models, and
+ * `shine` says how each part reflects (1 paint, 2 glass, 0 matte; see scene/carShine.ts).
  */
 
 const DARK: [number, number, number] = [0.02, 0.02, 0.025];
@@ -13,17 +14,19 @@ const GLASS: [number, number, number] = [0.025, 0.035, 0.06];
 const WHITE: [number, number, number] = [1, 1, 1];
 
 /** Unit box car arrays, plus the paint mask (one value per vertex). */
-export function parkedCarShape(): { position: Float32Array; normal: Float32Array; color: Float32Array; paint: Float32Array } {
+export function parkedCarShape(): { position: Float32Array; normal: Float32Array; color: Float32Array; paint: Float32Array; shine: Float32Array } {
   const pos: number[] = [];
   const nor: number[] = [];
   const col: number[] = [];
   const paint: number[] = [];
+  const shine: number[] = [];
   const quad = (a: number[], b: number[], c: number[], d: number[], n: number[], color: [number, number, number], painted: boolean) => {
     for (const v of [a, b, c, a, c, d]) {
       pos.push(...v);
       nor.push(...n);
       col.push(...color);
       paint.push(painted ? 1 : 0);
+      shine.push(painted ? 1 : color === GLASS ? 2 : 0);
     }
   };
   /** A box from (x0, y0, z0) to (x1, y1, z1); sides in `side` color, top in `top`, no bottom. */
@@ -37,5 +40,5 @@ export function parkedCarShape(): { position: Float32Array; normal: Float32Array
   box(-0.47, 0, -0.44, 0.47, 0.2, 0.44, DARK, DARK, false, false); // wheels and underside
   box(-0.5, 0.2, -0.5, 0.5, 0.55, 0.5, WHITE, WHITE, true, true); // body
   box(-0.43, 0.55, -0.28, 0.43, 0.95, 0.18, GLASS, WHITE, false, true); // cabin: windows, painted roof
-  return { position: new Float32Array(pos), normal: new Float32Array(nor), color: new Float32Array(col), paint: new Float32Array(paint) };
+  return { position: new Float32Array(pos), normal: new Float32Array(nor), color: new Float32Array(col), paint: new Float32Array(paint), shine: new Float32Array(shine) };
 }

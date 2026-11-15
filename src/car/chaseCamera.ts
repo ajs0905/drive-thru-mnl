@@ -26,9 +26,9 @@ export const CHASE = {
   distance: 6.2,
   height: 2.4,
   /** Extra distance and height per m/s of speed, up to `maxSpeed`. */
-  distancePerSpeed: 0.05,
-  heightPerSpeed: 0.012,
-  maxSpeed: 50,
+  distancePerSpeed: 0.065,
+  heightPerSpeed: 0.016,
+  maxSpeed: 38,
   /** How far ahead of the car and how high it looks. */
   lookAhead: 3,
   lookHeight: 1.1,
@@ -50,7 +50,7 @@ export const CHASE = {
   shakeImpact: 15,
   /** Field of view (degrees) at a standstill, and how much it widens per m/s up to `maxSpeed`. */
   fov: 50,
-  fovPerSpeed: 0.12,
+  fovPerSpeed: 0.18,
   /**
    * When a wall is between the car and the camera, the camera moves in front of it:
    * `clipMargin` meters short of the wall, never closer than `minDistance` to the car,

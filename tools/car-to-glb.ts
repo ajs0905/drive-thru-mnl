@@ -15,7 +15,11 @@
  *   them glow, brake lights brighter while braking.
  * - Colors: the 8 materials (paint, trim, windows, lights, rims, tires) are baked into
  *   vertex colors, so the body draws in one call and each wheel in one. Pure black
- *   (tires, trim) is lifted to a dark grey so it still shows some shading.
+ *   (tires, trim) is lifted to a dark grey so it still shows some shading. The pack's
+ *   lavender rims and headlight lenses become silver and a warm white.
+ * - A `shine` vertex attribute says how each part reflects the sky (see
+ *   src/scene/carShine.ts): 0 matte (tires, trim, lamps), 1 glossy paint, 2 glass,
+ *   3 metal (rims).
  *
  * Runs once by hand when a car is added; the raw pack isn't in the repo.
  */
@@ -42,10 +46,22 @@ function nodeName(fbxName: string): string {
 /** Pack material names of the lamps -> the part they go into. */
 const LAMPS: Record<string, string> = { headlights: 'headlights', 'rear lights': 'taillights' };
 
+/** Pack colors replaced: the lavender rims and headlight lenses. */
+export const RECOLOR: Record<string, string> = { wheels: '#b9bec6', headlights: '#ece8dc' };
+
+/** How a pack material reflects (the `shine` attribute): 0 matte, 1 glossy paint, 2 glass, 3 metal. */
+export function shineOf(materialName: string): number {
+  if (materialName === 'windows') return 2;
+  if (materialName === 'wheels') return 3;
+  if (materialName === 'body black') return 0;
+  return materialName.startsWith('body ') ? 1 : 0;
+}
+
 /**
  * The mesh's geometry with its rotation and scale applied, in meters, colors baked per
  * vertex, split into parts: lamp materials into their own part, everything else into `main`.
- * With `isPaint`, each part also gets a `paint` attribute: 1 on vertices of paint materials.
+ * Each part gets a `shine` attribute (see `shineOf`). With `isPaint`, each part also gets a
+ * `paint` attribute: 1 on vertices of paint materials.
  */
 export function bake(mesh: Mesh, isPaint?: (materialName: string) => boolean): Record<string, BufferGeometry> {
   const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
@@ -61,13 +77,14 @@ export function bake(mesh: Mesh, isPaint?: (materialName: string) => boolean): R
   const groups = src.groups.length ? src.groups : [{ start: 0, count, materialIndex: 0 }];
   const position = src.getAttribute('position');
   const normal = src.getAttribute('normal');
-  const parts: Record<string, { p: number[]; n: number[]; c: number[]; k: number[] }> = {};
+  const parts: Record<string, { p: number[]; n: number[]; c: number[]; k: number[]; s: number[] }> = {};
   for (const g of groups) {
     const m = materials[g.materialIndex ?? 0] as Material & { color?: Color };
     const part = LAMPS[m.name] ?? 'main';
-    const out = (parts[part] ??= { p: [], n: [], c: [], k: [] });
+    const out = (parts[part] ??= { p: [], n: [], c: [], k: [], s: [] });
     const paint = isPaint?.(m.name) ? 1 : 0;
-    const c = (m.color ?? new Color(1, 1, 1)).clone();
+    const shine = shineOf(m.name);
+    const c = RECOLOR[m.name] ? new Color(RECOLOR[m.name]) : (m.color ?? new Color(1, 1, 1)).clone();
     c.r = Math.max(c.r, MIN_LINEAR);
     c.g = Math.max(c.g, MIN_LINEAR);
     c.b = Math.max(c.b, MIN_LINEAR);
@@ -76,6 +93,7 @@ export function bake(mesh: Mesh, isPaint?: (materialName: string) => boolean): R
       out.n.push(normal.getX(i), normal.getY(i), normal.getZ(i));
       out.c.push(c.r, c.g, c.b);
       out.k.push(paint);
+      out.s.push(shine);
     }
   }
   return Object.fromEntries(
@@ -84,6 +102,7 @@ export function bake(mesh: Mesh, isPaint?: (materialName: string) => boolean): R
       out.setAttribute('position', new BufferAttribute(new Float32Array(a.p), 3));
       out.setAttribute('normal', new BufferAttribute(new Float32Array(a.n), 3));
       out.setAttribute('color', new BufferAttribute(new Float32Array(a.c), 3));
+      out.setAttribute('shine', new BufferAttribute(new Float32Array(a.s), 1));
       if (isPaint) out.setAttribute('paint', new BufferAttribute(new Float32Array(a.k), 1));
       return [name, out];
     }),

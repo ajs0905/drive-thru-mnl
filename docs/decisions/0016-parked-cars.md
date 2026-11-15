@@ -21,6 +21,7 @@ The streets looked empty. Moving traffic needs a road graph and driving AI (a la
 ## Consequences
 
 - 1,705 cars, about 20k to 40k extra triangles on Low depending on the spot (more on higher tiers), up to 7 draw calls, 91 KB of models.
+- Revised the same day: 1,705 cars looked crowded, and about 300 sat on the left of one-way streets, which in BGC is often the median side of a divided road (they looked parked in the inner lane). Now one-way streets park on the right curb only, and slots come in stretches, some left empty: about 30% of slots, 981 cars on the 1.2x map ([ADR 0017](0017-map-scale.md)).
 - Narrow village streets stay empty; a later pass could park cars half on the curb there, or in driveways and lots.
 - The pool and reset logic is a plain class (`scene/parkedPool.ts`) tested in the real physics engine; the car-side rules (`car/parked.ts`) are pure and unit tested.
 - Parked cars can be shoved but don't get damaged, and they slide rather than roll (a box collider with friction, like a parked car with its handbrake on).

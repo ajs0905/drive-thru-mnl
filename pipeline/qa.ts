@@ -12,6 +12,7 @@ import { distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../s
 import { SegmentGrid } from '../src/geometry/spatialGrid';
 import type { Building, MapData, Point, Road } from '../src/map/types';
 import { roadIssues } from './qaRoads';
+import { nestedBuildings } from './overlaps';
 import { structureIssues } from './qaStructures';
 
 export interface Issue {
@@ -126,6 +127,13 @@ export function runQa(map: MapData): Issue[] {
       const where = b.scenery ? 'scenery' : 'playable';
       issues.push({ kind: `building-on-${roadCls}-road (${where})`, at: c, detail: `${b.id} ${roadHit.toFixed(1)} m in`, severity: roadHit });
     }
+  }
+
+  // 5b. Buildings inside other buildings that should have gone (hidden, or a construction outline around a finished one).
+  for (const n of nestedBuildings(map.buildings)) {
+    if (!n.drop) continue;
+    const [a, b] = [map.buildings[n.inner], map.buildings[n.outer]];
+    issues.push({ kind: 'building-in-building', at: vertexCentroid(a.rings[0]), detail: `${a.id} in ${b.id} (${n.drop.reason})`, severity: a.h });
   }
 
   issues.push(...roadIssues(map));

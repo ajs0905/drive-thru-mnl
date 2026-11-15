@@ -28,4 +28,11 @@ describe('parkedCarShape', () => {
     expect(painted).toBeGreaterThan(0);
     expect(painted).toBeLessThan(s.paint.length);
   });
+
+  it('makes the paint glossy and the windows glass, the wheels matte', () => {
+    expect(s.shine.length).toBe(s.paint.length);
+    for (let i = 0; i < s.shine.length; i++) if (s.paint[i] === 1) expect(s.shine[i]).toBe(1);
+    expect(Array.from(s.shine).filter((v) => v === 2).length).toBeGreaterThan(0);
+    expect(Array.from(s.shine).filter((v) => v === 0).length).toBeGreaterThan(0);
+  });
 });

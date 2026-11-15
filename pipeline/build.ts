@@ -7,7 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { FeatureCollection, Polygon } from 'geojson';
-import { createProjection } from '../src/geo/projection';
+import { createProjection, MAP_SCALE } from '../src/geo/projection';
 import type { MapData, Point, Ring } from '../src/map/types';
 import { clipToPlayable } from './clip';
 import { elevateRoads } from './elevation';
@@ -16,6 +16,7 @@ import { smoothRaisedCurves } from './smoothRaised';
 import { placeParkedCars } from './parking';
 import { placeStructures } from './structures';
 import { dropBuildingsOnRoads, fitRoadWidths } from './fitWidths';
+import { dropNestedBuildings } from './overlaps';
 import { placeCrossings } from './crossings';
 import { buildJunctions } from './junctions';
 import { closeMedianGaps } from './medians';
@@ -76,11 +77,11 @@ const outPath = resolve(output);
 const fc = readJson<FeatureCollection>(inPath);
 
 const t0 = performance.now();
-let map: MapData = extractMap(fc);
+let map: MapData = extractMap(fc, { scale: MAP_SCALE });
 
 const playablePath = findPlayable();
 if (playablePath) {
-  const proj = createProjection(map.origin);
+  const proj = createProjection(map.origin, map.scale);
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const ring: Ring = playableRing(playablePath).map(([lon, lat]): Point => {
     const { x, y } = proj.toLocal({ lat, lon });
@@ -95,7 +96,9 @@ const elevation = elevateRoads(map.roads);
 const settled = settleRaised(elevation.roads, map.buildings);
 const rounded = smoothRaisedCurves(settled.roads);
 const fitted = fitRoadWidths(rounded.roads, map.buildings);
-const cleared = dropBuildingsOnRoads(map.buildings, fitted.roads);
+const onRoads = dropBuildingsOnRoads(map.buildings, fitted.roads);
+const nested = dropNestedBuildings(onRoads.buildings);
+const cleared = { ...onRoads, buildings: nested.buildings };
 const medians = closeMedianGaps(fitted.roads);
 const graph = buildJunctions(medians.roads);
 const zebras = placeCrossings(graph.roads, graph.junctions);
@@ -113,7 +116,7 @@ map = { ...map, junctions: paved.junctions };
 const extrasPath = noExtras ? undefined : (extrasArg ?? (existsSync('data/raw/bgc-barriers.geojson') ? 'data/raw/bgc-barriers.geojson' : undefined));
 let extras: ExtrasStats | undefined;
 if (extrasPath) {
-  const placed = placeExtras(extractExtras(readJson<FeatureCollection>(resolve(extrasPath)), map.origin), map, margin);
+  const placed = placeExtras(extractExtras(readJson<FeatureCollection>(resolve(extrasPath)), map.origin, map.scale), map, margin);
   extras = placed.stats;
   map = { ...map, barriers: placed.barriers, trees: placed.trees, fixtures: placed.fixtures, stats: { ...map.stats, extras } };
 }
@@ -160,6 +163,7 @@ console.log(
 console.log(`  raised curves: ${rounded.smoothed} flyovers and ramps rounded (${rounded.added} points added)`);
 console.log(`  road widths: ${fitted.stats.narrowed} of ${fitted.stats.checked} roads narrowed to fit between buildings`);
 console.log(`  buildings standing on a road removed: ${cleared.dropped}`);
+console.log(`  buildings inside others removed: ${nested.hidden} hidden inside a bigger one, ${nested.outlines} construction outlines around a finished building`);
 console.log(`  medians: ${medians.stats.widened} carriageways widened to close slivers under ${1.2} m`);
 const g = graph.stats;
 console.log(

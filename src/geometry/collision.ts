@@ -29,6 +29,7 @@
  * Rapier's triangle meshes collide from either side (checked by the physics tests), so
  * thin walls need only one quad.
  */
+import { CONCRETE_SIZE, roadblockCorners, roadblockLayout } from './roadblocks';
 import earcut from 'earcut';
 import type { MapData, Point, Road, RoadClass } from '../map/types';
 import { PROP_SHAPE, type Prop, type PropKind } from './props';
@@ -204,6 +205,12 @@ export function buildCollision(map: CollisionInput, opts: CollisionOptions): Col
   if (map.playable && map.playable.length >= 3) {
     walls.walls(map.playable, 0, COLLISION.edgeHeight, true);
     counts.edge = map.playable.length;
+    // The concrete row of the roadblocks, so the car stops at something it can see (the loose pieces are physics bodies).
+    for (const r of roadblockLayout(map.playable, map.roads, map.buildings)) {
+      if (r.kind !== 'concrete') continue;
+      walls.walls(roadblockCorners(r.p, r.rot, CONCRETE_SIZE[0], CONCRETE_SIZE[1]), 0, CONCRETE_SIZE[2], true);
+      counts.edge++;
+    }
   }
 
   const joins = deckJoins(map.roads);

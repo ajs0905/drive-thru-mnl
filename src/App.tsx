@@ -1,11 +1,13 @@
 import { MapControls } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadMap, type MapSource } from './map/loadMap';
 import type { MapData } from './map/types';
 import { City } from './scene/City';
 import { ParkedCars } from './scene/ParkedCars';
 import { ParkedPoses } from './scene/parkedPoses';
+import { Roadblocks } from './scene/Roadblocks';
+import { roadblocksFor } from './geometry/roadblocks';
 import { PALETTE, type CityMeshes } from './scene/cityGeometry';
 import {
   alwaysRender,
@@ -123,6 +125,7 @@ export default function App() {
   const onBuilt = useCallback((m: CityMeshes) => setBuilt(m), []);
   // Where moved parked cars are: written by the physics while driving, read by the renderer.
   const [poses] = useState(() => new ParkedPoses());
+  const [blockPoses] = useState(() => new ParkedPoses());
   const [quality, setQuality] = useState<Quality>(initialQuality);
   const settings = QUALITY[quality];
   // Performance factor: 1 = full resolution for the tier, lower when FPS drops.
@@ -193,6 +196,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [ready, driving, startDriving]);
 
+  const roadblocks = useMemo(() => (state.status === 'ready' ? roadblocksFor(state.map) : null), [state]);
   const view = state.status === 'ready' ? initialView(state.map) : null;
   const stats = state.status === 'ready' ? state.map.stats : null;
   const estimated = state.status === 'ready' ? state.map.buildings.filter((b) => b.hSrc === 'estimate').length : 0;
@@ -237,14 +241,15 @@ export default function App() {
             maxDistance={6000}
             dampingFactor={0.12}
           />
-          {state.status === 'ready' && <City map={state.map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} treeModels={settings.treeModels} />}
+          {state.status === 'ready' && <City map={state.map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} treeModels={settings.treeModels} showEdgeOutline={!driving} />}
           {state.status === 'ready' && <Surroundings map={state.map} density={settings.filler} />}
+          {roadblocks && <Roadblocks props={roadblocks.props} loose={roadblocks.loose} poses={blockPoses} far={settings.parkedFar} shadows={settings.shadowMap > 0} />}
           {state.status === 'ready' && state.map.parked && (
             <Suspense fallback={null}>
               <ParkedCars cars={state.map.parked} near={settings.parkedNear} far={settings.parkedFar} poses={poses} shadows={settings.shadowMap > 0} />
             </Suspense>
           )}
-          <Suspense fallback={null}>{driving && state.status === 'ready' && <Drive map={state.map} onSpeed={onSpeed} parked={poses} />}</Suspense>
+          <Suspense fallback={null}>{driving && state.status === 'ready' && <Drive map={state.map} onSpeed={onSpeed} parked={poses} speedBlur={settings.speedBlur} msaa={settings.msaa} roadblocks={roadblocks ? { loose: roadblocks.loose, poses: blockPoses } : undefined} />}</Suspense>
           <FrameProbe onFrame={onFrame} />
         </Canvas>
       )}

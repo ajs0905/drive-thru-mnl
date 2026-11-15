@@ -1,6 +1,8 @@
 /**
  * The parked cars in the physics world, run once per frame by ParkedPhysics.tsx (Drive
- * mode). Kept out of the component so it can be tested in the real physics engine.
+ * mode). Kept out of the component so it can be tested in the real physics engine. The
+ * roadblocks' loose pieces (cones, drums, barricades, signs) use the same pool, with
+ * their own bodies and radius (`PoolOptions`).
  *
  * - Only the cars within `PARKED.physicsRadius` of the player are bodies (a pool,
  *   refreshed every few frames). They start asleep on their spots and wake when hit.
@@ -15,8 +17,21 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { createParkedBody, isMoved, poolFor, shouldReturn } from '../car/parked';
 import { yawForHeading } from '../car/spawn';
-import type { ParkedCar } from '../map/types';
 import type { ParkedPoses } from './parkedPoses';
+
+/** Something with a spot in the world: a parked car, a cone. */
+export interface Placed {
+  p: [number, number];
+  rot: number;
+}
+
+export interface PoolOptions<T extends Placed> {
+  /** Makes the body for an item, on its spot and asleep (default: a parked car's). */
+  createBody?: (rapier: typeof RAPIER, world: RAPIER.World, item: T, groundY: number) => RAPIER.RigidBody;
+  /** Items within this distance of the player are bodies, and leave the pool this much farther out (m). */
+  radius?: number;
+  margin?: number;
+}
 
 const CELL = 50;
 /** Refresh the pool every this many updates. */
@@ -31,7 +46,7 @@ const AWAY = { x: 0, y: -100, z: 0, qx: 0, qy: 0, qz: 0, qw: 1 };
 /** Is a point (three.js space) on screen? */
 export type OnScreen = (x: number, y: number, z: number) => boolean;
 
-export class ParkedPool {
+export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v: number }> {
   readonly bodies = new Map<number, RAPIER.RigidBody>();
   private readonly hidden = new Map<number, number>();
   private readonly cleared = new Set<number>();
@@ -39,16 +54,22 @@ export class ParkedPool {
   private frame = 0;
   private readonly rapier: typeof RAPIER;
   private readonly world: RAPIER.World;
-  private readonly cars: ParkedCar[];
+  private readonly cars: T[];
   private readonly poses: ParkedPoses;
   private readonly groundY: number;
+  private readonly createBody: (rapier: typeof RAPIER, world: RAPIER.World, item: T, groundY: number) => RAPIER.RigidBody;
+  private readonly radius?: number;
+  private readonly margin?: number;
 
-  constructor(rapier: typeof RAPIER, world: RAPIER.World, cars: ParkedCar[], poses: ParkedPoses, groundY: number, spawn: [number, number]) {
+  constructor(rapier: typeof RAPIER, world: RAPIER.World, cars: T[], poses: ParkedPoses, groundY: number, spawn: [number, number], opts: PoolOptions<T> = {}) {
     this.rapier = rapier;
     this.world = world;
     this.cars = cars;
     this.poses = poses;
     this.groundY = groundY;
+    this.createBody = opts.createBody ?? (createParkedBody as unknown as (rapier: typeof RAPIER, world: RAPIER.World, item: T, groundY: number) => RAPIER.RigidBody);
+    this.radius = opts.radius;
+    this.margin = opts.margin;
     cars.forEach((c, i) => {
       const k = `${Math.floor(c.p[0] / CELL)},${Math.floor(c.p[1] / CELL)}`;
       this.grid.set(k, [...(this.grid.get(k) ?? []), i]);
@@ -112,7 +133,7 @@ export class ParkedPool {
 
     if (this.frame++ % POOL_EVERY !== 0) return;
     const keep = (i: number) => poses.moved.has(i) && !this.cleared.has(i);
-    const want = poolFor(cars, player, new Set(this.bodies.keys()), keep, (x, y, r) => this.near(x, y, r));
+    const want = poolFor(cars, player, new Set(this.bodies.keys()), keep, (x, y, r) => this.near(x, y, r), this.radius, this.margin);
     for (const i of this.cleared) want.delete(i);
     for (const [i, body] of this.bodies) {
       if (want.has(i)) continue;
@@ -121,7 +142,7 @@ export class ParkedPool {
       this.hidden.delete(i);
       poses.clear(i); // only moved cars that are off screen get here: back on their spot
     }
-    for (const i of want) if (!this.bodies.has(i)) this.bodies.set(i, createParkedBody(this.rapier, this.world, cars[i], this.groundY));
+    for (const i of want) if (!this.bodies.has(i)) this.bodies.set(i, this.createBody(this.rapier, this.world, cars[i], this.groundY));
   }
 
   /** Leaving Drive mode: remove the bodies; every car back on its spot. */

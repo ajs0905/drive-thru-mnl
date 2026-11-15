@@ -8,11 +8,13 @@
  * built from the map when driving starts (geometry/collision.ts) as two static triangle
  * meshes: walls (buildings, walls and fences, the playable edge), which the chase camera
  * keeps in front of, and structures (flyover decks and ramps, footbridge sides, posts).
- * Parked cars near the player are physics bodies too (ParkedPhysics.tsx).
+ * Parked cars near the player are physics bodies too (ParkedPhysics.tsx), and so are the
+ * roadblocks' cones, drums, barricades and signs. On tiers that
+ * have it, fast driving blurs the screen's edges (SpeedBlur.tsx).
  */
 import { useThree } from '@react-three/fiber';
 import { CuboidCollider, Physics, RigidBody, TrimeshCollider, type RapierCollider } from '@react-three/rapier';
-import { useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Vector3 } from 'three';
 import { headingOfDirection, spawnOnRoad, yawForHeading } from '../car/spawn';
 import { SEDAN } from '../car/spec';
@@ -22,13 +24,38 @@ import { Car } from './Car';
 import { ROAD_Y } from './cityGeometry';
 import { ParkedPhysics } from './ParkedPhysics';
 import type { ParkedPoses } from './parkedPoses';
+import { ROADBLOCK_POOL, ROADBLOCK_Y, type LooseProp } from './roadblockBodies';
+import { SpeedBlur } from './SpeedBlur';
 
 /** Top of the physics ground: about where roads are drawn (0.16 to 0.24 m), so tires sit on them. */
 const GROUND_Y = 0.2;
 const GROUND_HALF = 6000;
 
-export default function Drive({ map, onSpeed, parked }: { map: MapData; onSpeed?: (speed: number) => void; parked?: ParkedPoses }) {
+export default function Drive({
+  map,
+  onSpeed,
+  parked,
+  speedBlur = false,
+  msaa = false,
+  roadblocks,
+}: {
+  map: MapData;
+  onSpeed?: (speed: number) => void;
+  parked?: ParkedPoses;
+  speedBlur?: boolean;
+  msaa?: boolean;
+  /** The roadblocks' loose pieces and where moved ones are (shared with the renderer). */
+  roadblocks?: { loose: LooseProp[]; poses: ParkedPoses };
+}) {
   const get = useThree((s) => s.get);
+  const speed = useRef(0);
+  const reportSpeed = useCallback(
+    (v: number) => {
+      speed.current = v;
+      onSpeed?.(v);
+    },
+    [onSpeed],
+  );
   // Decided once, when driving starts.
   const spawn = useMemo(() => {
     const { controls, camera } = get();
@@ -53,8 +80,12 @@ export default function Drive({ map, onSpeed, parked }: { map: MapData; onSpeed?
         {/* Decks need road grip; their sides are thin enough that it barely matters. */}
         {solid.structures.indices.length > 0 && <TrimeshCollider args={[solid.structures.vertices, solid.structures.indices]} friction={1} restitution={0.1} />}
       </RigidBody>
-      <Car spec={SEDAN} spawn={spawn} onSpeed={onSpeed} cameraBlockers={walls} />
+      <Car spec={SEDAN} spawn={spawn} onSpeed={reportSpeed} cameraBlockers={walls} />
       {parked && map.parked && <ParkedPhysics cars={map.parked} poses={parked} spawn={spawnAt} />}
+      {roadblocks && roadblocks.loose.length > 0 && (
+        <ParkedPhysics cars={roadblocks.loose} poses={roadblocks.poses} spawn={spawnAt} options={ROADBLOCK_POOL} groundY={ROADBLOCK_Y} />
+      )}
+      {speedBlur && <SpeedBlur speed={speed} msaa={msaa} />}
     </Physics>
   );
 }

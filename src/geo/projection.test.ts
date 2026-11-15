@@ -105,6 +105,19 @@ describe('createProjection', () => {
     expect(() => createProjection({ lat: NaN, lon: 121 })).toThrow(RangeError);
     expect(() => createProjection({ lat: 14.5, lon: Infinity })).toThrow(RangeError);
     expect(() => createProjection({ lat: 89.5, lon: 0 })).toThrow(RangeError);
+    expect(() => createProjection(BGC_ORIGIN, 0)).toThrow(RangeError);
+    expect(() => createProjection(BGC_ORIGIN, NaN)).toThrow(RangeError);
+  });
+
+  it('stretches distances by the scale and still round-trips', () => {
+    const big = createProjection(BGC_ORIGIN, 1.2);
+    const p = { lat: BGC_ORIGIN.lat + 0.01, lon: BGC_ORIGIN.lon - 0.007 };
+    const [a, b] = [proj.toLocal(p), big.toLocal(p)];
+    expect(b.x).toBeCloseTo(a.x * 1.2, 6);
+    expect(b.y).toBeCloseTo(a.y * 1.2, 6);
+    const back = big.toLatLon(b);
+    expect(back.lat).toBeCloseTo(p.lat, 10);
+    expect(back.lon).toBeCloseTo(p.lon, 10);
   });
 });
 

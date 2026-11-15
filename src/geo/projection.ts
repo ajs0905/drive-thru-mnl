@@ -24,19 +24,29 @@ export interface Vec2 {
   y: number;
 }
 
+/**
+ * How much bigger the game world is than the real one, across the ground. Distances,
+ * footprints and road widths are stretched by this; heights, cars and props stay real
+ * size. The real BGC felt small at driving speed, so the map is 1.2x.
+ */
+export const MAP_SCALE = 1.2;
+
 /** Roughly the middle of BGC (5th Ave / High Street area). */
 export const BGC_ORIGIN: LatLon = { lat: 14.5509, lon: 121.0503 };
 
 export interface Projection {
   origin: LatLon;
+  /** Game meters per real meter (1 = true size). */
+  scale: number;
   toLocal(p: LatLon): Vec2;
   toLatLon(v: Vec2): LatLon;
 }
 
-export function createProjection(origin: LatLon = BGC_ORIGIN): Projection {
+export function createProjection(origin: LatLon = BGC_ORIGIN, scale = 1): Projection {
   if (!Number.isFinite(origin.lat) || !Number.isFinite(origin.lon)) {
     throw new RangeError('Projection origin must be finite');
   }
+  if (!Number.isFinite(scale) || scale <= 0) throw new RangeError('Projection scale must be a positive number');
   if (Math.abs(origin.lat) >= 89) {
     // cos(lat) -> 0 makes x meaningless near the poles. Not a Manila problem,
     // but fail loudly instead of returning garbage.
@@ -44,11 +54,12 @@ export function createProjection(origin: LatLon = BGC_ORIGIN): Projection {
   }
 
   const cosLat0 = Math.cos(origin.lat * DEG);
-  const metersPerDegLat = EARTH_RADIUS_M * DEG;
+  const metersPerDegLat = EARTH_RADIUS_M * DEG * scale;
   const metersPerDegLon = metersPerDegLat * cosLat0;
 
   return {
     origin: { ...origin },
+    scale,
     toLocal({ lat, lon }) {
       return {
         x: (lon - origin.lon) * metersPerDegLon,

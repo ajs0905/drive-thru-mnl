@@ -336,8 +336,11 @@ describe('the Sedan on the real map', () => {
   // ramp road stays at ground level through the gore; the bridge (way/671962733) climbs after.
   const map = JSON.parse(bgc) as MapData;
   const way = (id: string) => map.roads.find((r) => r.id === id)!.points;
+  // Spots measured at true size, stretched by the map's scale.
+  const k = map.scale ?? 1;
+  const start: Point = [-530 * k, 496.4 * k];
   const heading = Math.atan2(501 - 495, -547 - -525); // along the approach road
-  const at = { x: -530, z: -496.4, yaw: Math.atan2(Math.cos(heading), -Math.sin(heading)) };
+  const at = { x: start[0], z: -start[1], yaw: Math.atan2(Math.cos(heading), -Math.sin(heading)) };
 
   /** Drives along a path (map points) like a player would: steer toward a point 12 m ahead. */
   const follow = (car: Car, path: Point[], seconds: number) => {
@@ -366,7 +369,7 @@ describe('the Sedan on the real map', () => {
 
   it('follows the road up the Kalayaan Overpass onto the deck, without a scrape', () => {
     const car = makeCar(0, map, at);
-    follow(car, dense([[-530, 496.4], ...way('way/744999969').slice(-2), ...way('way/23240433').slice(1), ...way('way/671962733').slice(1), ...way('way/29353931').slice(1)]), 12);
+    follow(car, dense([start, ...way('way/744999969').slice(-2), ...way('way/23240433').slice(1), ...way('way/671962733').slice(1), ...way('way/29353931').slice(1)]), 15);
     expect(car.body.translation().y).toBeGreaterThan(6.8);
     expect(car.state.impacts).toBe(0);
     expect(car.maxTilt).toBeLessThan(20);
@@ -374,7 +377,7 @@ describe('the Sedan on the real map', () => {
 
   it('can take the frontage road at the gore instead, at ground level, without catching the ramp', () => {
     const car = makeCar(0, map, at);
-    follow(car, dense([[-530, 496.4], ...way('way/744999969').slice(-2), ...way('way/1279593466/0').slice(1)]), 4);
+    follow(car, dense([start, ...way('way/744999969').slice(-2), ...way('way/1279593466/0').slice(1)]), 4.5);
     expect(car.body.translation().y).toBeLessThan(1);
     expect(car.state.impacts).toBe(0);
     expect(car.maxTilt).toBeLessThan(10);

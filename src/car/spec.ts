@@ -115,7 +115,8 @@ export const SEDAN: CarSpec = {
   tuning: {
     engineForce: 8000,
     reverseForce: 3500,
-    topSpeed: 50,
+    // About 137 km/h: fast for city streets, and crossing the map takes a while.
+    topSpeed: 38,
     reverseSpeed: 9,
     brake: 40,
     handbrake: 8,
@@ -140,7 +141,7 @@ export const SEDAN: CarSpec = {
     countersteer: 0.35,
     maxDrift: 0.45,
     antiSpin: 8,
-    upshift: [9, 17, 26, 36],
+    upshift: [8, 15, 22, 30],
     downshiftGap: 3,
     shiftTime: 0.18,
     shiftDrive: 0.25,

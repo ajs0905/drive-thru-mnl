@@ -1,8 +1,9 @@
 import { useEffect, useMemo } from 'react';
-import { BufferAttribute, BufferGeometry, DoubleSide, MeshLambertMaterial, type Material } from 'three';
+import { BufferAttribute, BufferGeometry, MeshLambertMaterial, type Material } from 'three';
 import type { MapData } from '../map/types';
 import { buildCity, PALETTE, type CityMeshes, type LayerArrays } from './cityGeometry';
 import { createBuildingMaterial } from './buildingMaterial';
+import { createFenceMaterial, createOutlineMaterial } from './edgeMaterial';
 import { createRoadMaterial } from './roadMaterial';
 import { Props } from './Props';
 
@@ -34,14 +35,17 @@ function ChunkMesh({
   return <mesh geometry={geometry} material={material} castShadow={cast} receiveShadow />;
 }
 
-function Edge({ arrays }: { arrays: LayerArrays }) {
-  const geometry = useMemo(() => toGeometry(arrays), [arrays]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  if (arrays.position.length === 0) return null;
+/** The playable edge: the fence on the ground, and the see-through outline for the map view (fades out up close). */
+function Edge({ outline, fence, showOutline }: { outline: LayerArrays; fence: LayerArrays; showOutline: boolean }) {
+  const geometries = useMemo(() => ({ outline: toGeometry(outline), fence: toGeometry(fence, 'edgeAux') }), [outline, fence]);
+  const materials = useMemo(() => ({ outline: createOutlineMaterial(), fence: createFenceMaterial() }), []);
+  useEffect(() => () => Object.values(geometries).forEach((g) => g.dispose()), [geometries]);
+  useEffect(() => () => Object.values(materials).forEach((m) => m.dispose()), [materials]);
   return (
-    <mesh geometry={geometry} renderOrder={10}>
-      <meshBasicMaterial vertexColors transparent opacity={0.5} side={DoubleSide} depthWrite={false} />
-    </mesh>
+    <>
+      {fence.position.length > 0 && <mesh geometry={geometries.fence} material={materials.fence} castShadow receiveShadow />}
+      {outline.position.length > 0 && <mesh geometry={geometries.outline} material={materials.outline} renderOrder={10} visible={showOutline} />}
+    </>
   );
 }
 
@@ -67,12 +71,15 @@ export function City({
   propsDistance,
   treeDistance,
   treeModels,
+  showEdgeOutline = true,
 }: {
   map: MapData;
   onBuilt?: (m: CityMeshes) => void;
   propsDistance: number;
   treeDistance: number;
   treeModels: boolean;
+  /** The see-through edge outline (map view; hidden while driving). */
+  showEdgeOutline?: boolean;
 }) {
   const meshes = useMemo(() => buildCity(map), [map]);
   const materials = useMaterials();
@@ -109,7 +116,7 @@ export function City({
       ))}
       <Props cells={meshes.props} maxDistance={propsDistance} />
       <Props cells={treeModels ? meshes.trees : meshes.simpleTrees} maxDistance={treeDistance} />
-      <Edge arrays={meshes.edge} />
+      <Edge outline={meshes.edge} fence={meshes.fence} showOutline={showEdgeOutline} />
     </group>
   );
 }

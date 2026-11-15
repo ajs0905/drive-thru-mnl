@@ -64,6 +64,15 @@ The Sedan adds about 1,500 triangles and 12 draw calls (body, two lamp meshes, f
 
 Collisions (8b, 8c): two static triangle meshes (walls; decks, ramps, pillars and posts), about 82k triangles and 3.0 MB together, built when driving starts in about 50 to 75 ms (our code) plus 60 to 100 ms (Rapier's index), measured in Node on the development container. The flyover fixes added the posts under raised buildings and the outrigger pillars (about 6k triangles) and grew the map file by about 9 KB gzipped. Per step, Rapier only tests the car against the few triangles near it, plus one ray for the camera per frame. Physics is one rigid body and a ground collider, stepped at 60 Hz. While driving, rendering is continuous instead of on demand. Headless at 960x540 on Medium, a street-level drive drew 53 to 80 draw calls and 266k to 400k triangles depending on where the car points (the chase camera sees more of the city at once than the map's usual views). Frame rate there means nothing (software renderer); on real hardware it's still to be measured.
 
+### Looks, map scale and the edge
+
+- **Map scale 1.2x** ([ADR 0017](decisions/0017-map-scale.md)): the same buildings, roads and props over more ground, so draw calls and triangles barely change. Camera spots (`cam=...`) in the sections above were measured before it: multiply x and z by 1.2 to find the same place now.
+- **Parked cars** went from 1,705 to 981 (about 30% of the curb slots, right curb only on one-way streets), so their triangles near the camera dropped by roughly 40%. Each drawn car also gets a blob shadow: one more instanced draw call, 40 triangles per car.
+- **Car shine** (`scene/carShine.ts`): a few math operations per car pixel, no textures, no extra pass. The GLBs grew by the `shine` attribute: the Sedan 16.5 → 16.8 KB gzipped, the parked models 91 → 93 KB.
+- **Speed blur** (Medium and High, Drive mode): free below about 100 km/h (the scene goes straight to the screen). Above it, the frame is drawn into an off-screen buffer and goes through two full-screen passes (an 8-sample blur, then tone mapping), roughly the cost of the post-processing chain removed in the second pass, but only while driving fast. Low never runs it. Not measured on a GPU yet. The post-processing code is in the Drive chunk (861 KB gzipped, was 852).
+- **Playable edge**: keeping the hoarding and roadblocks clear of buildings adds about 60 ms to the city build and about 50 ms each to laying out the roadblocks (on load) and the collisions (when driving starts), measured in Node. The hoarding is a few hundred triangles in one mesh and one draw call (ripples and seams are in the shader), plus the old outline mesh for the map view. The roadblocks are 623 concrete barriers along the road crossings, plus 47 full roadblocks with a sign and 408 barricades, drums and cones (about 77k triangles over the whole edge), five instanced meshes drawn only within the parked-car draw distance (170 m on Low), so a view near the edge draws one to three roadblocks. In Drive mode the loose pieces within 45 m are physics bodies (asleep until hit); the concrete row adds to the walls collision mesh.
+- Main bundle 368 KB gzipped (was 355): the edge fence, roadblocks (with the baked Kenney shapes) and car shine code; the nested-building check is pipeline only. Map data 2.98 MB, 723 KB gzipped (was 751): the stretched map dropped some scenery past the 300 m ring.
+
 ### Desktop with a GPU
 
 Run `npm run dev`, open the page, read the overlay at the bottom left (FPS, draw calls, triangles, build time). On laptops with two GPUs, check that the browser runs on the dedicated one (`chrome://gpu`, or Windows Settings > Display > Graphics > browser > High performance).
@@ -103,7 +112,7 @@ To fill in (see below for how).
 | --- | --- | --- |
 | Whole map in memory and on the GPU | Tile streaming, dispose far tiles | Tiles, streaming, tiers |
 | 300 ms main-thread build | Build tiles in a Web Worker, spread work across frames | Tiles, streaming, tiers |
-| 736 KB JSON parsed at once | Binary tiles (typed arrays, quantized), loaded on demand | Tiles, streaming, tiers |
+| 723 KB (gzipped) JSON parsed at once | Binary tiles (typed arrays, quantized), loaded on demand | Tiles, streaming, tiers |
 | About 265k to 296k triangles drawn on Low | Distance-based detail: far scenery as boxes or hidden, simplified outlines (Ramer-Douglas-Peucker) | Tiles, streaming, tiers |
 | Logarithmic depth buffer (costly on mobile GPUs) | Off on Low/Medium, tighter near/far planes instead | Tiles, streaming, tiers |
 | drei pulled in for one component | Import `MapControls` directly from three.js examples | Any time |

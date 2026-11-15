@@ -99,12 +99,13 @@ export function poolFor(
   inPool: Set<number>,
   keep: (i: number) => boolean,
   near: (x: number, y: number, r: number) => Iterable<number>,
+  r: number = PARKED.physicsRadius,
+  margin: number = PARKED.physicsMargin,
 ): Set<number> {
   const out = new Set<number>();
-  const r = PARKED.physicsRadius;
-  for (const i of near(player[0], player[1], r + PARKED.physicsMargin)) {
+  for (const i of near(player[0], player[1], r + margin)) {
     const d = Math.hypot(cars[i].p[0] - player[0], cars[i].p[1] - player[1]);
-    if (d <= r || (inPool.has(i) && d <= r + PARKED.physicsMargin)) out.add(i);
+    if (d <= r || (inPool.has(i) && d <= r + margin)) out.add(i);
   }
   for (const i of inPool) if (!out.has(i) && keep(i)) out.add(i);
   return out;

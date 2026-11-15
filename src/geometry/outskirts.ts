@@ -6,7 +6,8 @@
  * Rockwell, Shaw). Seeded, so it's the same on every load.
  *
  * Positions of the skylines are real (projected from their lat/long around the map
- * origin in Bonifacio Global City); the buildings themselves are made up.
+ * origin in Bonifacio Global City, at true size, then stretched by the map's scale);
+ * the buildings themselves are made up.
  */
 import type { MapData, Point } from '../map/types';
 import { distanceToRing, pointInRing } from './polygon';
@@ -68,6 +69,7 @@ function mulberry32(seed: number) {
 export function outskirts(map: MapData, opts: OutskirtsOptions = {}): FillerBox[] {
   const { radius = 5200, cell = 140, gap = 80, density = 1, seed = 1 } = opts;
   const b = map.bounds;
+  const scale = map.scale ?? 1;
   const center: Point = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
   const ring = map.playable && map.playable.length >= 3 ? map.playable : null;
   const margin = (map.stats.clip?.marginMeters ?? 0) + gap;
@@ -90,7 +92,7 @@ export function outskirts(map: MapData, opts: OutskirtsOptions = {}): FillerBox[
       if (r[0] > density * (0.95 - 0.25 * far)) continue;
 
       // Inside a skyline: towers, closer together and taller toward its middle.
-      const sky = SKYLINES.map((s) => ({ s, k: 1 - Math.hypot(c[0] - s.at[0], c[1] - s.at[1]) / s.radius })).find((x) => x.k > 0);
+      const sky = SKYLINES.map((s) => ({ s, k: 1 - Math.hypot(c[0] - s.at[0] * scale, c[1] - s.at[1] * scale) / (s.radius * scale) })).find((x) => x.k > 0);
       const count = sky ? 3 + Math.floor(r[1] * 2) : 2 + Math.floor(r[1] * 2);
       const rot = (r[2] - 0.5) * 0.3;
       for (let i = 0; i < count; i++) {

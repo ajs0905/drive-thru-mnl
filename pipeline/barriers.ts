@@ -89,11 +89,11 @@ export function pointsAlong(points: Point[], spacing: number): Point[] {
   return out;
 }
 
-export function extractExtras(fc: FeatureCollection, origin: LatLon): RawExtras {
+export function extractExtras(fc: FeatureCollection, origin: LatLon, scale = 1): RawExtras {
   if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
     throw new TypeError('Expected a GeoJSON FeatureCollection');
   }
-  const proj = createProjection(origin);
+  const proj = createProjection(origin, scale);
   const barriers: Barrier[] = [];
   const trees: Tree[] = [];
   const rowTrees: Tree[] = [];

@@ -12,6 +12,7 @@
  * - A `paint` vertex attribute (1 on the body paint, 0 on windows, trim, tires, lamps), so
  *   the game can repaint each parked car without tinting its windows and tires. The paint
  *   is the pack's "body <color>" material that isn't its black or white trim.
+ * - A `shine` vertex attribute, as in tools/car-to-glb.ts (glossy paint, glass, metal).
  *
  * Runs once by hand when a model is added; the raw pack isn't in the repo.
  */

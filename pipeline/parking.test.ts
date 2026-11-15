@@ -21,14 +21,33 @@ const street = (extra: Partial<Road> = {}): Road => ({ id: `s${n++}`, highway: '
 const sides = (cars: { p: Point }[]) => new Set(cars.map((c) => Math.sign(c.p[1])));
 
 describe('placeParkedCars', () => {
-  it('parks along the right curb of a one-way street with room for one side, facing the traffic', () => {
-    const { parked } = placeParkedCars(map([street()]));
+  it('parks along the right curb of a one-way street, facing the traffic', () => {
+    const { parked } = placeParkedCars(map([street({ points: [[0, 0], [600, 0]] })]));
     expect(parked.length).toBeGreaterThan(8);
     expect(sides(parked)).toEqual(new Set([-1]));
     for (const c of parked) {
       expect(c.p[1]).toBeCloseTo(-(7 / 2 - PARKING.curbGap - PARKING.carWidth / 2), 1);
       expect(c.rot).toBeCloseTo(0);
     }
+  });
+
+  it('keeps a wide one-way street to its right curb (the left is often the median of a divided street)', () => {
+    const { parked } = placeParkedCars(map([street({ w: 12, points: [[0, 0], [600, 0]] })]));
+    expect(parked.length).toBeGreaterThan(0);
+    expect(sides(parked)).toEqual(new Set([-1]));
+  });
+
+  it('fills about 30% of the slots, with long empty stretches', () => {
+    const roads = Array.from({ length: 40 }, (_, i) => street({ id: `fill${i}`, points: [[0, i * 50], [600, i * 50]] }));
+    const { parked, stats } = placeParkedCars(map(roads));
+    expect(parked.length / stats.slots).toBeGreaterThan(0.22);
+    expect(parked.length / stats.slots).toBeLessThan(0.38);
+    // The longest gap along some street is at least a few empty slots in a row.
+    const gaps = roads.map((r) => {
+      const xs = parked.filter((c) => Math.abs(c.p[1] - r.points[0][1]) < 5).map((c) => c.p[0]).sort((a, b) => a - b);
+      return Math.max(0, ...xs.slice(1).map((x, i) => x - xs[i]));
+    });
+    expect(Math.max(...gaps)).toBeGreaterThan(PARKING.slot * 5);
   });
 
   it('parks on both sides of a wide two-way street, each side facing its own traffic', () => {

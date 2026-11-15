@@ -171,10 +171,13 @@ export function noParkingSides(t: Tags): 'both' | 'left' | 'right' | undefined {
 
 export interface ExtractOptions {
   origin?: LatLon;
+  /** Stretch across the ground (distances, footprints, road widths); heights stay real. */
+  scale?: number;
 }
 
 export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): MapData {
-  const proj = createProjection(opts.origin);
+  const scale = opts.scale ?? 1;
+  const proj = createProjection(opts.origin, scale);
   const roads: Road[] = [];
   const buildings: Building[] = [];
   const areas: Area[] = [];
@@ -263,7 +266,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
       // Underground walkways can't be seen and nobody drives on them.
       if (tunnel && cls === 'path' && t.tunnel !== 'building_passage') return skip('underground');
       const bridge = typeof t.bridge === 'string' && BRIDGES.has(t.bridge);
-      const w = roadWidth(highway, cls, t);
+      const w = Math.round(roadWidth(highway, cls, t) * scale * 100) / 100;
       const drivable = cls !== 'path';
       const lanes = drivable ? parseLanes(t.lanes) : undefined;
       const oneway = drivable && isOneway(t);
@@ -310,6 +313,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
   return {
     version: 7,
     origin: proj.origin,
+    ...(scale !== 1 && { scale }),
     bounds: computeBounds(roads, buildings, areas),
     roads,
     junctions: [],

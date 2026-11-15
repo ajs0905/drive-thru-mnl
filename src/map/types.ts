@@ -201,6 +201,8 @@ export interface MapStats {
 export interface MapData {
   version: 7;
   origin: { lat: number; lon: number };
+  /** Game meters per real meter across the ground (see MAP_SCALE). Missing means 1. */
+  scale?: number;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   /** Outline of the drivable area, if one was given to the pipeline. */
   playable?: Ring;

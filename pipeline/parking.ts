@@ -5,12 +5,14 @@
  * rule on minor streets, and only where a car can still get past: at least
  * `PARKING.clearOneway` of road left beside the parked cars on a one-way street,
  * `clearTwoway` on a two-way one. Narrow village streets get none (a parked car would
- * block them). One-way streets park on the right first (the Philippines drives on the
- * right); two-way streets on both sides, or on one if there's only room for one. Sides
- * tagged "no parking" stay empty.
+ * block them). One-way streets park on the right curb only (the Philippines drives on
+ * the right, and the left of a one-way street is often the median of a divided one);
+ * two-way streets on both sides, or on one if there's only room for one. Sides tagged
+ * "no parking" stay empty.
  *
- * Along each side, slots are `slot` meters apart and filled by a seeded coin, so there
- * are natural gaps. A slot is skipped near a junction, on a sharp bend, near a crossing,
+ * Along each side, slots are `slot` meters apart and grouped into stretches of a few
+ * slots. Some stretches stay empty, the rest are filled by a seeded coin, so there are
+ * long empty runs as well as natural gaps. A slot is skipped near a junction, on a sharp bend, near a crossing,
  * a gate, boom or bollard (likely a driveway), a tree trunk or a pillar, and anywhere the
  * car would stand in a junction, another road's lanes, a building, across a wall or the
  * playable edge.
@@ -30,9 +32,12 @@ export const PARKING = {
   /** Room a parked car takes across the road (m, mirrors included) and its gap to the curb. */
   carWidth: 2.4,
   curbGap: 0.2,
-  /** Slot length along the curb (m) and the share of slots with a car. */
+  /** Slot length along the curb (m). */
   slot: 6.2,
-  fill: 0.6,
+  /** Slots per stretch (min, max), the share of stretches with cars, and the share of slots filled in those (about 30% overall). */
+  stretch: [3, 8] as const,
+  stretchOn: 0.6,
+  fill: 0.5,
   /** Room kept from a junction polygon, and from a road end without one (m). */
   fromJunction: 4,
   fromEnd: 2,
@@ -199,7 +204,7 @@ export function placeParkedCars(map: MapData): { parked: ParkedCar[]; stats: Par
     if (spare < room) continue;
     const rand = seeded(`parking:${road.id}`);
     // Sides: +1 is the left of the way's direction, -1 the right.
-    let sides: (1 | -1)[] = spare >= 2 * room ? [-1, 1] : road.oneway ? [-1] : [rand() < 0.5 ? -1 : 1];
+    let sides: (1 | -1)[] = road.oneway ? [-1] : spare >= 2 * room ? [-1, 1] : [rand() < 0.5 ? -1 : 1];
     if (road.noParking === 'both') sides = [];
     else if (road.noParking) sides = sides.filter((s) => s !== (road.noParking === 'left' ? 1 : -1));
     if (!sides.length) continue;
@@ -221,13 +226,20 @@ export function placeParkedCars(map: MapData): { parked: ParkedCar[]; stats: Par
       const offset = road.w / 2 - PARKING.curbGap - PARKING.carWidth / 2;
       const count = Math.floor((to - from) / PARKING.slot);
       const start = from + (to - from - count * PARKING.slot) / 2 + PARKING.slot / 2;
+      let [left, on] = [0, false];
       for (let k = 0; k < count; k++) {
         stats.slots++;
+        if (left === 0) {
+          const [lo, hi] = PARKING.stretch;
+          left = lo + Math.floor(rand() * (hi - lo + 1));
+          on = rand() < PARKING.stretchOn;
+        }
+        left--;
         const s = start + k * PARKING.slot;
         const fill = rand();
         const pickModel = rand();
         const pickPaint = rand();
-        if (fill >= PARKING.fill) continue;
+        if (!on || fill >= PARKING.fill) continue;
         const { p: c, dir } = along(pts, acc, s);
         const bend = Math.abs(along(pts, acc, s + PARKING.slot / 2).dir - along(pts, acc, s - PARKING.slot / 2).dir);
         if (Math.min(bend, 2 * Math.PI - bend) > (PARKING.maxBend * Math.PI) / 180) {

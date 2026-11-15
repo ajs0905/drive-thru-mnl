@@ -3,6 +3,7 @@
  * renders in about 5 draw calls instead of one per building or road.
  */
 import { addFlatPolygon, addWalls, extrudeBuilding, FLOOR_HEIGHT, windowCode, WINDOWS } from '../geometry/extrude';
+import { addEdgeFence } from '../geometry/edgeFence';
 import { hexToRgb, MeshBuilder, shade, srgbToLinear, type RGB } from '../geometry/meshBuilder';
 import type { Area, BarrierKind, Building, MapData, Point, Road, RoadClass } from '../map/types';
 import { addDeckStructure, addDisc, addPillar, addRoadRibbon, addSidewalk, addZebra, cutBackPieces, deckJoins, DECKS, MARK, markCode, type DeckStyle } from '../geometry/road';
@@ -195,8 +196,10 @@ export interface CityMeshes {
   ground: LayerChunk[];
   /** Concrete for flyovers and footbridges (deck edges, barriers, pillars), plus walls, fences and hedges. */
   structures: LayerChunk[];
-  /** See-through fence along the playable edge (becomes the invisible wall for the car). */
+  /** See-through outline along the playable edge, for the map view (the car's wall is invisible, in collision.ts). */
   edge: LayerArrays;
+  /** Hoarding and road barriers along the playable edge, with edge data per vertex (edgeMaterial.ts). */
+  fence: LayerArrays;
   /** Rooftop details and street fixtures, drawn as instances, grouped by the same grid cells. */
   props: Chunk<Prop[]>[];
   /** Trees as tree models (Medium and High), drawn as instances like props but kept visible farther away. */
@@ -214,6 +217,7 @@ export function buildCity(map: MapData): CityMeshes {
   const roads = new ChunkedBuilder({ aux: true });
   const ground = new ChunkedBuilder();
   const edge = new MeshBuilder();
+  const fence = new MeshBuilder({ aux: true });
   const structures = new ChunkedBuilder();
 
   for (const b of map.buildings) {
@@ -236,6 +240,7 @@ export function buildCity(map: MapData): CityMeshes {
 
   if (map.playable && map.playable.length >= 3) {
     addWalls(edge, withWinding(map.playable, true), 0, EDGE_HEIGHT, col(PALETTE.playableEdge));
+    addEdgeFence(fence, map.playable, map.roads, map.buildings);
   }
 
   for (const b of map.barriers ?? []) {
@@ -255,12 +260,13 @@ export function buildCity(map: MapData): CityMeshes {
     ground: ground.build(),
     structures: structures.build(),
     edge: edge.build(),
+    fence: fence.build(),
   };
   return {
     ...out,
     triangles:
       buildings.triangleCount + scenery.triangleCount + roads.triangleCount + ground.triangleCount +
-      structures.triangleCount + edge.triangleCount,
+      structures.triangleCount + edge.triangleCount + fence.triangleCount,
     ms: performance.now() - t0,
   };
 }

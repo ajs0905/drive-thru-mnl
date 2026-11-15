@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CONCRETE_SIZE, roadblockLayout } from './roadblocks';
 import type { Building, Road } from '../map/types';
 import { buildCollision as build, COLLISION, propFootprint, type CollisionInput } from './collision';
 import type { Prop } from './props';
@@ -59,6 +60,15 @@ describe('buildCollision', () => {
     const m = buildCollision({ ...empty, playable: square(-100, -100, 200) });
     expect(m.counts).toMatchObject({ edge: 4, triangles: 8 });
     expect(Math.max(...heights(m.vertices))).toBe(COLLISION.edgeHeight);
+  });
+
+  it('makes the concrete row of a roadblock solid where a road crosses the edge', () => {
+    const road = { id: 'r', highway: 'residential', cls: 'minor' as const, w: 10, points: [[0, -150], [0, -50]] as [number, number][] };
+    const m = buildCollision({ ...empty, roads: [road], playable: square(-100, -100, 200) });
+    const concrete = roadblockLayout(square(-100, -100, 200), [road]).filter((r) => r.kind === 'concrete').length;
+    expect(concrete).toBeGreaterThan(3);
+    expect(m.counts.edge).toBe(4 + concrete);
+    expect(heights(m.vertices).filter((h) => Math.abs(h - CONCRETE_SIZE[2]) < 1e-6).length).toBeGreaterThan(0);
   });
 
   it('adds trunks, bollards, blocks and gate pillars, but not crowns or boom arms', () => {

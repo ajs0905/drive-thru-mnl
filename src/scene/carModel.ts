@@ -1,6 +1,6 @@
 /**
- * Helpers for drawing the car: its model ready for the scene (with glowing lamps), and
- * a soft blob shadow.
+ * Helpers for drawing the car: its model ready for the scene (with glowing lamps and
+ * shiny paint, glass and rims, see carShine.ts), and a soft blob shadow.
  *
  * Lamps glow by their material's emissive color, not by real lights: headlights a soft
  * warm white, tail lights a dim red that flares while braking. Real light sources would
@@ -36,6 +36,7 @@ import {
   type Object3D,
 } from 'three';
 import type { CarSpec, WheelName } from '../car/spec';
+import { withCarShine } from './carShine';
 
 export interface CarModel {
   root: Group;
@@ -63,11 +64,19 @@ export const LAMPS = {
 
 const WHEEL_NAMES: WheelName[] = ['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'];
 
-/** A copy of the loaded model with the city's flat Lambert look (colors are per vertex). */
+/** GLTF keeps custom attributes with a leading underscore: `_shine` back to `shine` (0 where missing). */
+export function restoreShine(geometry: BufferGeometry) {
+  if (geometry.getAttribute('shine')) return;
+  const loaded = geometry.getAttribute('_shine');
+  geometry.setAttribute('shine', loaded ?? new BufferAttribute(new Float32Array(geometry.getAttribute('position').count), 1));
+  if (loaded) geometry.deleteAttribute('_shine');
+}
+
+/** A copy of the loaded model with the city's flat Lambert look (colors are per vertex), plus the shine. */
 export function prepareCarModel(scene: Object3D): CarModel {
   const root = new Group();
   root.add(scene.clone(true));
-  const material = new MeshLambertMaterial({ vertexColors: true });
+  const material = withCarShine(new MeshLambertMaterial({ vertexColors: true }), 'player');
   const lamp = (color: string, intensity: number) =>
     new MeshLambertMaterial({ vertexColors: true, emissive: color, emissiveIntensity: intensity, toneMapped: false });
   const head = lamp(LAMPS.head.color, LAMPS.head.intensity);
@@ -75,6 +84,7 @@ export function prepareCarModel(scene: Object3D): CarModel {
   root.traverse((o) => {
     const mesh = o as Mesh;
     if (!mesh.isMesh) return;
+    restoreShine(mesh.geometry);
     mesh.material = mesh.name === 'headlights' ? head : mesh.name === 'taillights' ? tail : material;
     mesh.castShadow = false;
     mesh.receiveShadow = true;
