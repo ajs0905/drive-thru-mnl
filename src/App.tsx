@@ -4,6 +4,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { startSpot } from './car/spawn';
 import { mapViewData, streetNameLookup } from './geometry/mapView';
 import { loadMap, type MapSource } from './map/loadMap';
+import { BACKDROP, backdropReady } from './ui/backdrop';
 import type { MapData } from './map/types';
 import { City } from './scene/City';
 import { ParkedCars } from './scene/ParkedCars';
@@ -51,7 +52,6 @@ const MAP_VIEW = PARAMS.has('cam') || PARAMS.get('view') === 'map';
 const DEBUG = MAP_VIEW || PARAMS.has('debug');
 /** A phone or tablet: touch controls, and the touch version of the help. */
 const TOUCH = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-const MENU_IMAGE = `${import.meta.env.BASE_URL}menu.jpg`;
 
 // Checked once: reversed depth if the GPU has it, otherwise a logarithmic depth buffer.
 const REVERSED_DEPTH = supportsReversedDepth();
@@ -210,7 +210,8 @@ export default function App() {
     loadMap((done, bytes) => setDownload({ done, bytes }))
       .then(({ map, source }) => {
         setState({ status: 'ready', map, source });
-        afterPaint(() => setBuildNow(true));
+        // The backdrop first: the build keeps the page too busy to paint for a while.
+        void backdropReady().then(() => afterPaint(() => setBuildNow(true)));
       })
       .catch((err: Error) => setState({ status: 'error', message: err.message }));
   }, []);
@@ -253,11 +254,15 @@ export default function App() {
     setBigMap(false);
     setDrive((d) => ({ step: STEP.engine, mounted: false, waiting: false, loaderShown: true, count: d.count + 1 }));
     setScreen('drive');
-    // The physics engine's chunk, then the collisions (built when Drive mounts), then the car.
-    void loadDrive().then(() => {
-      setDrive((d) => ({ ...d, step: STEP.solid }));
-      afterPaint(() => setDrive((d) => ({ ...d, mounted: true })));
-    });
+    // The loading screen painted first (with its backdrop), then the physics engine's
+    // chunk, then the collisions (built when Drive mounts), then the car.
+    void backdropReady()
+      .then(() => new Promise<void>((r) => afterPaint(r)))
+      .then(loadDrive)
+      .then(() => {
+        setDrive((d) => ({ ...d, step: STEP.solid }));
+        afterPaint(() => setDrive((d) => ({ ...d, mounted: true })));
+      });
   }, [session]);
 
   const leaveDriving = useCallback(() => {
@@ -430,7 +435,7 @@ export default function App() {
       )}
 
       {screen === 'menu' && (
-        <Menu status={state.status === 'ready' && state.source === 'sample' && status.ready ? { ...status, error: 'Sample data. Run npm run pipeline for the real map.' } : status} background={MENU_IMAGE} quality={quality} onPlay={startDriving} onSettings={() => setPanel('settings')} onAbout={() => setPanel('about')} />
+        <Menu status={state.status === 'ready' && state.source === 'sample' && status.ready ? { ...status, error: 'Sample data. Run npm run pipeline for the real map.' } : status} background={BACKDROP} quality={quality} onPlay={startDriving} onSettings={() => setPanel('settings')} onAbout={() => setPanel('about')} />
       )}
 
       {driving && viewData && streetAt && drive.step === STEP.done && !drive.waiting && (
@@ -441,7 +446,7 @@ export default function App() {
 
       {driving && drive.loaderShown && (
         <div onPointerDown={drive.waiting ? startPlaying : undefined}>
-          <DriveLoading step={drive.step} waiting={drive.waiting} hidden={false} touch={TOUCH} background={MENU_IMAGE} place="High Street" tip={tipFor(TOUCH, drive.count - 1)} />
+          <DriveLoading step={drive.step} waiting={drive.waiting} hidden={false} touch={TOUCH} background={BACKDROP} place="High Street" tip={tipFor(TOUCH, drive.count - 1)} />
         </div>
       )}
 

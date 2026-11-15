@@ -18,7 +18,7 @@ import { CuboidCollider, Physics, RigidBody, TrimeshCollider, type RapierCollide
 import { useCallback, useMemo, useRef } from 'react';
 import { Vector3 } from 'three';
 import { headingOfDirection, spawnOnRoad, yawForHeading, type Spawn } from '../car/spawn';
-import { SEDAN } from '../car/spec';
+import { restLift, SEDAN } from '../car/spec';
 import { buildCollision } from '../geometry/collision';
 import type { MapData } from '../map/types';
 import { Car } from './Car';
@@ -59,13 +59,13 @@ export default function Drive({
   }, []);
   // Decided once, when driving starts.
   const spawn = useMemo(() => {
-    if (start) return { position: [start.p[0], GROUND_Y + 0.3, -start.p[1]] as [number, number, number], yaw: yawForHeading(start.heading) };
+    if (start) return { position: [start.p[0], GROUND_Y + restLift(SEDAN), -start.p[1]] as [number, number, number], yaw: yawForHeading(start.heading) };
     const { controls, camera } = get();
     const target = (controls as unknown as { target?: Vector3 } | null)?.target ?? new Vector3();
     const dir = camera.getWorldDirection(new Vector3());
     const facing = headingOfDirection(dir.x, dir.z);
     const s = spawnOnRoad(map, [target.x, -target.z], facing) ?? { p: [target.x, -target.z], heading: facing };
-    return { position: [s.p[0], GROUND_Y + 0.3, -s.p[1]] as [number, number, number], yaw: yawForHeading(s.heading) };
+    return { position: [s.p[0], GROUND_Y + restLift(SEDAN), -s.p[1]] as [number, number, number], yaw: yawForHeading(s.heading) };
   }, [map, get, start]);
 
   const solid = useMemo(() => buildCollision(map, { surfaceY: ROAD_Y }), [map]);
@@ -82,7 +82,7 @@ export default function Drive({
         {/* Decks need road grip; their sides are thin enough that it barely matters. */}
         {solid.structures.indices.length > 0 && <TrimeshCollider args={[solid.structures.vertices, solid.structures.indices]} friction={1} restitution={0.1} />}
       </RigidBody>
-      <Car spec={SEDAN} spawn={spawn} onSpeed={reportSpeed} cameraBlockers={walls} session={session} />
+      <Car spec={SEDAN} spawn={spawn} onSpeed={reportSpeed} cameraBlockers={walls} session={session} paused={paused} />
       {parked && map.parked && <ParkedPhysics cars={map.parked} poses={parked} spawn={spawnAt} />}
       {roadblocks && roadblocks.loose.length > 0 && (
         <ParkedPhysics cars={roadblocks.loose} poses={roadblocks.poses} spawn={spawnAt} options={ROADBLOCK_POOL} groundY={ROADBLOCK_Y} />

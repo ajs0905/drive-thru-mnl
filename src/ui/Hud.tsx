@@ -12,7 +12,7 @@ import { headingUpRotation, type MapViewData } from '../geometry/mapView';
 import type { Point } from '../map/types';
 import type { DriveSession } from '../scene/driveSession';
 import { CarArrow } from './icons';
-import { MAP_COLORS, toCanvas, type MapViewport } from './mapCanvas';
+import { MAP_COLORS, type MapViewport } from './mapCanvas';
 import { MapTiles } from './mapTiles';
 import { StreetSign } from './streetSign';
 
@@ -37,7 +37,6 @@ export function Hud({
 }) {
   const speedEl = useRef<HTMLElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const north = useRef<HTMLSpanElement>(null);
   const [street, setStreet] = useState<{ name: string; shown: boolean }>({ name: '', shown: false });
   const tiles = useMemo(() => {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -62,7 +61,7 @@ export function Hud({
         // Only when the car has moved or turned enough to see, or tiles are still missing.
         const d = state.drawn;
         if (!d.complete || Math.hypot(car.x - d.x, car.y - d.y) > 0.25 || Math.abs(car.heading - d.heading) > 0.004) {
-          Object.assign(d, { x: car.x, y: car.y, heading: car.heading, complete: drawMinimap(canvas.current, north.current, tiles, car) });
+          Object.assign(d, { x: car.x, y: car.y, heading: car.heading, complete: drawMinimap(canvas.current, tiles, car) });
         }
       }
     };
@@ -83,9 +82,6 @@ export function Hud({
       <button type="button" className="minimap" aria-label="Open the big map" onClick={onMap}>
         <canvas ref={canvas} />
         <CarArrow className="me" />
-        <span ref={north} className="north" aria-hidden="true">
-          N
-        </span>
       </button>
       <div className="limit" role="status" aria-label="Speed in km/h">
         <b ref={speedEl}>0</b>
@@ -96,8 +92,8 @@ export function Hud({
   );
 }
 
-/** One minimap frame: the map turned so the car points up, and the N marker on the rim where north is. False if some tiles weren't drawn yet. */
-function drawMinimap(canvas: HTMLCanvasElement | null, north: HTMLElement | null, tiles: MapTiles, car: { x: number; y: number; heading: number }): boolean {
+/** One minimap frame: the map turned so the car points up. False if some tiles weren't drawn yet. */
+function drawMinimap(canvas: HTMLCanvasElement | null, tiles: MapTiles, car: { x: number; y: number; heading: number }): boolean {
   if (!canvas) return false;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const [w, h] = [Math.round(canvas.clientWidth * dpr), Math.round(canvas.clientHeight * dpr)];
@@ -106,15 +102,5 @@ function drawMinimap(canvas: HTMLCanvasElement | null, north: HTMLElement | null
   const ctx = canvas.getContext('2d');
   if (!ctx) return false;
   const view: MapViewport = { center: [car.x, car.y], scale: w / HUD.minimapMeters, rotation: headingUpRotation(car.heading) };
-  const complete = tiles.draw(ctx, view, MAP_COLORS.ground);
-  if (north) {
-    const [nx, ny] = toCanvas([car.x, car.y + 1000], view, w, h);
-    // Just inside the frame, on the square (not a circle), in the direction of north.
-    const a = Math.atan2(ny - h / 2, nx - w / 2);
-    const r = 0.42 / Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a)));
-    north.style.left = `${(0.5 + Math.cos(a) * r) * 100}%`;
-    north.style.top = `${(0.5 + Math.sin(a) * r) * 100}%`;
-    north.style.setProperty('--a', `${a + Math.PI / 2}rad`);
-  }
-  return complete;
+  return tiles.draw(ctx, view, MAP_COLORS.outside);
 }

@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Map data: ODbL](https://img.shields.io/badge/map%20data-ODbL-green.svg)](https://www.openstreetmap.org/copyright)
 
-A data pipeline that turns raw OpenStreetMap data into a drivable 3D city in the browser, and a low-poly arcade driving game on top of it. The first city is **Bonifacio Global City (BGC), Taguig**, in Metro Manila.
+Real Metro Manila map data, streamed into the browser as a drivable 3D city. A Node pipeline turns raw OpenStreetMap exports into one compact map file; the browser builds the geometry, collision meshes and physics from it at load time. **Bonifacio Global City (BGC), Taguig** is the first district. The plan is to connect the districts around it and the highways between them, which is where browser geometry, streaming and physics budgets really get tested.
 
 ![Overtaking traffic on University Parkway, BGC, in a city generated from OpenStreetMap data](docs/images/hero.jpg)
 
@@ -20,8 +20,25 @@ A data pipeline that turns raw OpenStreetMap data into a drivable 3D city in the
 | **Rendering** | The whole city in about 50 to 90 draw calls, built in the browser in about 300 to 400 ms; an idle view costs nothing |
 | **Performance work** | High on the development laptop went from 23 FPS to the screen's 144 Hz limit after two measured passes |
 | **Physics** | Collision meshes (82k triangles) built from the map data when you start driving, matching exactly what's drawn; the flyovers are drivable |
-| **Tests** | 591 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
+| **Tests** | 593 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
 | **Download** | 381 KB (gzipped) to see the city; the 859 KB physics chunk loads only when you start driving |
+
+## Algorithms and techniques
+
+| | Where |
+| --- | --- |
+| Equirectangular projection (lat/long to local meters), tested against haversine distances | `src/geo/projection.ts` |
+| Polygon clipping (Sutherland-Hodgman) and earcut triangulation for footprints, land use and road surfaces | `src/geometry/polygon.ts`, `extrude.ts` |
+| Spatial hashing (uniform grids of points and segments) for every "what's near this" query in the pipeline, the map and the street lookup | `src/geometry/spatialGrid.ts` |
+| Road graph with union-find to merge nearby junctions, and graph walks along roads | `pipeline/junctions.ts` |
+| Junction polygons built from where the road edges meet, with a fallback when they don't | `src/geometry/junction.ts` |
+| Rasterization plus flood fill to find unpaved holes between roads, then the same detector reused to pave them | `pipeline/paving.ts`, `pipeline/qaRoads.ts` |
+| Separating axis tests for placement (parked cars, roadblocks), ray casts to keep the chase camera out of walls | `pipeline/parking.ts`, `src/geometry/roadblocks.ts`, `src/car/chaseCamera.ts` |
+| Catmull-Rom splines to round flyovers and ramps, constrained search to place pillars out of the lanes below | `pipeline/smoothRaised.ts`, `pipeline/structures.ts` |
+| Greedy graph coloring to give overlapping roads a draw order (no flicker) | `pipeline/roadLayers.ts` |
+| GLSL shaders for lane markings, zebras, windows and car paint reflections, all from per-vertex data with no textures | `src/scene/` |
+| GPU instancing, distance and view culling, render on demand, adaptive resolution, cached 2D map tiles | `src/scene/`, `src/ui/mapTiles.ts` |
+| A deterministic pipeline and a map QA gate in CI: the map is rebuilt on every push and problem counts can only go down | `pipeline/qa.ts`, `.github/workflows/ci.yml` |
 
 ## How it works
 
@@ -42,32 +59,35 @@ A data pipeline that turns raw OpenStreetMap data into a drivable 3D city in the
 
 ## The game
 
-An open-world arcade driving game on BGC's real streets, for once without the traffic (hence the name). Free roam for now: drive around the city, drift the corners, take the flyovers, and send the roadblocks at the edge flying. Checkpoint races, ride-hailing and police chases are next. It runs in the browser on desktops and phones, nothing to install.
+Free-roam arcade driving on BGC's real streets, for once without the traffic (hence the name). Drift the corners, take the flyovers, send the roadblocks at the edge flying. Checkpoint races, ride-hailing and police chases are next. Runs in the browser on desktops and phones, nothing to install.
 
 **Controls:** W A S D or the arrow keys to drive, Space for the handbrake, R to reset the car, M for the map, Esc to pause. On a phone, hold it sideways and use the buttons on screen.
 
-## Roadmap
+## What's built
 
-- [x] OSM data pipeline, projection and 2D map
-- [x] 3D city: playable area, extruded buildings with estimated heights, road surfaces, land use
-- [x] Flyovers and footbridges with ramps and pillars, road widths fitted to the street, map cleanup
-- [x] Map QA, architecture docs, CI
-- [x] Better roads: lane markings, clean intersections, zebra crossings, sidewalks and curbs; physically based sky with clouds
-- [x] Better buildings: windows, roof details
-- [x] Lighting and surroundings: shadows, tone mapping, Low / Medium / High switch with adaptive resolution; filler city, real skylines and hills past the map
-- [x] Performance: reversed depth, grid-cell culling, render on demand
-- [x] Walls, fences, trees, gates and parking booms from OSM; low-poly tree models built in code
-- [x] Drivable car: Rapier physics with arcade handling, chase camera, brake lights
-- [x] Solid buildings, walls, posts and the playable edge; drivable flyovers and ramps
-- [x] Parked cars along the curbs, with physics near the player
-- [x] A 1.2x map, shinier cars, speed blur, roadblocks and a construction fence at the edge of the drivable area
-- [x] Menu, loading screens, HUD made of road signs, minimap and big map, pause menu
-- [x] Touch controls for a phone held sideways, reset button
-- [ ] Measured on a phone
-- [ ] Street lights and traffic lights, roads you can't leave, fuller empty areas, better buildings, sounds
-- [ ] Live on Vercel
-- [ ] Game modes: sprint from A to B, ride-hailing, light traffic, a police chase
-- [ ] Tile streaming and a bigger map
+- Map pipeline: OSM export to one compact, deterministic map file, with heights, flyovers, junctions, crossings, trees, walls and parked cars worked out by rule
+- Map QA: 24 checks run in CI, each with a baseline that can only go down
+- 3D city: buildings with windows and roof details, painted roads with clean intersections, a physically based sky, shadows, and filler city and real skylines past the edge
+- Performance: three quality tiers, adaptive resolution, grid culling, render on demand, reversed depth
+- Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, parked cars and roadblocks you can push around
+- UI: a road sign menu, loading screens, a road sign HUD with a heading-up minimap and a full map, a pause menu, touch controls for phones
+
+## Planned
+
+- Measure it on a phone, then street lights and traffic lights, roads you can't leave, fuller empty lots, better buildings and sounds
+- First deploy on Vercel
+- Game modes: sprint from A to B, ride-hailing, light traffic, a police chase
+- Tile streaming, then more of Metro Manila: the districts around BGC and the highways between them
+
+## Known issues and fixes
+
+- 3 ramps still overlap a road running alongside them (map QA `ramp-in-lanes`); needs per-ramp width fitting
+- Underpasses are drawn at ground level
+- Zebras are always square to the road, and there are no stop lines or lane arrows yet
+- A few dozen houses poke into alleys and service roads (map QA counts), so some alleys may be blocked
+- 27 small unpaved gaps between roads are left as islands (map QA `paving-hole`)
+- Windows assume 3.2 m floors on every building, and it's always daytime
+- The whole city sits on the GPU at once; tile streaming (planned) is what lets the map grow
 
 ## Getting started
 

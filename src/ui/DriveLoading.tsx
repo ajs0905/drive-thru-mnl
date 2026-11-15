@@ -29,7 +29,8 @@ export function DriveLoading({
 }) {
   const done = Math.min(step, DRIVE_STEPS.length) / DRIVE_STEPS.length;
   return (
-    <div className={hidden ? 'loader out' : 'loader'} style={{ backgroundImage: `url(${background})` }} aria-live="polite">
+    <div className={hidden ? 'loader out' : 'loader'} aria-live="polite">
+      <img className="backdrop" src={background} alt="" draggable={false} />
       <div className="row">
         <div className="sign where">
           <div className="face">
@@ -79,11 +80,11 @@ function Keys() {
         <kbd>S</kbd>
         <kbd>D</kbd>
       </span>
-      <span>Drive (or the arrow keys)</span>
+      <span>Drive (arrow keys work too)</span>
       <span className="caps">
         <kbd className="wide">SPACE</kbd>
       </span>
-      <span>Handbrake, drift</span>
+      <span>Handbrake and drift</span>
       <span className="caps">
         <kbd>R</kbd>
       </span>

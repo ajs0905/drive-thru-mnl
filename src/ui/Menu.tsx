@@ -16,7 +16,8 @@ export interface LoadStatus {
 
 export function Menu({ status, background, quality, onPlay, onSettings, onAbout }: { status: LoadStatus; background: string; quality: string; onPlay: () => void; onSettings: () => void; onAbout: () => void }) {
   return (
-    <div className="menu" style={{ backgroundImage: `url(${background})` }}>
+    <div className="menu">
+      <img className="backdrop" src={background} alt="" draggable={false} fetchPriority="high" />
       <div className="inner">
         <Title />
         {status.error && <p className="error">{status.error}</p>}

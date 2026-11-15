@@ -38,7 +38,7 @@ A side-by-side prototype of 1 and 2 was offered and skipped in favor of deciding
 | World | Collisions with buildings, walls, fences, the playable edge, pillars, trunks, bollards, blocks and gate pillars; camera kept out of walls | Done in 8b |
 | World | Drivable flyovers and ramps, with solid deck edges and barriers as drawn; room to drive underneath | Done in 8c |
 | World | Booms that open as the car comes | 8d |
-| Recovery | Reset (R), automatic reset when upside down or fallen through the world | Done in 8a |
+| Recovery | Reset (R), automatic reset when upside down or fallen through the world; onto the ground below at resting height, 0.5 s apart at most | Done in 8a, no-drop reset later |
 | Recovery | Respawn on the nearest road with a fade | 8d |
 | Camera | Chase camera that trails the car's direction and pulls back with speed | Done in 8a |
 | Camera | Subtle reaction to acceleration (hangs back about a meter on throttle, eases in under braking), view widening with speed | Done (feel step) |
@@ -47,7 +47,7 @@ A side-by-side prototype of 1 and 2 was offered and skipped in favor of deciding
 | Input | Keyboard | Done in 8a |
 | Input | Touch controls, gamepad | 8d |
 | Lights | Headlights glowing, tail lights that brighten while braking | Done in 8a |
-| Lights | Glow halos on every lamp, bigger and brighter while braking | Done (feel step) |
+| Lights | Glow halos on every lamp, bigger and brighter while braking; headlight flares; reverse lights | Done (feel step, flares and reverse lights later) |
 | Lights | Reverse lights, turn signals, headlight beams at night | Polish (night mode) |
 | Feel | Engine sound following the gears, tire screech, crash sounds, horn, skid marks, sparks, tire smoke | Right after the car milestone |
 | Crashes | Scrapes, bounces and spin-outs (from the physics) | With collisions (8b) |

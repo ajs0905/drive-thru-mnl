@@ -6,12 +6,12 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DriveInput } from './controls';
-import { SEDAN } from './spec';
+import { GRAVITY, restLift, SEDAN } from './spec';
 import { createParkedBody, PARKED } from './parked';
 import { buildCollision } from '../geometry/collision';
 import type { MapData, Point } from '../map/types';
 import bgc from '../../public/data/bgc.json?raw';
-import { chassisCollider, chassisInertia, downforce, newDriveState, setupWheels, stepVehicle } from './vehicle';
+import { chassisCollider, chassisInertia, downforce, newDriveState, resetOnGround, setupWheels, stepVehicle } from './vehicle';
 
 const DT = 1 / 60;
 
@@ -109,6 +109,51 @@ describe('the Sedan in Rapier', () => {
     const back = drive(car, { brake: 1 }, 4);
     expect(back).toBeLessThan(-5);
     expect(back).toBeGreaterThan(-SEDAN.tuning.reverseSpeed - 0.5);
+  });
+
+  it('spawned at its resting height, sits planted instead of dropping onto the road', () => {
+    const world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
+    world.createCollider(RAPIER.ColliderDesc.cuboid(500, 0.5, 500).setTranslation(0, -0.3, 0)); // ground top at 0.2
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 0.2 + restLift(SEDAN), 0).setCanSleep(false));
+    world.createCollider(chassisCollider(RAPIER, SEDAN), body);
+    const vc = world.createVehicleController(body);
+    setupWheels(vc, SEDAN);
+    let [lo, hi] = [Infinity, -Infinity];
+    for (let i = 0; i < 60; i++) {
+      vc.updateVehicle(DT);
+      world.timestep = DT;
+      world.step();
+      lo = Math.min(lo, body.translation().y);
+      hi = Math.max(hi, body.translation().y);
+    }
+    expect(hi - lo).toBeLessThan(0.015);
+    expect(Math.abs(body.translation().y - (0.2 + restLift(SEDAN)))).toBeLessThan(0.015);
+  });
+
+  it('resets onto the ground below, the same height however often, ignoring cars and props under it', () => {
+    const car = makeCar();
+    // A flyover deck 6 m up off to the side, and a loose box (a cone, a parked car) right under the car.
+    car.world.createCollider(RAPIER.ColliderDesc.cuboid(10, 0.25, 10).setTranslation(30, 5.75, 0));
+    const loose = car.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 3, 0));
+    car.world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5), loose);
+    car.world.step(); // ray casts see colliders from the next step on
+    const grounded = 0.2 + restLift(SEDAN);
+    car.body.setTranslation({ x: 0, y: 4, z: 0 }, true);
+    car.body.setRotation({ x: 1, y: 0, z: 0, w: 0 }, true); // upside down in the air
+    for (let i = 0; i < 10; i++) {
+      resetOnGround(car.world, RAPIER, car.body, SEDAN, 0.2);
+      expect(car.body.translation().y).toBeCloseTo(grounded, 5);
+    }
+    const r = car.body.rotation();
+    expect(1 - 2 * (r.x * r.x + r.z * r.z)).toBeCloseTo(1, 5); // upright
+    // On the deck, it lands on the deck.
+    car.body.setTranslation({ x: 30, y: 7, z: 0 }, true);
+    resetOnGround(car.world, RAPIER, car.body, SEDAN, 0.2);
+    expect(car.body.translation().y).toBeCloseTo(6 + restLift(SEDAN), 5);
+    // Under it, on the ground (the deck overhead doesn't count).
+    car.body.setTranslation({ x: 30, y: 0.5, z: 0 }, true);
+    resetOnGround(car.world, RAPIER, car.body, SEDAN, 0.2);
+    expect(car.body.translation().y).toBeCloseTo(grounded, 5);
   });
 
   it('stops from 90 km/h on the handbrake alone, gas held or not, a bit later than on the brake', () => {

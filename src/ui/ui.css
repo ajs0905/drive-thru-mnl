@@ -61,7 +61,19 @@ button.sign:disabled {
   overflow: hidden;
   color: #fff;
   font-family: var(--sign-font);
-  background: #0e1217 center / cover no-repeat;
+  background: #0e1217;
+}
+/* The backdrop photo, under the shading (::before) and the signs. */
+.menu > .backdrop,
+.loader > .backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Narrow screens (a phone held upright) crop the sides: keep the car in menu.jpg (at about 45% across) in view. */
+  object-position: 45% 50%;
+  z-index: -1;
 }
 .menu::before {
   content: '';
@@ -342,7 +354,7 @@ button.sign:disabled {
   overflow: hidden;
   font-family: var(--sign-font);
   color: #fff;
-  background: #0e1217 center / cover no-repeat;
+  background: #0e1217;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -633,7 +645,6 @@ kbd.wide {
   box-shadow: inset 0 0 90px 20px rgba(0, 0, 0, 0.55);
 }
 .minimap .me,
-.minimap .north,
 .bigmap .me,
 .bigmap .bar-top {
   z-index: 1;
@@ -645,37 +656,6 @@ kbd.wide {
   width: 16%;
   height: 16%;
   transform: translate(-50%, -50%);
-}
-.minimap .north {
-  /* A compass mark on the rim, not a marker on the map: the letter, and a small pointer facing north (--a). */
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  margin: -9px 0 0 -9px;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 900;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-shadow:
-    0 0 2px #000,
-    0 0 4px #000,
-    0 1px 2px #000;
-}
-.minimap .north::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  margin-left: -5px;
-  border: 5px solid transparent;
-  border-top: 0;
-  border-bottom: 7px solid #e2433b;
-  transform: rotate(var(--a, 0rad)) translateY(-15px);
-  transform-origin: 5px 0;
-  filter: drop-shadow(0 0 1px #000);
 }
 .pause-hint {
   position: absolute;

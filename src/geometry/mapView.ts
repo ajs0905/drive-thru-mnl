@@ -4,7 +4,7 @@
  * names to label, and the name of the street at a point (the HUD's street sign).
  */
 import type { MapData, Point, Road } from '../map/types';
-import { distanceToSegment } from './polygon';
+import { distanceToSegment, pointInRing } from './polygon';
 import { SegmentGrid } from './spatialGrid';
 
 export type MapRoadKind = 'major' | 'minor' | 'service';
@@ -73,7 +73,8 @@ export function mapViewData(map: Pick<MapData, 'roads' | 'buildings' | 'playable
         // Never upside down.
         if (angle > Math.PI / 2) angle -= Math.PI;
         if (angle < -Math.PI / 2) angle += Math.PI;
-        labels.push({ name, p, angle, length: total, kind: best.cls as MapRoadKind });
+        // Outside the drivable edge the maps show nothing, names included.
+        if (!map.playable || map.playable.length < 3 || pointInRing(p, map.playable)) labels.push({ name, p, angle, length: total, kind: best.cls as MapRoadKind });
         break;
       }
       walked += seg;

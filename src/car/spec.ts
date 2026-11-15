@@ -155,3 +155,17 @@ export const SEDAN: CarSpec = {
 export function wheelHardPoint(spec: CarSpec, w: WheelSpec): [number, number, number] {
   return [w.x, spec.wheelY + spec.tuning.suspensionRest, w.z];
 }
+
+/** Gravity in the physics world (m/s^2). */
+export const GRAVITY = 9.81;
+
+/**
+ * How far above (here: below, negative) the road surface the car's origin sits at rest:
+ * its origin is where the wheels touch the ground with the springs unloaded, and the
+ * springs give under its weight (Rapier's suspension force scales with the chassis mass,
+ * so the sag is g / (wheels x stiffness)). Spawning and resetting at this height leaves
+ * nothing to fall: the car is planted at once.
+ */
+export function restLift(spec: CarSpec): number {
+  return -GRAVITY / (spec.wheels.length * spec.tuning.suspensionStiffness);
+}

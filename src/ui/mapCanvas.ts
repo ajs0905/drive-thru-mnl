@@ -1,6 +1,7 @@
 /**
- * Draws the map in 2D on a canvas: roads, buildings, and the drivable edge with everything
- * outside it shaded. The minimap and the big map don't call this every frame: they paste
+ * Draws the map in 2D on a canvas: roads, buildings and the drivable edge. Only the
+ * drivable area is drawn (everything is clipped to the edge, so roads cut off past it
+ * don't show), with a soft shadow along the inside of the edge. The minimap and the big map don't call this every frame: they paste
  * cached tiles drawn with it (mapTiles.ts). Only what's in view is drawn
  * (geometry/mapView.ts buckets roads and buildings into grid cells).
  */
@@ -12,12 +13,13 @@ export const MAP_COLORS = {
   building: '#2a3340',
   edge: '#ff7d22',
   label: '#e8edf2',
-  /** Outside the drivable area: a flat shade, and a soft shadow along the edge (meters wide, opacity). */
-  outside: 'rgba(4,6,10,0.5)',
-  outsideShadow: [
-    [70, 0.1],
-    [40, 0.12],
-    [18, 0.16],
+  /** Outside the drivable area: plain dark. */
+  outside: '#07090d',
+  /** The shadow along the inside of the edge: strokes centered on it (meters wide, opacity), half of each clipped away. */
+  edgeShadow: [
+    [60, 0.14],
+    [32, 0.16],
+    [12, 0.2],
   ] as [number, number][],
   labelHalo: 'rgba(10,14,20,0.85)',
   road: { service: '#4f5964', minor: '#87929e', major: '#c9d1d9' } as Record<MapRoadKind, string>,
@@ -56,14 +58,21 @@ export function toMap(q: Point, view: MapViewport, w: number, h: number): Point 
 
 export function drawMap(ctx: CanvasRenderingContext2D, data: MapViewData, view: MapViewport, opts: DrawOptions = {}) {
   const { width: w, height: h } = ctx.canvas;
-  ctx.fillStyle = MAP_COLORS.ground;
+  const hasEdge = data.edge.length >= 3;
+  ctx.fillStyle = hasEdge ? MAP_COLORS.outside : MAP_COLORS.ground;
   ctx.fillRect(0, 0, w, h);
   // The box of map space the canvas shows (its corners, whatever the rotation).
   const corners = [toMap([0, 0], view, w, h), toMap([w, 0], view, w, h), toMap([0, h], view, w, h), toMap([w, h], view, w, h)];
   const xs = corners.map((p) => p[0]);
   const ys = corners.map((p) => p[1]);
   const pad = 20;
-  const near = inView(data, Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad);
+  const [x0, y0, x1, y1] = [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
+  const near = inView(data, x0, y0, x1, y1);
+  const edge = () => {
+    ctx.beginPath();
+    data.edge.forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.closePath();
+  };
 
   ctx.save();
   ctx.translate(w / 2, h / 2);
@@ -72,6 +81,14 @@ export function drawMap(ctx: CanvasRenderingContext2D, data: MapViewData, view: 
   ctx.translate(-view.center[0], -view.center[1]);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  if (hasEdge) {
+    // Everything from here on stays inside the edge.
+    ctx.save();
+    edge();
+    ctx.clip();
+    ctx.fillStyle = MAP_COLORS.ground;
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  }
 
   if (opts.buildings !== false) {
     ctx.fillStyle = MAP_COLORS.building;
@@ -94,36 +111,20 @@ export function drawMap(ctx: CanvasRenderingContext2D, data: MapViewData, view: 
     ctx.stroke();
   }
 
-  if (data.edge.length >= 3) {
-    // Outside the edge: shaded, darkest right along it, so the drivable area stands out
-    // and the roads cut off past it fade back.
-    const ring = () => data.edge.forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
-    const [x0, y0, x1, y1] = [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x0, y0, x1 - x0, y1 - y0);
-    ring();
-    ctx.closePath();
-    ctx.clip('evenodd');
-    ctx.fillStyle = MAP_COLORS.outside;
-    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-    for (const [width, alpha] of MAP_COLORS.outsideShadow) {
+  if (hasEdge) {
+    // A soft shadow along the inside of the edge (the outer half of each stroke is clipped).
+    for (const [width, alpha] of MAP_COLORS.edgeShadow) {
       ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
       ctx.lineWidth = width;
-      ctx.beginPath();
-      ring();
-      ctx.closePath();
+      edge();
       ctx.stroke();
     }
     ctx.restore();
+    // The edge itself: a thin solid line.
     ctx.strokeStyle = MAP_COLORS.edge;
-    ctx.lineWidth = Math.max(2.5 / view.scale, 3);
-    ctx.setLineDash([8 / view.scale, 6 / view.scale]);
-    ctx.beginPath();
-    data.edge.forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
-    ctx.closePath();
+    ctx.lineWidth = Math.max(2 / view.scale, 2.5);
+    edge();
     ctx.stroke();
-    ctx.setLineDash([]);
   }
   ctx.restore();
 

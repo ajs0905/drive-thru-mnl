@@ -20,9 +20,9 @@ import { kick, STILL, stepBody } from '../car/bodyMotion';
 import { CHASE, cameraPull, chaseView, clipDistance, crashShake, damp, shakeOffset, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
 import { inputFromKeys, KEY_BINDINGS, NO_KEYS } from '../car/controls';
 import { headingOfDirection } from '../car/spawn';
-import { wheelHardPoint, type CarSpec } from '../car/spec';
-import { chassisCollider, newDriveState, setupWheels, stepVehicle, type VehicleController } from '../car/vehicle';
-import { blobShadow, placeShadow, poseBody, prepareCarModel, setBrakeLights, updateHalos } from './carModel';
+import { restLift, wheelHardPoint, type CarSpec } from '../car/spec';
+import { chassisCollider, newDriveState, resetOnGround, RESET, setupWheels, stepVehicle, type VehicleController } from '../car/vehicle';
+import { blobShadow, placeShadow, poseBody, prepareCarModel, setBrakeLights, setReverseLights, updateHalos } from './carModel';
 import { mergeKeys, type DriveSession } from './driveSession';
 
 /** Seconds upside down (or fallen off the world) before the car puts itself back on its wheels. */
@@ -36,6 +36,7 @@ export function Car({
   onSpeed,
   cameraBlockers,
   session,
+  paused = false,
 }: {
   spec: CarSpec;
   spawn: { position: Vec3; yaw: number };
@@ -45,6 +46,8 @@ export function Car({
   cameraBlockers?: RefObject<RapierCollider | null>;
   /** Shared with the HUD and the touch controls. */
   session?: DriveSession;
+  /** The physics is stopped (loading, pause menu, big map): the camera holds still too. */
+  paused?: boolean;
 }) {
   const gltf = useLoader(GLTFLoader, `${import.meta.env.BASE_URL}${spec.model}`);
   const model = useMemo(() => prepareCarModel(gltf.scene), [gltf]);
@@ -60,7 +63,7 @@ export function Car({
 
   const body = useRef<RapierRigidBody>(null);
   const { world, rapier } = useRapier();
-  const sim = useRef({ vc: null as VehicleController | null, drive: newDriveState(), keys: { ...NO_KEYS }, held: { ...NO_KEYS }, reset: false, stuck: 0 });
+  const sim = useRef({ vc: null as VehicleController | null, drive: newDriveState(), keys: { ...NO_KEYS }, held: { ...NO_KEYS }, reset: false, stuck: 0, time: 0, lastReset: -Infinity });
   const view = useRef({
     dir: [0, 1] as [number, number],
     placed: false,
@@ -142,18 +145,27 @@ export function Car({
     const r = b.rotation();
     const upY = 1 - 2 * (r.x * r.x + r.z * r.z);
     s.stuck = upY < 0.3 || b.translation().y < -20 ? s.stuck + dt : 0;
+    s.time += dt;
     if (session?.takeReset()) s.reset = true;
     if (s.reset || s.stuck > STUCK_RESET) {
-      putBackOnWheels(b, spawn.position[1]);
-      Object.assign(s, { reset: false, stuck: 0, drive: { ...newDriveState(), gearbox: { ...s.drive.gearbox, gear: 1, shifting: 0 } } });
+      // Not again while the last reset is still settling: spamming it can't stack anything.
+      if (s.time - s.lastReset >= RESET.cooldown) {
+        resetOnGround(w, rapier, b, spec, spawn.position[1] - restLift(spec));
+        Object.assign(s, { lastReset: s.time, drive: { ...newDriveState(), gearbox: { ...s.drive.gearbox, gear: 1, shifting: 0 } } });
+      }
+      Object.assign(s, { reset: false, stuck: 0 });
     }
     const keys = session ? mergeKeys(s.keys, session.touch, s.held) : s.keys;
     stepVehicle(s.vc, b, spec, s.drive, inputFromKeys(keys), dt);
   });
 
-  useFrame((state, dt) => {
+  useFrame((state, frameDt) => {
     const vc = sim.current.vc;
     if (!vc) return;
+    // Paused, everything holds still (after the first frame, which places the camera).
+    if (paused && view.current.placed) return;
+    // A long gap (coming back from a pause, a slow frame) isn't time to catch up on.
+    const dt = Math.min(frameDt, 0.1);
     // Wheels: suspension travel, steering, spin.
     spec.wheels.forEach((w, i) => {
       const node = model.wheels[w.name];
@@ -216,10 +228,14 @@ export function Car({
       n++;
     }
     placeShadow(shadow, v.pos.x, n > 0 ? y / n : null, v.pos.z, Math.atan2(v.fwd.x, v.fwd.z));
-    setBrakeLights(model, drive.braking);
+    // Backing up: reverse lights on, and no brake lights (the brake key is also reverse).
+    const reversing = speed < -0.3;
+    const braking = drive.braking && !reversing;
+    setBrakeLights(model, braking);
+    setReverseLights(model, reversing);
     v.toCamera.copy(camera.position).sub(v.pos).normalize();
     const facing = v.fwd.dot(v.toCamera);
-    updateHalos(model, drive.braking, -facing, facing);
+    updateHalos(model, braking, -facing, facing, reversing);
     if (session) writeCar(session, v.pos, v.fwd, speed);
     onSpeed?.(speed);
   });
@@ -252,17 +268,4 @@ function writeCar(session: DriveSession, pos: Vector3, fwd: Vector3, speed: numb
   c.heading = headingOfDirection(fwd.x, fwd.z);
   c.speed = speed;
   c.placed = true;
-}
-
-/** Upright, facing the way the car was heading, a little above where it was, at rest. */
-function putBackOnWheels(b: RapierRigidBody, minY: number) {
-  const r = b.rotation();
-  const fwd = new Vector3(0, 0, 1).applyQuaternion(new Quaternion(r.x, r.y, r.z, r.w));
-  const yaw = Math.atan2(fwd.x, fwd.z);
-  const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw);
-  const p = b.translation();
-  b.setTranslation({ x: p.x, y: Math.max(p.y, minY) + 1, z: p.z }, true);
-  b.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
-  b.setLinvel({ x: 0, y: 0, z: 0 }, true);
-  b.setAngvel({ x: 0, y: 0, z: 0 }, true);
 }

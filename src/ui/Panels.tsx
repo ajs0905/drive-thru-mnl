@@ -31,9 +31,9 @@ function Panel({ title, color = 'blue', onClose, children }: { title: string; co
 }
 
 const QUALITY_NOTE: Record<Quality, string> = {
-  low: 'For phones: no shadows or speed blur, simpler trees, fewer cars drawn far away.',
-  medium: 'Shadows, tree models, speed blur. Most laptops.',
-  high: 'Sharper shadows, everything drawn farther out. Desktops and gaming laptops.',
+  low: 'For phones. No shadows or speed blur, simpler trees.',
+  medium: 'Shadows, real trees, speed blur. Fine on most laptops.',
+  high: 'Sharper shadows, everything drawn farther out. Needs a decent GPU.',
 };
 
 export function SettingsPanel({ quality, onQuality, onClose }: { quality: Quality; onQuality: (q: Quality) => void; onClose: () => void }) {
@@ -47,7 +47,7 @@ export function SettingsPanel({ quality, onQuality, onClose }: { quality: Qualit
           </button>
         ))}
       </div>
-      <p>{QUALITY_NOTE[quality]} The resolution also adjusts itself when the frame rate drops.</p>
+      <p>{QUALITY_NOTE[quality]} If the frame rate drops, the resolution goes down a bit on its own.</p>
     </Panel>
   );
 }
@@ -60,8 +60,8 @@ export function AboutPanel({ map, onClose }: { map: MapData | null; onClose: () 
   return (
     <Panel title="HOW IT'S BUILT" onClose={onClose}>
       <p>
-        Every street, building and flyover here comes from OpenStreetMap data, turned into a drivable 3D city by a pipeline: heights worked out where the map has none, flyovers and
-        their ramps raised from bridge tags, junctions paved, parked cars placed by rule, and every step checked by automated map QA.
+        The streets, buildings and flyovers all come from OpenStreetMap. A pipeline turns that data into a city you can drive: it guesses building heights the map doesn&apos;t
+        have, raises flyovers from bridge tags, paves the junctions, parks cars by rule, and every build gets checked by map QA.
       </p>
       {map && s && (
         <dl>
@@ -74,7 +74,7 @@ export function AboutPanel({ map, onClose }: { map: MapData | null; onClose: () 
           {map.pillars && (
             <>
               <dt>{fmt(map.pillars.length)}</dt>
-              <dd>pillars and posts holding up flyovers and canopies</dd>
+              <dd>pillars and posts under flyovers and canopies</dd>
             </>
           )}
           {map.parked && (

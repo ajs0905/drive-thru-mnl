@@ -65,7 +65,7 @@ function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapVie
     const ctx = el.getContext('2d');
     if (!ctx) return;
     // Missing tiles are drawn a few per frame: keep going until they're all there.
-    if (!tiles.draw(ctx, view, MAP_COLORS.ground, 8)) redraw();
+    if (!tiles.draw(ctx, view, MAP_COLORS.outside, 8)) redraw();
     drawMapLabels(ctx, data, view);
     if (me) {
       const [x, y] = toCanvas([car.x, car.y], view, el.width, el.height);

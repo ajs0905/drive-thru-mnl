@@ -9,7 +9,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import { driveCommand, nextSteer, type DriveCommand, type DriveInput } from './controls';
 import { antiSpin, countersteer, driftPush, driftTurn, nextDrifting, nextRearGrip, slipAngle, toLocal, type Vec } from './drift';
 import { driveShare, NEW_GEARBOX, stepGearbox, type Gearbox } from './gearbox';
-import { wheelHardPoint, type CarSpec } from './spec';
+import { restLift, wheelHardPoint, type CarSpec } from './spec';
 
 type Rapier = typeof RAPIER;
 export type VehicleController = RAPIER.DynamicRayCastVehicleController;
@@ -155,4 +155,40 @@ export function stepVehicle(vc: VehicleController, body: RAPIER.RigidBody, spec:
   const turn = driftTurn(input.steer, s.drifting, t) + antiSpin(s.slip, body.angvel().y, t);
   if (turn) body.applyTorqueImpulse({ x: 0, y: turn * chassisInertia(spec)[1] * dt, z: 0 }, true);
   vc.updateVehicle(dt);
+}
+
+/** Reset (R, the reset button, or upside down for a while): how often, and where the ground is looked for. */
+export const RESET = {
+  /** Presses closer together than this (seconds) are ignored, so spamming reset can't stack anything. */
+  cooldown: 0.5,
+  /** The ground is looked for straight down from this far above the car (m), so a flyover deck the car is on counts and one high above doesn't. */
+  probe: 2,
+  /** ...down to this far (m). */
+  reach: 300,
+};
+
+/**
+ * Puts the car back on its wheels where it is: upright, facing the way it was heading,
+ * standing still, at its resting height on the static ground below it (the ground plane,
+ * a road deck; not a parked car or a cone). The height comes from the ground, never from
+ * where the car was, so resetting again and again lands it in the same place. With no
+ * ground found (fallen off the world), it goes to `fallbackY`.
+ */
+export function resetOnGround(world: RAPIER.World, rapier: Rapier, body: RAPIER.RigidBody, spec: CarSpec, fallbackY: number) {
+  const p = body.translation();
+  const r = body.rotation();
+  // Heading from the car's forward (+z) axis, flattened.
+  const fx = 2 * (r.x * r.z + r.w * r.y);
+  const fz = 1 - 2 * (r.x * r.x + r.y * r.y);
+  const yaw = Math.atan2(fx, fz);
+  const from = { x: p.x, y: p.y + RESET.probe, z: p.z };
+  const hit = world.castRay(new rapier.Ray(from, { x: 0, y: -1, z: 0 }), RESET.reach, true, undefined, undefined, undefined, body, (c) => {
+    const parent = c.parent();
+    return !parent || parent.isFixed();
+  });
+  const groundY = hit ? from.y - hit.timeOfImpact : fallbackY;
+  body.setTranslation({ x: p.x, y: groundY + restLift(spec), z: p.z }, true);
+  body.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
+  body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+  body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 }
