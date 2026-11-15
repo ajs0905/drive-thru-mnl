@@ -7,8 +7,8 @@
  * - Steering lock falls off with speed, and the wheels turn toward the input at a
  *   limited rate (faster back to center), so a keyboard tap doesn't jerk the car.
  * - Engine force fades out toward the top speed instead of cutting off.
- * - The handbrake tugs the rear wheels; together with the rear grip from drift.ts
- *   (which it drops) that starts a drift.
+ * - The handbrake brakes the rear wheels hard and cuts the engine while held; together
+ *   with the rear grip from drift.ts (which it drops) a tap while steering starts a drift.
  */
 import { rearSideFriction } from './drift';
 import type { Tuning } from './spec';
@@ -99,6 +99,9 @@ export function driveCommand(input: DriveInput, speed: number, steer: number, t:
     else engine = (-input.brake * t.reverseForce * clamp(1 - (-speed / t.reverseSpeed) ** 2, 0, 1)) / 2;
   }
   if (input.throttle === 0 && input.brake === 0) brake = t.coastBrake;
+  // The handbrake cuts the engine, as with the clutch in: the rear wheels are the driven
+  // ones, and the physics skips a wheel's brake while it has engine force.
+  if (input.handbrake) engine = 0;
   return {
     engine,
     brakeFront: brake,

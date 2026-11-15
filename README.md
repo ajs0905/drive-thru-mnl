@@ -6,7 +6,7 @@
 
 A data pipeline that turns raw OpenStreetMap data into a drivable 3D city in the browser, and a low-poly arcade driving game on top of it. The first city is **Bonifacio Global City (BGC), Taguig**, in Metro Manila.
 
-![Bonifacio Global City, generated from OpenStreetMap data](docs/images/hero.png)
+![Overtaking traffic on University Parkway, BGC, in a city generated from OpenStreetMap data](docs/images/hero.jpg)
 
 ## Results
 
@@ -20,8 +20,8 @@ A data pipeline that turns raw OpenStreetMap data into a drivable 3D city in the
 | **Rendering** | The whole city in about 50 to 90 draw calls, built in the browser in about 300 to 400 ms; an idle view costs nothing |
 | **Performance work** | High on the development laptop went from 23 FPS to the screen's 144 Hz limit after two measured passes |
 | **Physics** | Collision meshes (82k triangles) built from the map data when you start driving, matching exactly what's drawn; the flyovers are drivable |
-| **Tests** | 578 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
-| **Download** | 379 KB (gzipped) to see the city; the 861 KB physics chunk loads only when you start driving |
+| **Tests** | 591 unit tests, including the car's handling run in the real physics engine and an autopilot that drives up a real flyover ramp |
+| **Download** | 381 KB (gzipped) to see the city; the 859 KB physics chunk loads only when you start driving |
 
 ## How it works
 
@@ -34,21 +34,17 @@ A data pipeline that turns raw OpenStreetMap data into a drivable 3D city in the
 - **Scales with the device.** Low, Medium and High tiers plus a resolution that adapts to the frame rate. Shadows, MSAA, tree models and the speed blur are switched by tier; the map and the handling never are.
 - **No edge of the world.** Past the mapped area the city continues as filler blocks out to the haze, with the real skylines of Makati and Ortigas where they actually are. Where the drivable area ends, roads are closed off by roadblocks (concrete barriers, a "road under construction" sign, and barricades, drums and cones you can send flying) and a construction fence runs between them.
 
-![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags](docs/images/flyover.png)
+![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags](docs/images/flyover.jpg)
 
-![Junction polygons, lane markings, zebra crossings and sidewalks, all generated from OSM tags](docs/images/streets.png)
+![Junction polygons, lane markings, zebra crossings and sidewalks, all generated from OSM tags](docs/images/streets.jpg)
 
-![Windows by building type and rooftop water tanks, next to a barangay of low houses](docs/images/buildings.png)
+![Windows by building type, rooftop water tanks and street trees in a barangay of low houses, with the BGC towers behind](docs/images/buildings.jpg)
 
 ## The game
 
-The menu shows right away and the city loads behind it; the Play sign counts up while it does. Press **Play** and the car starts near High Street. Arcade handling on real physics (Rapier): speed-sensitive steering, handbrake drifts with a drift assist, a body that squats and leans, a chase camera that reacts to acceleration and shakes on a crash, and a subtle speed blur past 100 km/h. Buildings, walls and posts are solid, flyovers and their ramps are drivable, and parked cars can be shoved. The game world is 1.2x the size of the real BGC across the ground, so it doesn't feel small at speed.
+An open-world arcade driving game on BGC's real streets, for once without the traffic (hence the name). Free roam for now: drive around the city, drift the corners, take the flyovers, and send the roadblocks at the edge flying. Checkpoint races, ride-hailing and police chases are next. It runs in the browser on desktops and phones, nothing to install.
 
-The HUD is made of Philippine road signs: the speed on a speed limit sign, the street you turn into on a green street sign, and a heading-up minimap. The big map (M) shows the whole drivable area with street names.
-
-Controls: W A S D or the arrow keys, Space for the handbrake (tap it while steering to start a drift, then hold throttle and steer to keep it going), R to reset the car, M for the big map, Esc to pause. A car stuck upside down resets itself after 2 seconds.
-
-On phones: steer with the buttons on the left, handbrake, brake and gas on the right, reset and pause at the top right; tap the minimap for the big map. The game is played sideways: if the phone is held upright, the game is drawn turned, so you just turn the phone (this works with rotation lock on too).
+**Controls:** W A S D or the arrow keys to drive, Space for the handbrake, R to reset the car, M for the map, Esc to pause. On a phone, hold it sideways and use the buttons on screen.
 
 ## Roadmap
 

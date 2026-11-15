@@ -8,7 +8,8 @@ import type { MapViewData } from '../geometry/mapView';
 import type { Point } from '../map/types';
 import type { DriveSession } from '../scene/driveSession';
 import { CarArrow, Close } from './icons';
-import { drawMap, toCanvas, toMap, type MapViewport } from './mapCanvas';
+import { drawMapLabels, MAP_COLORS, toCanvas, toMap, type MapViewport } from './mapCanvas';
+import { MapTiles } from './mapTiles';
 
 export function BigMap({ view, session, touch, onClose }: { view: MapViewData; session: DriveSession; touch: boolean; onClose: () => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -44,6 +45,8 @@ function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapVie
   const fit = () => Math.min(el.width / (b.maxX - b.minX), el.height / (b.maxY - b.minY));
   const view: MapViewport = { center: car.placed ? [car.x, car.y] : [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2], scale: 1, rotation: 0 };
   let frame = 0;
+  // Buildings once zoomed in enough to make them out. Kept between openings of the map.
+  const tiles = tilesFor(data, dpr);
   const size = () => {
     const [w, h] = [Math.round(el.clientWidth * dpr), Math.round(el.clientHeight * dpr)];
     if (el.width !== w || el.height !== h) [el.width, el.height] = [w, h];
@@ -61,7 +64,9 @@ function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapVie
     clamp();
     const ctx = el.getContext('2d');
     if (!ctx) return;
-    drawMap(ctx, data, view, { buildings: view.scale > 0.6 * dpr, labels: true, minRoadPx: 1.5 * dpr });
+    // Missing tiles are drawn a few per frame: keep going until they're all there.
+    if (!tiles.draw(ctx, view, MAP_COLORS.ground, 8)) redraw();
+    drawMapLabels(ctx, data, view);
     if (me) {
       const [x, y] = toCanvas([car.x, car.y], view, el.width, el.height);
       me.style.left = `${x / dpr}px`;
@@ -132,4 +137,14 @@ function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapVie
     el.removeEventListener('wheel', wheel);
     window.removeEventListener('resize', redraw);
   };
+}
+
+/** The big map's tiles, one cache per map (and screen density), kept while the map stays loaded. */
+const tileCaches = new WeakMap<MapViewData, { dpr: number; tiles: MapTiles }>();
+function tilesFor(data: MapViewData, dpr: number): MapTiles {
+  const cached = tileCaches.get(data);
+  if (cached?.dpr === dpr) return cached.tiles;
+  const tiles = new MapTiles(data, (level) => ({ buildings: level > 0.6 * dpr, minRoadPx: 1.5 * dpr }), 96);
+  tileCaches.set(data, { dpr, tiles });
+  return tiles;
 }

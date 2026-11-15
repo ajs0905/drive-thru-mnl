@@ -37,7 +37,6 @@ export default function Drive({
   map,
   parked,
   speedBlur = false,
-  msaa = false,
   roadblocks,
   start,
   session,
@@ -46,7 +45,6 @@ export default function Drive({
   map: MapData;
   parked?: ParkedPoses;
   speedBlur?: boolean;
-  msaa?: boolean;
   /** The roadblocks' loose pieces and where moved ones are (shared with the renderer). */
   roadblocks?: { loose: LooseProp[]; poses: ParkedPoses };
   /** Where the car starts; nearest the camera's target if not given. */
@@ -89,7 +87,7 @@ export default function Drive({
       {roadblocks && roadblocks.loose.length > 0 && (
         <ParkedPhysics cars={roadblocks.loose} poses={roadblocks.poses} spawn={spawnAt} options={ROADBLOCK_POOL} groundY={ROADBLOCK_Y} />
       )}
-      {speedBlur && <SpeedBlur speed={speed} msaa={msaa} />}
+      {speedBlur && <SpeedBlur speed={speed} />}
     </Physics>
   );
 }

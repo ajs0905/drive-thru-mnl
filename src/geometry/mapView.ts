@@ -100,24 +100,37 @@ export function inView(data: MapViewData, minX: number, minY: number, maxX: numb
 
 /**
  * The street at a point: the named drivable road whose surface (plus a little) the point
- * is on, nearest first. `raised` (the car is up on a flyover) prefers raised roads.
+ * is on. `raised` (the car is up on a flyover) prefers raised roads. Given the car's
+ * `heading` (map radians), a point on two streets at once (a junction) gets the one the
+ * car is driving along, not the cross street; otherwise the nearest.
  */
-export function streetNameLookup(map: Pick<MapData, 'roads'>): (p: Point, raised?: boolean) => string | undefined {
+export function streetNameLookup(map: Pick<MapData, 'roads'>): (p: Point, raised?: boolean, heading?: number) => string | undefined {
   const grid = new SegmentGrid<Road>(40);
   for (const r of map.roads) {
     if (r.cls === 'path' || !r.name) continue;
     for (let i = 0; i + 1 < r.points.length; i++) grid.insert(r.points[i], r.points[i + 1], r);
   }
-  return (p, raised = false) => {
-    let best: { d: number; name: string } | undefined;
+  return (p, raised = false, heading) => {
+    let best: { score: number; d: number; name: string } | undefined;
     for (const e of grid.query(p, p, 20)) {
       const isRaised = !!e.item.z?.some((z) => z > 1);
-      const d = distanceToSegment(p, e.a, e.b) - e.item.w / 2 + (isRaised === raised ? 0 : 6);
-      if (d < 3 && (!best || d < best.d)) best = { d, name: e.item.name! };
+      const d = distanceToSegment(p, e.a, e.b) - e.item.w / 2;
+      if (d >= 3) continue;
+      let score = Math.max(0, d) + (isRaised === raised ? 0 : 6);
+      if (heading !== undefined) {
+        const len = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) || 1;
+        // 0 along the road, either way; 1 straight across it.
+        score += STREET_ACROSS * Math.abs(((e.b[0] - e.a[0]) * Math.sin(heading) - (e.b[1] - e.a[1]) * Math.cos(heading)) / len);
+      }
+      if (score >= 3 + (heading !== undefined ? STREET_ACROSS : 0)) continue;
+      if (!best || score < best.score || (score === best.score && d < best.d)) best = { score, d, name: e.item.name! };
     }
     return best?.name;
   };
 }
+
+/** How much a road running across the car's heading counts against it (as meters off its surface). */
+const STREET_ACROSS = 4;
 
 /** Map heading (radians, counter-clockwise from east) to a heading-up view rotation: rotate the map by this so the heading points up the screen. */
 export function headingUpRotation(heading: number): number {

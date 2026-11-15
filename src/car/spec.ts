@@ -24,7 +24,7 @@ export interface Tuning {
   reverseSpeed: number;
   /** Brake impulse per wheel per step, full pedal. */
   brake: number;
-  /** Rear brake with the handbrake (a tug that breaks the rear loose, not a lock), and the light drag when coasting. */
+  /** Rear brake with the handbrake (strong: it cuts the engine and stops the car, a bit later than the brake pedal), and the light drag when coasting. */
   handbrake: number;
   coastBrake: number;
   /** Steering lock (radians) at a standstill and at top speed; in between it falls off with speed. */
@@ -119,7 +119,7 @@ export const SEDAN: CarSpec = {
     topSpeed: 38,
     reverseSpeed: 9,
     brake: 40,
-    handbrake: 8,
+    handbrake: 50,
     coastBrake: 2,
     maxSteer: 0.55,
     minSteer: 0.1,

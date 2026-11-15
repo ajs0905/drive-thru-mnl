@@ -1,6 +1,6 @@
 import { MapControls } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { startSpot } from './car/spawn';
 import { mapViewData, streetNameLookup } from './geometry/mapView';
 import { loadMap, type MapSource } from './map/loadMap';
@@ -51,8 +51,6 @@ const MAP_VIEW = PARAMS.has('cam') || PARAMS.get('view') === 'map';
 const DEBUG = MAP_VIEW || PARAMS.has('debug');
 /** A phone or tablet: touch controls, and the touch version of the help. */
 const TOUCH = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-/** Shown on the first drive only, until the player presses a key: remembered in the browser. */
-const SEEN_KEY = 'drive-thru-mnl.seen-controls';
 const MENU_IMAGE = `${import.meta.env.BASE_URL}menu.jpg`;
 
 // Checked once: reversed depth if the GPU has it, otherwise a logarithmic depth buffer.
@@ -76,22 +74,6 @@ interface Perf {
 /** Runs `fn` after the browser has painted what's on screen now (two animation frames). */
 function afterPaint(fn: () => void) {
   requestAnimationFrame(() => requestAnimationFrame(fn));
-}
-
-function seenControls(): boolean {
-  try {
-    return window.localStorage.getItem(SEEN_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function rememberControls() {
-  try {
-    window.localStorage.setItem(SEEN_KEY, '1');
-  } catch {
-    // storage can be unavailable (private mode)
-  }
 }
 
 const LEGEND: [string, string][] = [
@@ -141,6 +123,14 @@ function AdaptiveResolution({ factor, onChange }: { factor: number; onChange: (f
     }
   });
   return null;
+}
+
+/**
+ * No right-click menu over the game (it offered to save or copy the 3D view as an image),
+ * except on links, so they can still be opened in a new tab.
+ */
+function noContextMenu(e: MouseEvent) {
+  if (!(e.target instanceof Element && e.target.closest('a'))) e.preventDefault();
 }
 
 /** Starts the camera south-east of the playable area, looking at its center. */
@@ -280,14 +270,13 @@ export default function App() {
   }, [session]);
 
   // The car is placed once its first frame has run: then the loading screen waits for a
-  // key on the first drive, or fades out.
+  // key or a tap (so there's time to read the controls) before it fades out.
   useEffect(() => {
     if (!driving || drive.step !== STEP.solid || !drive.mounted) return;
     let frame = 0;
     const watch = () => {
       if (session.car.placed) {
-        const first = !seenControls();
-        setDrive((d) => ({ ...d, step: STEP.done, waiting: first, loaderShown: first }));
+        setDrive((d) => ({ ...d, step: STEP.done, waiting: true, loaderShown: true }));
         return;
       }
       frame = requestAnimationFrame(watch);
@@ -297,7 +286,6 @@ export default function App() {
   }, [driving, drive.step, drive.mounted, session]);
 
   const startPlaying = useCallback(() => {
-    rememberControls();
     setDrive((d) => ({ ...d, waiting: false, loaderShown: false }));
   }, []);
 
@@ -330,7 +318,7 @@ export default function App() {
   const estimated = map ? map.buildings.filter((b) => b.hSrc === 'estimate').length : 0;
 
   return (
-    <div className={TOUCH ? 'app touch' : 'app'} style={sideways}>
+    <div className={TOUCH ? 'app touch' : 'app'} style={sideways} onContextMenu={noContextMenu}>
       {view && (
         <Canvas
           // A new canvas per quality: shadows and buffers are set up once, at creation.
@@ -384,7 +372,6 @@ export default function App() {
                 map={map}
                 parked={poses}
                 speedBlur={settings.speedBlur}
-                msaa={settings.msaa}
                 roadblocks={roadblocks ? { loose: roadblocks.loose, poses: blockPoses } : undefined}
                 start={MAP_VIEW ? undefined : start}
                 session={session}

@@ -5,9 +5,11 @@
  * together with the invisible wall behind it. Up the road from it, square to the road and
  * centered on its centerline: a "ROAD UNDER CONSTRUCTION" sign, a row of barricades (and
  * drums at its ends) across the road and its sidewalks, and cones scattered in front, all
- * facing the player and all knockable. Nothing is placed where it would touch a building:
- * on tight streets the row just gets shorter. Where the edge runs along a road instead of across it, there's only
- * the concrete line.
+ * facing the player and all knockable. One roadblock per road crossing the edge, or per
+ * group of crossings close together (the two halves of a divided road, a fork, small
+ * streets side by side), so rows never stack or cross. Nothing is placed where it would
+ * touch a building or another loose piece: on tight streets the row just gets shorter.
+ * Where the edge runs along a road instead of across it, there's only the concrete line.
  *
  * Laid out at run time from the edge and the roads, seeded by the position along the
  * edge, so it's the same on every load and the renderer, the collisions and the physics
@@ -16,7 +18,7 @@
 import type { Building, Point, Ring, Road } from '../map/types';
 import { seeded } from '../map/hash';
 import { buildingTests, EDGE_KIND, edgeStretches } from './edgeFence';
-import { distanceToSegment, withWinding } from './polygon';
+import { withWinding } from './polygon';
 import { SegmentGrid } from './spatialGrid';
 
 export type RoadblockKind = 'concrete' | 'barricade' | 'drum' | 'cone' | 'sign';
@@ -63,10 +65,18 @@ export const ROADBLOCK = {
   /** Signs on roads at least this wide (m). */
   sign: { minRoad: 3 },
   /**
-   * Longer than this (m), a stretch isn't a road crossing the edge but the edge running
-   * along a road: it gets the concrete line only, like a barrier closing off a lane.
+   * Roads meeting the edge less square than this (the dot product of the road's direction
+   * and the edge's normal) run along it rather than across it: they get the concrete line
+   * only, like a barrier closing off a lane.
    */
-  crossingMax: 30,
+  minFacing: 0.35,
+  /**
+   * Crossings whose rows (road plus sidewalks) come within this distance (m) along the
+   * edge share one roadblock; they share its direction when they run this much the same
+   * way (dot product), as the halves of a divided road do.
+   */
+  groupGap: 1,
+  sameWay: 0.9,
 };
 
 /** Physics of the loose pieces (scene/roadblockBodies.ts): mass (kg) and collider half sizes (m, before `ROADBLOCK.scale`: x along the row, y up, z across). */
@@ -144,24 +154,129 @@ export function barricadeRow(width: number, bw: number, dw: number, g: number): 
   return ['drum', ...half, ...centre, ...half, 'drum'];
 }
 
-/** Every roadblock piece along the playable edge (any winding), clear of the buildings. */
+/** Where a ground road's centerline crosses the playable edge. */
+export interface EdgeCrossing {
+  road: Road;
+  /** The crossing point, and how far along the edge it is (m). */
+  p: Point;
+  at: number;
+  /** The road's direction into the playable area, and the edge's inward normal there (unit vectors). */
+  dir: Point;
+  normal: Point;
+}
+
+/**
+ * Every place a ground road's centerline crosses the edge (a counter-clockwise ring), at
+ * least `minFacing` square to it (the dot product of the road's direction and the edge's
+ * inward normal; lower is a road running along the edge, which only gets concrete).
+ */
+export function edgeCrossings(ccw: Ring, roads: Road[], minFacing = ROADBLOCK.minFacing): EdgeCrossing[] {
+  const edge = new SegmentGrid<{ start: number; normal: Point }>(30);
+  let at = 0;
+  for (let i = 0; i < ccw.length; i++) {
+    const [a, b] = [ccw[i], ccw[(i + 1) % ccw.length]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 1e-6) continue;
+    edge.insert(a, b, { start: at, normal: [-(b[1] - a[1]) / len, (b[0] - a[0]) / len] });
+    at += len;
+  }
+  const out: EdgeCrossing[] = [];
+  for (const road of roads) {
+    if (road.cls === 'path') continue;
+    for (let i = 0; i + 1 < road.points.length; i++) {
+      if (road.z && Math.max(road.z[i], road.z[i + 1]) > 1) continue; // flyovers pass over the edge
+      const [a, b] = [road.points[i], road.points[i + 1]];
+      for (const e of edge.query(a, b)) {
+        const hit = segmentHit(a, b, e.a, e.b);
+        if (!hit) continue;
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        let dir: Point = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+        const n = e.item.normal;
+        if (dir[0] * n[0] + dir[1] * n[1] < 0) dir = [-dir[0], -dir[1]];
+        if (dir[0] * n[0] + dir[1] * n[1] < minFacing) continue;
+        const p: Point = [e.a[0] + (e.b[0] - e.a[0]) * hit, e.a[1] + (e.b[1] - e.a[1]) * hit];
+        out.push({ road, p, at: e.item.start + hit * Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]), dir, normal: n });
+      }
+    }
+  }
+  return out.sort((x, y) => x.at - y.at || x.road.id.localeCompare(y.road.id));
+}
+
+/** Where segment ab crosses segment cd, as a share of cd (ends included), or null. */
+function segmentHit(a: Point, b: Point, c: Point, d: Point): number | null {
+  const [rx, ry, sx, sy] = [b[0] - a[0], b[1] - a[1], d[0] - c[0], d[1] - c[1]];
+  const den = rx * sy - ry * sx;
+  if (Math.abs(den) < 1e-12) return null;
+  const t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / den;
+  const u = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / den;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? u : null;
+}
+
+/** Half of the stretch of edge a crossing's road and sidewalks take up (m). */
+const edgeHalf = (c: EdgeCrossing) => (c.road.w / 2 + ROADBLOCK.sidewalk) / (c.dir[0] * c.normal[0] + c.dir[1] * c.normal[1]);
+
+/**
+ * Crossings close enough along the edge that their rows would overlap, grouped: the two
+ * halves of a divided road, a fork just inside the edge, small streets side by side, or a
+ * road split where it meets the edge. Each group gets one roadblock.
+ */
+export function crossingGroups(crossings: EdgeCrossing[], edgeLength: number): EdgeCrossing[][] {
+  const groups: { list: EdgeCrossing[]; end: number }[] = [];
+  for (const c of crossings) {
+    const last = groups[groups.length - 1];
+    if (last && c.at - edgeHalf(c) <= last.end + ROADBLOCK.groupGap) {
+      last.list.push(c);
+      last.end = Math.max(last.end, c.at + edgeHalf(c));
+    } else groups.push({ list: [c], end: c.at + edgeHalf(c) });
+  }
+  // The edge is a loop: the last group can run into the first.
+  if (groups.length > 1) {
+    const [first, last] = [groups[0], groups[groups.length - 1]];
+    if (last.end - edgeLength + ROADBLOCK.groupGap >= first.list[0].at - edgeHalf(first.list[0])) {
+      first.list.unshift(...last.list);
+      groups.pop();
+    }
+  }
+  return groups.map((g) => g.list);
+}
+
+/** Do two convex footprints overlap? */
+function overlaps(a: Point[], b: Point[]): boolean {
+  // Separating axis test on the edges of both.
+  for (const shape of [a, b])
+    for (let i = 0; i < shape.length; i++) {
+      const [p, q] = [shape[i], shape[(i + 1) % shape.length]];
+      const [ax, ay] = [q[1] - p[1], p[0] - q[0]];
+      const span = (s: Point[]) => s.map((v) => v[0] * ax + v[1] * ay);
+      const [sa, sb] = [span(a), span(b)];
+      if (Math.max(...sa) <= Math.min(...sb) || Math.max(...sb) <= Math.min(...sa)) return false;
+    }
+  return true;
+}
+
+/** Every roadblock piece along the playable edge (any winding), clear of the buildings and of each other. */
 export function roadblockLayout(ring: Ring, roads: Road[], buildings: Building[] = []): RoadblockProp[] {
   if (ring.length < 3) return [];
   const tests = buildingTests(buildings, ring);
   const { touches } = tests;
   const ccw = withWinding(ring, true);
-  const ground = new SegmentGrid<Road>(30);
-  for (const r of roads) {
-    if (r.cls === 'path') continue;
-    for (let i = 0; i < r.points.length - 1; i++) if (!r.z || Math.max(r.z[i], r.z[i + 1]) <= 1) ground.insert(r.points[i], r.points[i + 1], r);
-  }
   const k = ROADBLOCK.scale;
   const out: RoadblockProp[] = [];
-  /** Adds a piece unless it would stand in a building. */
+  const looseFeet: Point[][] = [];
+  /** Adds a piece unless it would stand in a building (or, loose ones, on another loose piece). */
   const place = (prop: RoadblockProp) => {
     const [l, d] = footprint(prop.kind);
-    if (!touches(roadblockCorners(prop.p, prop.rot, l, d))) out.push(prop);
+    const foot = roadblockCorners(prop.p, prop.rot, l, d);
+    if (touches(foot)) return;
+    if (prop.kind !== 'concrete') {
+      if (looseFeet.some((f) => overlaps(f, foot))) return;
+      looseFeet.push(foot);
+    }
+    out.push(prop);
   };
+
+  // Back row: concrete barriers end to end along the edge wherever a road (and its
+  // sidewalks) meets it, centered on each stretch.
   for (const s of edgeStretches(ccw, roads, buildings, tests)) {
     if (s.kind !== EDGE_KIND.barrier) continue;
     const length = s.to - s.from;
@@ -170,50 +285,58 @@ export function roadblockLayout(ring: Ring, roads: Road[], buildings: Building[]
     const [ux, uy] = [(s.b[0] - s.a[0]) / len, (s.b[1] - s.a[1]) / len];
     // Inside a counter-clockwise ring is to the left of each edge.
     const [nx, ny] = [-uy, ux];
-    const edgeRot = Math.atan2(ny, nx);
-    const onEdge = (along: number, inward: number): Point => [
-      round2(s.a[0] + ux * (s.from + along) + nx * inward),
-      round2(s.a[1] + uy * (s.from + along) + ny * inward),
-    ];
-
-    // Back row: concrete barriers end to end along the edge, centered on the stretch.
     const { gap, row } = ROADBLOCK.concrete;
     const cl = CONCRETE_SIZE[0];
     const n = Math.max(1, Math.round((length + gap) / (cl + gap)));
     const span = n * cl + (n - 1) * gap;
-    for (let i = 0; i < n; i++) place({ kind: 'concrete', p: onEdge((length - span) / 2 + cl / 2 + i * (cl + gap), row), rot: edgeRot });
-    if (length > ROADBLOCK.crossingMax) continue;
-
-    // The road this stretch closes: the one nearest its middle. The loose rows stand square
-    // to it, centered on where its centerline meets the edge, facing up the road.
-    const mid = onEdge(length / 2, 0);
-    let best: { d: number; a: Point; b: Point; road: Road } | undefined;
-    for (const e of ground.query(mid, mid, 20)) {
-      const d = distanceToSegment(mid, e.a, e.b);
-      if (!best || d < best.d) best = { d, a: e.a, b: e.b, road: e.item };
+    for (let i = 0; i < n; i++) {
+      const along = s.from + (length - span) / 2 + cl / 2 + i * (cl + gap);
+      place({ kind: 'concrete', p: [round2(s.a[0] + ux * along + nx * row), round2(s.a[1] + uy * along + ny * row)], rot: Math.atan2(ny, nx) });
     }
-    if (!best) continue;
-    let [dx, dy] = [best.b[0] - best.a[0], best.b[1] - best.a[1]];
-    const dl = Math.hypot(dx, dy) || 1;
-    [dx, dy] = [dx / dl, dy / dl];
-    if (dx * nx + dy * ny < 0) [dx, dy] = [-dx, -dy];
+  }
+
+  // The loose pieces: one roadblock per road crossing the edge (or group of crossings close
+  // together), square to the road, centered on it, facing up the road. Widest roads first,
+  // so where two would clash the bigger road keeps its row.
+  const crossings = edgeCrossings(ccw, roads);
+  const edgeLength = ccw.reduce((sum, p, i) => sum + Math.hypot(ccw[(i + 1) % ccw.length][0] - p[0], ccw[(i + 1) % ccw.length][1] - p[1]), 0);
+  const groups = crossingGroups(crossings, edgeLength);
+  const widest = (g: EdgeCrossing[]) => Math.max(...g.map((c) => c.road.w));
+  for (const group of [...groups].sort((a, b) => widest(b) - widest(a) || a[0].at - b[0].at)) {
+    // The edge's inward normal here, and the row's direction: along the roads when they run
+    // the same way (a divided road), else straight in from the edge (a fork).
+    const sum = (f: (c: EdgeCrossing) => Point): Point => {
+      const v = group.reduce<Point>((s, c) => [s[0] + f(c)[0], s[1] + f(c)[1]], [0, 0]);
+      const l = Math.hypot(v[0], v[1]) || 1;
+      return [v[0] / l, v[1] / l];
+    };
+    const [nx, ny] = sum((c) => c.normal);
+    const parallel = group.every((a) => group.every((b) => a.dir[0] * b.dir[0] + a.dir[1] * b.dir[1] >= ROADBLOCK.sameWay));
+    const [dx, dy] = parallel ? sum((c) => c.dir) : [nx, ny];
     const facing = dx * nx + dy * ny;
-    if (facing < 0.35) continue; // the road runs almost along the edge: concrete only
-    // Where the centerline meets the edge line.
-    const t = ((mid[0] - best.a[0]) * nx + (mid[1] - best.a[1]) * ny) / facing;
-    const cross: Point = [best.a[0] + dx * t, best.a[1] + dy * t];
-    const c = Math.hypot(cross[0] - mid[0], cross[1] - mid[1]) < length / 2 ? cross : mid;
+    if (facing < ROADBLOCK.minFacing) continue;
     const rot = Math.atan2(dy, dx);
     const [px, py] = [dy, -dx]; // across the road
-    // Barricades across the road and onto the sidewalks; cones on the road itself.
-    const width = Math.min(best.road.w, length);
-    const fullWidth = Math.min(best.road.w + 2 * ROADBLOCK.sidewalk, length);
+    // Where the roads' surfaces reach across the row, measured from the first crossing.
+    const c0 = group[0].p;
+    let [lo, hi] = [Infinity, -Infinity];
+    for (const c of group) {
+      const x = (c.p[0] - c0[0]) * px + (c.p[1] - c0[1]) * py;
+      const half = c.road.w / 2 / Math.max(0.5, Math.abs(c.dir[0] * dx + c.dir[1] * dy));
+      [lo, hi] = [Math.min(lo, x - half), Math.max(hi, x + half)];
+    }
+    // The row's center, slid along the edge to the middle of the roads.
+    const [ux, uy] = [ny, -nx]; // along the edge
+    const slide = (lo + hi) / 2 / (ux * px + uy * py || 1);
+    const c: Point = [c0[0] + ux * slide, c0[1] + uy * slide];
+    const width = hi - lo;
+    const fullWidth = width + 2 * ROADBLOCK.sidewalk;
     // Far enough up the road that the whole row is inside the edge, even on a slant.
     const room = (depth: number) => Math.max(depth, (ROADBLOCK.minRoom + (fullWidth / 2) * Math.abs(px * nx + py * ny)) / facing);
     const at = (depth: number, across: number): Point => [round2(c[0] + dx * room(depth) + px * across), round2(c[1] + dy * room(depth) + py * across)];
-    const rand = seeded(`roadblock:${Math.round(s.at * 10)}`);
+    const rand = seeded(`roadblock:${Math.round(group[0].at * 10)}`);
 
-    // Barricade row across the road and its sidewalks, symmetric about the centerline: a
+    // Barricade row across the roads and their sidewalks, symmetric about the middle: a
     // drum at each end, barricades between, and a drum in the middle when there's room.
     const [bw, dw, g] = [ROADBLOCK.loose.barricade.width * k, ROADBLOCK.loose.drum.width * k, ROADBLOCK.gap * k];
     const pieces = barricadeRow(fullWidth, bw, dw, g);
@@ -222,8 +345,8 @@ export function roadblockLayout(ring: Ring, roads: Road[], buildings: Building[]
       pieces.slice(1).map(() => g),
     ).forEach((x, i) => place({ kind: pieces[i], p: at(ROADBLOCK.barricadeRow, x), rot }));
 
-    // The sign, on the centerline just behind the barricades.
-    if (best.road.w >= ROADBLOCK.sign.minRoad) place({ kind: 'sign', p: at(ROADBLOCK.signRow, 0), rot });
+    // The sign, in the middle just behind the barricades.
+    if (widest(group) >= ROADBLOCK.sign.minRoad) place({ kind: 'sign', p: at(ROADBLOCK.signRow, 0), rot });
 
     // Cones scattered in a loose band in front, across the road: evenly spread, but each
     // nudged a little, at its own distance and turned its own way, the odd one missing.
@@ -232,10 +355,10 @@ export function roadblockLayout(ring: Ring, roads: Road[], buildings: Building[]
     const spread = width / count;
     const [near, far] = ROADBLOCK.cones.band;
     for (let i = 0; i < count; i++) {
-      const [skip, dx, dd, turn] = [rand(), rand(), rand(), rand()];
+      const [skip, jx, jd, turn] = [rand(), rand(), rand(), rand()];
       if (skip < ROADBLOCK.cones.missing) continue;
-      const across = (i - (count - 1) / 2) * spread + (dx - 0.5) * spread * 0.5;
-      place({ kind: 'cone', p: at(near + dd * (far - near), across), rot: rot + (turn - 0.5) * 1.2 });
+      const across = (i - (count - 1) / 2) * spread + (jx - 0.5) * spread * 0.5;
+      place({ kind: 'cone', p: at(near + jd * (far - near), across), rot: rot + (turn - 0.5) * 1.2 });
     }
   }
   return out;

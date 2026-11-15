@@ -91,6 +91,43 @@ describe('roadblockLayout', () => {
     }
   });
 
+  it('gives the two halves of a divided road one roadblock across both', () => {
+    const half = (id: string, x: number): Road => ({ ...road, id, w: 7, oneway: true, points: [[x, -40], [x, 40]] });
+    const out = roadblockLayout(square, [half('a', 45), half('b', 55)]);
+    expect(out.filter((p) => p.kind === 'sign')).toHaveLength(1);
+    const row = out.filter((p) => p.kind === 'barricade' || p.kind === 'drum');
+    expect(new Set(row.map((p) => p.p[1])).size).toBe(1);
+    const xs = row.map((p) => p.p[0]);
+    expect(Math.min(...xs)).toBeLessThan(42);
+    expect(Math.max(...xs)).toBeGreaterThan(58);
+  });
+
+  it('lays out one roadblock where a road crosses the edge at one of its corners', () => {
+    const cornered: Ring = [[0, 0], [50, 0], [100, 0], [100, 100], [0, 100]];
+    const out = roadblockLayout(cornered, [road]);
+    expect(out.filter((p) => p.kind === 'sign')).toHaveLength(1);
+    expect(out.filter((p) => p.kind !== 'concrete').map((p) => p.kind)).toEqual(props.filter((p) => p.kind !== 'concrete').map((p) => p.kind));
+  });
+
+  it('closes a fork just inside the edge with one row straight across, and no two loose pieces overlap', () => {
+    const left: Road = { ...road, id: 'l', w: 6, points: [[49, -20], [47, 0], [30, 40]] };
+    const right: Road = { ...road, id: 'r2', w: 6, points: [[51, -20], [53, 0], [70, 40]] };
+    const out = roadblockLayout(square, [left, right]);
+    expect(out.filter((p) => p.kind === 'sign')).toHaveLength(1);
+    const loose = out.filter((p) => p.kind !== 'concrete');
+    for (const p of loose.filter((q) => q.kind !== 'cone')) expect(Math.sin(p.rot)).toBeCloseTo(1);
+    const size: Record<string, [number, number]> = { barricade: [2.5, 0.875], drum: [0.775, 0.775], cone: [0.525, 0.525], sign: [1.5, 0.875] };
+    const feet = loose.map((p) => roadblockCorners(p.p, p.rot, ...size[p.kind]));
+    feet.forEach((a, i) => feet.slice(i + 1).forEach((b) => expect(a.some((q) => pointInRing(q, b)) || b.some((q) => pointInRing(q, a))).toBe(false)));
+  });
+
+  it('has only the concrete line where the edge runs along a road', () => {
+    const along: Road = { ...road, id: 'along', points: [[10, 2], [90, 2]] };
+    const out = roadblockLayout(square, [along]);
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.every((p) => p.kind === 'concrete')).toBe(true);
+  });
+
   it('is the same every time, and has nothing where no road crosses the edge', () => {
     expect(roadblockLayout(square, [road])).toEqual(props);
     expect(roadblockLayout(square, [])).toEqual([]);

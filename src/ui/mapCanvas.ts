@@ -1,7 +1,8 @@
 /**
- * Draws the map in 2D on a canvas, for the minimap (heading-up, around the car) and the
- * big map (north-up, pan and zoom). Only what's in view is drawn (geometry/mapView.ts
- * buckets roads and buildings into grid cells).
+ * Draws the map in 2D on a canvas: roads, buildings, and the drivable edge with everything
+ * outside it shaded. The minimap and the big map don't call this every frame: they paste
+ * cached tiles drawn with it (mapTiles.ts). Only what's in view is drawn
+ * (geometry/mapView.ts buckets roads and buildings into grid cells).
  */
 import { inView, type MapRoadKind, type MapViewData } from '../geometry/mapView';
 import type { Point } from '../map/types';
@@ -11,6 +12,13 @@ export const MAP_COLORS = {
   building: '#2a3340',
   edge: '#ff7d22',
   label: '#e8edf2',
+  /** Outside the drivable area: a flat shade, and a soft shadow along the edge (meters wide, opacity). */
+  outside: 'rgba(4,6,10,0.5)',
+  outsideShadow: [
+    [70, 0.1],
+    [40, 0.12],
+    [18, 0.16],
+  ] as [number, number][],
   labelHalo: 'rgba(10,14,20,0.85)',
   road: { service: '#4f5964', minor: '#87929e', major: '#c9d1d9' } as Record<MapRoadKind, string>,
 };
@@ -87,6 +95,27 @@ export function drawMap(ctx: CanvasRenderingContext2D, data: MapViewData, view: 
   }
 
   if (data.edge.length >= 3) {
+    // Outside the edge: shaded, darkest right along it, so the drivable area stands out
+    // and the roads cut off past it fade back.
+    const ring = () => data.edge.forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    const [x0, y0, x1, y1] = [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, x1 - x0, y1 - y0);
+    ring();
+    ctx.closePath();
+    ctx.clip('evenodd');
+    ctx.fillStyle = MAP_COLORS.outside;
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    for (const [width, alpha] of MAP_COLORS.outsideShadow) {
+      ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ring();
+      ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.restore();
     ctx.strokeStyle = MAP_COLORS.edge;
     ctx.lineWidth = Math.max(2.5 / view.scale, 3);
     ctx.setLineDash([8 / view.scale, 6 / view.scale]);
@@ -106,14 +135,14 @@ function drawLabels(ctx: CanvasRenderingContext2D, data: MapViewData, view: MapV
   const { width: w, height: h } = ctx.canvas;
   const dpr = Math.max(1, Math.min(3, w / Math.max(1, ctx.canvas.clientWidth || w)));
   const size = Math.round(12 * dpr);
-  ctx.font = `700 ${size}px Overpass, 'Helvetica Neue', Arial, sans-serif`;
+  ctx.font = `700 ${size}px 'Overpass Variable', 'Helvetica Neue', Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
   const taken: { x: number; y: number; r: number }[] = [];
   for (const l of data.labels) {
     // Only names whose street is long enough on screen to hold them.
-    const text = ctx.measureText(l.name).width;
+    const text = textWidth(ctx, l.name, size);
     if (l.length * view.scale < text * 1.6) continue;
     const [x, y] = toCanvas(l.p, view, w, h);
     if (x < -text || y < -size || x > w + text || y > h + size) continue;
@@ -133,4 +162,21 @@ function drawLabels(ctx: CanvasRenderingContext2D, data: MapViewData, view: MapV
     ctx.fillText(l.name, 0, 0);
     ctx.restore();
   }
+}
+
+/** Text widths by font size and text: measuring every street name on every frame was slow. */
+const widths = new Map<string, number>();
+function textWidth(ctx: CanvasRenderingContext2D, text: string, size: number): number {
+  const key = `${size}|${text}`;
+  let w = widths.get(key);
+  if (w === undefined) {
+    w = ctx.measureText(text).width;
+    widths.set(key, w);
+  }
+  return w;
+}
+
+/** Draws only the street names (on top of the tiles, which have none: names stay upright and sharp at any zoom). */
+export function drawMapLabels(ctx: CanvasRenderingContext2D, data: MapViewData, view: MapViewport) {
+  drawLabels(ctx, data, view);
 }

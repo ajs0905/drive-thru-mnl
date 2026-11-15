@@ -57,4 +57,13 @@ describe('streetNameLookup', () => {
     expect(lookup([100, 2], true)).toBe('Kalayaan Overpass');
     expect(lookup([100, 2], false)).toBe('5th Avenue');
   });
+
+  it('names the street the car is driving along at a junction, not the cross street', () => {
+    const junction = streetNameLookup(map([road('a', { name: '5th Avenue', w: 12 }), road('b', { name: '26th Street', w: 12, points: [[100, -100], [100, 100]] })]));
+    expect(junction([100, 0], false, 0)).toBe('5th Avenue');
+    expect(junction([100, 0], false, Math.PI)).toBe('5th Avenue');
+    expect(junction([100, 0], false, Math.PI / 2)).toBe('26th Street');
+    // Away from the junction, the street you're on, whichever way you face.
+    expect(junction([50, 0], false, Math.PI / 2)).toBe('5th Avenue');
+  });
 });

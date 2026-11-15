@@ -1,75 +1,100 @@
 /**
- * Speed blur in Drive mode (Medium and High): past about 100 km/h the screen's edges
+ * Speed blur in Drive mode (Medium and High): past about 95 km/h the screen's edges
  * streak outward while the middle stays sharp (speedBlurShader.ts).
  *
- * It takes over drawing the frame: below the blur speed the scene is drawn straight to
- * the screen as usual, so the extra passes only cost anything while the blur shows.
- * While it shows, the scene is drawn into an off-screen buffer (with MSAA when the tier
- * has it), blurred, then tone mapped and converted to the screen's colors (OutputPass:
- * three.js skips both when drawing into a buffer).
+ * The scene is drawn to the screen as usual. While the blur shows, the finished frame is
+ * copied into a texture and the blur is drawn over it, only where the screen is blurred
+ * (the sharp middle is left alone). An earlier version drew the whole scene into an
+ * off-screen buffer instead (MSAA, half float, then a tone mapping pass): a full extra
+ * set of screen-sized passes that cost real frame time the moment it switched on.
  */
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, type RefObject } from 'react';
-import { DepthTexture, FloatType, HalfFloatType, WebGLRenderTarget, type Camera, type Scene, type WebGLRenderer } from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import {
+  FramebufferTexture,
+  LinearFilter,
+  Mesh,
+  OrthographicCamera,
+  PlaneGeometry,
+  Scene,
+  ShaderMaterial,
+  Vector2,
+  type Camera,
+  type WebGLRenderer,
+} from 'three';
 import { SPEED_BLUR, speedBlurAmount } from '../car/speedBlur';
 import { SpeedBlurShader } from './speedBlurShader';
 
-export function SpeedBlur({ speed, msaa }: { speed: RefObject<number>; msaa: boolean }) {
+export function SpeedBlur({ speed }: { speed: RefObject<number> }) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera);
-  const size = useThree((s) => s.size);
 
   const built = useMemo(() => {
-    // Float depth, so the reversed depth buffer keeps its precision off-screen too.
-    const target = new WebGLRenderTarget(1, 1, { type: HalfFloatType, samples: msaa ? 4 : 0 });
-    target.depthTexture = new DepthTexture(1, 1, FloatType);
-    const composer = new EffectComposer(gl, target);
-    composer.addPass(new RenderPass(scene, camera));
-    const blur = new ShaderPass(SpeedBlurShader);
-    composer.addPass(blur);
-    composer.addPass(new OutputPass());
-    const out: Built = { composer, blur, shown: { strength: 0 } };
+    const material = new ShaderMaterial({
+      name: SpeedBlurShader.name,
+      uniforms: {
+        tScreen: { value: null },
+        strength: { value: 0 },
+        aspect: { value: 1 },
+      },
+      vertexShader: SpeedBlurShader.vertexShader,
+      fragmentShader: SpeedBlurShader.fragmentShader,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const quad = new Mesh(new PlaneGeometry(2, 2), material);
+    quad.frustumCulled = false;
+    const overlay = new Scene();
+    overlay.add(quad);
+    const out: Built = { overlay, overlayCamera: new OrthographicCamera(-1, 1, 1, -1, 0, 1), material, quad, texture: null, size: new Vector2(), shown: { strength: 0 } };
     return out;
-  }, [gl, scene, camera, msaa]);
-  useEffect(() => () => built.composer.dispose(), [built]);
-  useEffect(() => resize(built.composer, size.width, size.height, gl.getPixelRatio()), [built, size, gl]);
+  }, []);
+  useEffect(() => {
+    // Compiled up front, so the first fast stretch doesn't stutter.
+    gl.compile(built.overlay, built.overlayCamera);
+    return () => {
+      built.texture?.dispose();
+      built.material.dispose();
+      built.quad.geometry.dispose();
+    };
+  }, [gl, built]);
 
   // Priority 1: this draws the frame instead of the renderer's automatic draw.
-  useFrame((_, dt) => drawFrame(built, speed.current ?? 0, dt, gl, scene, camera, size), 1);
+  useFrame((_, dt) => drawFrame(built, speed.current ?? 0, dt, gl, scene, camera), 1);
   return null;
 }
 
 interface Built {
-  composer: EffectComposer;
-  blur: ShaderPass;
+  overlay: Scene;
+  overlayCamera: OrthographicCamera;
+  material: ShaderMaterial;
+  quad: Mesh;
+  /** The finished frame, copied (made at the drawing buffer's size, remade when it changes). */
+  texture: FramebufferTexture | null;
+  size: Vector2;
   shown: { strength: number };
 }
 
-/** Draws one frame: straight to the screen, or through the blur when it shows. */
-function drawFrame(built: Built, speed: number, dt: number, gl: WebGLRenderer, scene: Scene, camera: Camera, size: { width: number; height: number }) {
+/** Draws one frame: the scene, then the blur over its edges when it shows. */
+function drawFrame(built: Built, speed: number, dt: number, gl: WebGLRenderer, scene: Scene, camera: Camera) {
+  gl.render(scene, camera);
   const shown = built.shown;
   shown.strength += (speedBlurAmount(speed) - shown.strength) * Math.min(1, SPEED_BLUR.rate * dt);
-  if (shown.strength < 0.002) {
-    gl.render(scene, camera);
-    return;
+  if (shown.strength < 0.002) return;
+  const size = gl.getDrawingBufferSize(built.size);
+  if (!built.texture || built.texture.image.width !== size.x || built.texture.image.height !== size.y) {
+    built.texture?.dispose();
+    built.texture = new FramebufferTexture(size.x, size.y);
+    // Blur samples fall between pixels.
+    built.texture.minFilter = built.texture.magFilter = LinearFilter;
+    built.material.uniforms.tScreen.value = built.texture;
   }
-  if (pixelRatioOf(built.composer) !== gl.getPixelRatio()) resize(built.composer, size.width, size.height, gl.getPixelRatio());
-  built.blur.uniforms.strength.value = shown.strength;
-  built.blur.uniforms.aspect.value = size.width / Math.max(1, size.height);
-  built.composer.render(dt);
-}
-
-/** The composer's pixel ratio (EffectComposer keeps it but doesn't expose it in its types). */
-function pixelRatioOf(composer: EffectComposer): number {
-  return (composer as unknown as { _pixelRatio: number })._pixelRatio;
-}
-
-function resize(composer: EffectComposer, width: number, height: number, pixelRatio: number) {
-  composer.setPixelRatio(pixelRatio);
-  composer.setSize(width, height);
+  gl.copyFramebufferToTexture(built.texture);
+  built.material.uniforms.strength.value = shown.strength;
+  built.material.uniforms.aspect.value = size.x / Math.max(1, size.y);
+  const autoClear = gl.autoClear;
+  gl.autoClear = false;
+  gl.render(built.overlay, built.overlayCamera);
+  gl.autoClear = autoClear;
 }

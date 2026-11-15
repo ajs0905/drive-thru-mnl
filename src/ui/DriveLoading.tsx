@@ -1,9 +1,8 @@
 /**
  * The screen between pressing Play and driving: a green exit-style sign for where the
  * car starts with the real loading steps ticking off, a blue sign with the controls
- * (keys, or the touch layout on phones), and a tip. On the first drive it waits for a key
- * or a tap once everything is ready, so there's time to read the controls; after that it
- * fades straight into driving.
+ * (keys, or the touch layout on phones), and a tip. Once everything is ready it waits for
+ * a key or a tap, so there's time to read the controls, then fades into driving.
  */
 import { DRIVE_STEPS } from './drive';
 import { ArrowUp, Busy, Check, Handbrake, Todo } from './icons';
@@ -19,7 +18,7 @@ export function DriveLoading({
 }: {
   /** Index of the step in progress; DRIVE_STEPS.length when all are done. */
   step: number;
-  /** Everything's ready, waiting for the player (first drive only). */
+  /** Everything's ready, waiting for the player. */
   waiting: boolean;
   /** Fading out. */
   hidden: boolean;

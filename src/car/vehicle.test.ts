@@ -111,6 +111,17 @@ describe('the Sedan in Rapier', () => {
     expect(back).toBeGreaterThan(-SEDAN.tuning.reverseSpeed - 0.5);
   });
 
+  it('stops from 90 km/h on the handbrake alone, gas held or not, a bit later than on the brake', () => {
+    for (const throttle of [0, 1]) {
+      const car = makeCar(25);
+      const z0 = car.body.translation().z;
+      while (car.body.linvel().z > 0.5 && car.time < 10) drive(car, { handbrake: true, throttle }, DT);
+      const distance = car.body.translation().z - z0;
+      expect(distance, `throttle ${throttle}`).toBeGreaterThan(40);
+      expect(distance, `throttle ${throttle}`).toBeLessThan(70);
+    }
+  });
+
   it('turns left on left input, with arcade grip and without rolling over', () => {
     const car = makeCar(15);
     drive(car, { throttle: 0.3, steer: 1 }, 3);

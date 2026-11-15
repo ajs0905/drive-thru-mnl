@@ -147,7 +147,7 @@ export function stepVehicle(vc: VehicleController, body: RAPIER.RigidBody, spec:
   s.braking = input.handbrake || cmd.brakeFront > t.coastBrake;
 
   body.applyImpulse({ x: 0, y: -downforce(spec, speed) * dt, z: 0 }, true);
-  const push = driftPush(s.drifting, input.throttle, Math.hypot(vel.x, vel.z), t);
+  const push = driftPush(s.drifting, input.handbrake ? 0 : input.throttle, Math.hypot(vel.x, vel.z), t);
   if (push) {
     const h = Math.hypot(vel.x, vel.z);
     body.applyImpulse({ x: (vel.x / h) * push * spec.mass * dt, y: 0, z: (vel.z / h) * push * spec.mass * dt }, true);

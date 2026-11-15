@@ -21,6 +21,10 @@ body,
 
 .app {
   position: relative;
+  /* A game, not a page: dragging doesn't select text, and a long press on a phone doesn't open the copy/save menu. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .hud {
