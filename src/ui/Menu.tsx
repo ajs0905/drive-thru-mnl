@@ -3,6 +3,7 @@
  * city. It shows at once; the city loads behind it and the Play sign shows how far along
  * that is (the download, then building the city) until it turns into "PLAY".
  */
+import { BACKDROP_PORTRAIT, PORTRAIT_QUERY } from './backdrop';
 import { ArrowRight } from './icons';
 
 export interface LoadStatus {
@@ -17,7 +18,10 @@ export interface LoadStatus {
 export function Menu({ status, background, quality, onPlay, onSettings, onAbout }: { status: LoadStatus; background: string; quality: string; onPlay: () => void; onSettings: () => void; onAbout: () => void }) {
   return (
     <div className="menu">
-      <img className="backdrop" src={background} alt="" draggable={false} fetchPriority="high" />
+      <picture>
+        <source media={PORTRAIT_QUERY} srcSet={BACKDROP_PORTRAIT} />
+        <img className="backdrop" src={background} alt="" draggable={false} fetchPriority="high" />
+      </picture>
       <div className="inner">
         <Title />
         {status.error && <p className="error">{status.error}</p>}

@@ -256,7 +256,7 @@ export default function App() {
     setScreen('drive');
     // The loading screen painted first (with its backdrop), then the physics engine's
     // chunk, then the collisions (built when Drive mounts), then the car.
-    void backdropReady()
+    void backdropReady(BACKDROP)
       .then(() => new Promise<void>((r) => afterPaint(r)))
       .then(loadDrive)
       .then(() => {

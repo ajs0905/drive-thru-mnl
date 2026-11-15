@@ -4,8 +4,9 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <!-- The menu backdrop: fetched with the page, not after the scripts have run. -->
-    <link rel="preload" as="image" href="%BASE_URL%menu.jpg" fetchpriority="high" />
+    <!-- The menu backdrop: fetched with the page, not after the scripts have run (portrait on narrow screens, see src/ui/backdrop.ts). -->
+    <link rel="preload" as="image" href="%BASE_URL%menu.jpg" media="not all and (max-aspect-ratio: 2/3)" fetchpriority="high" />
+    <link rel="preload" as="image" href="%BASE_URL%menu-portrait.jpg" media="(max-aspect-ratio: 2/3)" fetchpriority="high" />
     <title>Drive Thru MNL: No Traffic Edition?</title>
   </head>
   <body>

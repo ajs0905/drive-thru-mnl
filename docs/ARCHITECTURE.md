@@ -196,7 +196,7 @@ sequenceDiagram
 
 `buildCity` is pure and synchronous (about 200 ms on a desktop CPU). It's written against plain arrays so it can move into a worker unchanged.
 
-**Screens** (`src/ui`, wired in `App.tsx`): the menu shows at once over a still image while the map downloads (with real progress, `loadMap`'s `onProgress`) and the city builds behind it; the Play sign shows the steps and turns into Play when the city is built. There is no separate loading screen. Settings (the quality tier) and How it's built are panels over the menu.
+**Screens** (`src/ui`, wired in `App.tsx`): the menu shows at once over a still image (`public/menu.jpg`, or `menu-portrait.jpg` on screens narrower than 2:3; preloaded by `index.html`, and the city build waits until it's decoded so it never shows on black, see `ui/backdrop.ts`) while the map downloads (with real progress, `loadMap`'s `onProgress`) and the city builds behind it; the Play sign shows the steps and turns into Play when the city is built. There is no separate loading screen. Settings (the quality tier) and How it's built are panels over the menu.
 
 **Drive mode** (in now): Play shows the drive loading screen (the steps below, the controls, a tip), loads `scene/Drive.tsx` and the physics engine as a separate chunk, builds the collisions, and puts the car on the road nearest the middle of High Street (`startSpot` in `car/spawn.ts`). The canvas switches from on-demand to continuous rendering. Once everything is ready, the loading screen waits for a key or a tap (every drive: it's the one place the controls are shown), then fades out. Esc pauses (Resume, Reset car, Settings, Back to menu); the physics is paused while loading, paused or on the big map.
 

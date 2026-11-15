@@ -64,15 +64,18 @@ button.sign:disabled {
   background: #0e1217;
 }
 /* The backdrop photo, under the shading (::before) and the signs. */
-.menu > .backdrop,
+.menu > picture {
+  display: contents;
+}
+.menu .backdrop,
 .loader > .backdrop {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* Narrow screens (a phone held upright) crop the sides: keep the car in menu.jpg (at about 45% across) in view. */
-  object-position: 45% 50%;
+  /* Narrow screens (a phone held upright) crop the sides: keep the car in menu.jpg (at about 51% across) in view. */
+  object-position: 51% 50%;
   z-index: -1;
 }
 .menu::before {
