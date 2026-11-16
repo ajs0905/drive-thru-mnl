@@ -69,6 +69,7 @@ src/
               assist, gearbox, body lean, chase camera math,      (Rapier objects passed in)
               spawn and curb spots, Rapier vehicle setup and step
   game/       saved progress (validated), and later the modes    pure TS, no three.js, no React
+  routing/    road graph, A* and ALT routes, route tracking       pure TS, no three.js, no React
   scene/      three.js / React Three Fiber components            the only place that knows about rendering
   ui/         menu, loading screens, HUD, maps, pause menu       DOM and 2D canvas, no three.js
   App.tsx     screens, drive mode, wiring
@@ -87,10 +88,11 @@ docs/         this folder
 | `src/geo`, `src/map` (except the loader) | nothing app-specific | three.js, React, `src/scene`, `pipeline` |
 | `src/geometry` | `src/map/types`, other geometry files | three.js, React, `src/scene`, `pipeline` |
 | `src/car` | `src/map/types`, Rapier (types; the engine is passed in) | three.js, React, `src/scene`, `pipeline` |
-| `src/game` | `src/map`, `src/geometry`, `src/car` | three.js, React, `src/scene`, `pipeline` |
+| `src/game` | `src/map`, `src/geometry`, `src/car`, `src/routing` | three.js, React, `src/scene`, `pipeline` |
+| `src/routing` | `src/map`, `src/geometry` | three.js, React, `src/scene`, `pipeline` |
 | `src/scene` | `src/geometry`, `src/map`, three.js, React | `pipeline` |
 | `src/ui` | `src/geometry`, `src/map`, `src/car`, React, the drive session in `src/scene` | `pipeline` |
-| `pipeline` | `src/geo`, `src/geometry`, `src/map` | `src/scene`, three.js, React |
+| `pipeline` | `src/geo`, `src/geometry`, `src/map`, `src/routing`, `src/car` | `src/scene`, three.js, React |
 | anything in `src` | | `pipeline`, Node built-ins (outside tests) |
 
 Why it matters:

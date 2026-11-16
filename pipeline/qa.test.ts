@@ -106,6 +106,16 @@ describe('runQa', () => {
     expect(n['signal-misaligned']).toBeUndefined();
   });
 
+  it('finds roads in a piece of the network that joins nothing else, but not ones cut off by the playable edge', () => {
+    const r = (id: string, points: [number, number][]) => road({ id, points });
+    const m: MapData = {
+      ...map([r('a', [[-90, 0], [0, 0]]), r('b', [[0, 0], [90, 0]]), r('c', [[0, 0], [0, 90]]), r('lone', [[40, 40], [60, 40]]), r('edge', [[-95, 60], [-60, 60]])]),
+      playable: [[-100, -100], [100, -100], [100, 100], [-100, 100]],
+    };
+    const issues = runQa(m).filter((i) => i.kind === 'road-island');
+    expect(issues.map((i) => i.detail.split(' ')[0])).toEqual(['lone']);
+  });
+
   it('reports nothing for a clean map', () => {
     expect(runQa(map([road({})], [box(40, 20, 50, 30)]))).toEqual([]);
   });

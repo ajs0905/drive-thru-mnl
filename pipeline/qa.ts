@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { distanceToRing, distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../src/geometry/polygon';
 import { SegmentGrid } from '../src/geometry/spatialGrid';
 import type { Building, Dressing, MapData, Point, Road } from '../src/map/types';
+import { buildRoadGraph } from '../src/routing/graph';
 import { headsAlongRoad, LIGHTS } from './lights';
 import { roadIssues } from './qaRoads';
 import { nestedBuildings } from './overlaps';
@@ -142,6 +143,7 @@ export function runQa(map: MapData): Issue[] {
   issues.push(...extrasIssues(map, ground, inside));
   issues.push(...structureIssues(map));
   issues.push(...lightIssues(map, ground));
+  issues.push(...graphIssues(map));
   return issues;
 }
 
@@ -223,6 +225,35 @@ function lightIssues(map: MapData, ground: SegmentGrid<Road>): Issue[] {
       if (overlapsConvex(foot, e.item.foot)) issues.push({ kind: 'dressing-overlap', at: d.p, detail: `${d.k} drawn into ${e.item.d.k}`, severity: 1 });
     }
     grid.insert([b.minX, b.minY], [b.maxX, b.maxY], { d, foot });
+  }
+  return issues;
+}
+
+/**
+ * 8. Drivable roads in a piece of the road network that doesn't join the rest (`road-island`):
+ * a car there can't drive anywhere else and no route can reach it, usually a crossing the
+ * map draws without a shared node. Pieces cut off by the playable edge are expected and
+ * left out (any road ending within 40 m of it).
+ */
+function graphIssues(map: MapData): Issue[] {
+  const g = buildRoadGraph(map);
+  const parent = g.nodes.map((_, i) => i);
+  const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  for (const e of g.edges) parent[find(e.from)] = find(e.to);
+  const size = new Map<number, number>();
+  for (let i = 0; i < g.nodes.length; i++) size.set(find(i), (size.get(find(i)) ?? 0) + 1);
+  let biggest = -1;
+  for (const [root, n] of size) if (biggest < 0 || n > size.get(biggest)!) biggest = root;
+  const ring = map.playable ?? [];
+  const nearEdge = (p: Point) => ring.length >= 3 && distanceToRing(p, ring) < 40;
+  const issues: Issue[] = [];
+  const seen = new Set<number>();
+  for (const e of g.edges) {
+    if (seen.has(e.road) || find(e.from) === biggest) continue;
+    seen.add(e.road);
+    const r = map.roads[e.road];
+    if (nearEdge(r.points[0]) || nearEdge(r.points[r.points.length - 1])) continue;
+    issues.push({ kind: 'road-island', at: r.points[Math.floor(r.points.length / 2)], detail: `${r.id} (${r.highway}) joins no other road`, severity: e.length });
   }
   return issues;
 }

@@ -247,6 +247,7 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Poles beside a zebra crossing's band | 85 | 0 |
 | Poles or their arms reaching into a flyover deck or a raised building | 4 | 0 |
 | Solid furniture drawn into other solid furniture (a pole through a roof or awning) | (new) | 0 |
+| Drivable roads in a piece of the road network that joins no other road (away from the playable edge) | (new) 24 | 24 (about 1 km: crossings drawn without a shared node) |
 
 The remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs) and access roads hugging a mall or tower, which are left as mapped. The one street case is a road mapped straight through a building.
 
