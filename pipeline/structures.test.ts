@@ -63,6 +63,26 @@ describe('deck pillars', () => {
   });
 });
 
+describe('pillar curbs', () => {
+  it('puts a curb around a deck pillar where it stays out of the lanes below, and none where it would not', () => {
+    const open = placeStructures([deck([[0, 0], [100, 0]])], []);
+    expect(open.pillars.every((p) => p.curb && p.curb > 0)).toBe(true);
+    expect(open.stats.curbs).toBe(3);
+    // A street running right beside the middle pillar: room for the pillar, not its curb.
+    const beside = road([[45 + 1 + 0.3 + 5 + 0.2, -50], [45 + 1 + 0.3 + 5 + 0.2, 50]], { w: 10 });
+    const tight = placeStructures([deck([[0, 0], [100, 0]]), beside], []);
+    const middle = tight.pillars.find((p) => Math.abs(p.p[0] - 45) < 1)!;
+    expect(middle).toBeDefined();
+    expect(middle.curb).toBeUndefined();
+  });
+
+  it('leaves footbridge pillars without one', () => {
+    const walk = placeStructures([deck([[0, 0], [100, 0]], 7, { cls: 'path', w: 3 })], []);
+    expect(walk.pillars.length).toBeGreaterThan(0);
+    expect(walk.pillars.every((p) => !p.curb)).toBe(true);
+  });
+});
+
 describe('posts under raised buildings', () => {
   it('holds up a free-standing canopy with slim posts along its outline, every 10 m at most', () => {
     const { pillars, stats } = placeStructures([], [box(0, 0, 20, 10)]);

@@ -116,7 +116,7 @@ function fill(meshes: Record<RoadblockKind, InstancedMesh>, props: RoadblockProp
     const [x, y] = moved ? [moved.x, -moved.z] : p.p;
     if (Math.hypot(x - focus[0], y - focus[1]) > far) continue;
     if (moved) m4.compose(v3.set(moved.x, moved.y, moved.z), q.set(moved.qx, moved.qy, moved.qz, moved.qw), size);
-    else m4.compose(v3.set(p.p[0], ROADBLOCK_Y, -p.p[1]), q.setFromAxisAngle(up, yawForHeading(p.rot)), size);
+    else m4.compose(v3.set(p.p[0], p.y ?? ROADBLOCK_Y, -p.p[1]), q.setFromAxisAngle(up, yawForHeading(p.rot)), size);
     meshes[p.kind].setMatrixAt(counts[p.kind]++, m4);
   }
   for (const k of KINDS) {

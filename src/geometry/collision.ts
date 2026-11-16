@@ -38,7 +38,7 @@ import { DRESSING, dressingCorners } from './dressing';
 import earcut from 'earcut';
 import type { MapData, Point, Road, RoadClass } from '../map/types';
 import { PROP_SHAPE, type Prop, type PropKind } from './props';
-import { DECK_SIDES_FROM, DECKS, deckEdges, deckJoins, dedupeWithZ, pillarCorners, railHeight, type DeckJoin } from './road';
+import { DECK_SIDES_FROM, DECKS, deckEdges, deckJoins, dedupeWithZ, PILLAR_CURB, pillarCorners, pillarCurbCorners, railHeight, type DeckJoin } from './road';
 import { fixtureProps, treeProps } from './streetProps';
 
 export const COLLISION = {
@@ -211,9 +211,11 @@ export function buildCollision(map: CollisionInput, opts: CollisionOptions): Col
     walls.walls(map.playable, 0, COLLISION.edgeHeight, true);
     counts.edge = map.playable.length;
     // The concrete row of the roadblocks, so the car stops at something it can see (the loose pieces are physics bodies).
-    for (const r of roadblockLayout(map.playable, map.roads, map.buildings)) {
+    for (const r of roadblockLayout(map.playable, map.roads, map.buildings, opts.surfaceY)) {
       if (r.kind !== 'concrete') continue;
-      walls.walls(roadblockCorners(r.p, r.rot, CONCRETE_SIZE[0], CONCRETE_SIZE[1]), 0, CONCRETE_SIZE[2], true);
+      // Ground pieces from the ground up; deck pieces from the deck's surface.
+      const base = r.y ?? 0;
+      walls.walls(roadblockCorners(r.p, r.rot, CONCRETE_SIZE[0], CONCRETE_SIZE[1]), base, base + CONCRETE_SIZE[2], true);
       counts.edge++;
     }
   }
@@ -230,6 +232,8 @@ export function buildCollision(map: CollisionInput, opts: CollisionOptions): Col
   // Cap beams on outrigger pillars are overhead, out of the car's way.
   for (const p of map.pillars ?? []) {
     structures.walls(pillarCorners(p), 0, p.top, true);
+    const curb = pillarCurbCorners(p);
+    if (curb) structures.walls(curb, 0, PILLAR_CURB.height, true);
     counts.posts++;
   }
   for (const j of map.junctions ?? []) {

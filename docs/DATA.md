@@ -95,6 +95,7 @@ BGC's malls are linked by skywalks that OSM maps straight through the buildings.
 
 - Every road is measured against nearby building walls (exact segment-to-segment distance through the spatial grid) and narrowed to fit, down to 2.8 m for streets and alleys, 2.5 m for service roads and 6 m for major roads. Walls the centerline crosses are ignored (roads going under buildings). 565 of 2,057 roads narrowed.
 - Buildings whose center sits on a road surface are removed.
+- **Walls cut back off the road.** Where a building still reaches more than 0.3 m into a road's surface after the narrowing (houses mapped onto the street, mostly along the alleys of the barangays), its footprint is clipped along the road's edge plus 0.2 m (a half-plane clip). Roads whose centerline runs through the building (passages, driveways into car parks) are left alone, as are raised buildings, courtyard buildings and, by service roads, buildings of 2,000 m² and up (malls and towers whose access roads hug them). A building that would lose more than half its footprint is dropped. 325 cut back, 2 dropped.
 - **Buildings inside other buildings** ([`overlaps.ts`](../pipeline/overlaps.ts)). OSM sometimes has the same building twice, a construction site outline still drawn around the finished tower, or a building mapped inside a bigger one. Where at least 90% of one footprint lies inside another (sampled on a grid, courtyards excluded), the inner one goes if it's hidden (it starts no lower and ends no higher), and a construction outline goes if the building inside it is taller. Towers rising from a podium, spires and shops under a raised building stay. Found from a screenshot: an office tower poking out of the box of its old construction site. 5 hidden buildings and 1 construction outline removed.
 
 ### 7. Close median slivers (`pipeline/medians.ts`)
@@ -148,7 +149,8 @@ Placed once here, so the renderer and the car's collisions use the same ones (`p
 
 - **Deck pillars** go along each flyover and footbridge every 30 m (14 m for footbridges), wherever the deck's underside is more than 2 m up, but never in a lane below. A pillar that would land in one slides along the deck (up to half a spacing either way) to the nearest clear spot. A two-way avenue at least 10 m wide running along the deck may have it on its centerline, where its median is (viaducts built over an avenue stand in its median), so the pillar may also shift sideways under the deck to line up with one. If nothing under the deck is clear (a viaduct mapped right over a road), it stands up to 2.5 m beside the deck with a cap beam reaching under it, like a real outrigger pier.
 - **Posts under raised buildings.** Buildings that start above the ground (canopies over driveways, a building over a passage) used to float. They get slim posts (0.35 m for canopies, 0.8 m for whole buildings) along their outline every 10 m at most, except along walls that lean on another building (skybridges, wings) and except on roads.
-- Result: 279 deck pillars (99 moved off a road below, 29 on outrigger piers, 12 spots spanned instead, mostly footbridges over wide roads) and 265 posts under 22 raised buildings and canopies.
+- **Curbs.** A road deck's pillar gets a low concrete curb around its base (0.3 m high, 0.45 m past its sides, corners cut), where the curb stays as far out of the lanes below as the pillar itself must. It's drawn and solid, so the pillars look planted and the car glances off the cut corners instead of catching a square one.
+- Result: 279 deck pillars (99 moved off a road below, 29 on outrigger piers, 12 spots spanned instead, mostly footbridges over wide roads; 137 with a curb) and 265 posts under 22 raised buildings and canopies.
 
 ### 14. Empty lots, walls and open zones (`pipeline/lots.ts`)
 
@@ -210,9 +212,9 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Raised ends hanging in mid-air | 10 | 0 |
 | Raised scraps with a loose end | 2 | 0 |
 | Buildings poking through a flyover deck | 0 | 0 |
-| Buildings more than 1 m into a major road | 21 | 2 |
-| Buildings more than 1 m into a street or alley | 207 | 53 |
-| Buildings more than 1 m into a service road | 93 | 63 |
+| Buildings more than 1 m into a major road | 21 | 0 |
+| Buildings more than 1 m into a street or alley | 207 | 1 |
+| Buildings more than 1 m into a service road | 93 | 42 |
 | Junction polygons reaching far past their roads | (new) | 0 |
 | Zebras overlapping each other or inside a junction | 76 | 0 |
 | Enclosed unpaved patches at junctions (holes, slivers) | 140 | 27 (real islands up to 60 m²) |
@@ -230,7 +232,7 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Lot walls across a road or path (beyond their gates) | (new) 30 | 0 |
 | Solid street furniture in a road, on a path or in a building | (new) | 0 |
 
-Most remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs). The rest are houses closer than 2.8 m to the street center, or roads mapped straight through a building.
+The remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs) and access roads hugging a mall or tower, which are left as mapped. The one street case is a road mapped straight through a building.
 
 ## Data format
 
@@ -243,5 +245,4 @@ Most remaining service-road cases are driveways that really go into a building (
 - Thin strips of ground show where carriageways split apart.
 - Zebras are always square to the road, even where the mapped crossing is diagonal.
 - Lane counts are guesses where `lanes` isn't tagged (about half of the roads).
-- Some houses still poke into alleys narrower than 2.8 m.
 - Heights are estimates for about 97% of buildings.

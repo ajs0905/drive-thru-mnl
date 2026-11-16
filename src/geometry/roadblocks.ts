@@ -11,11 +11,16 @@
  * touch a building or another loose piece: on tight streets the row just gets shorter.
  * Where the edge runs along a road instead of across it, there's only the concrete line.
  *
+ * Flyovers crossing the edge get the same on their deck, at its height: concrete across
+ * the deck at the edge, and the loose rows up the deck. A short dead-end stub (the edge
+ * cutting across an alley less than `ROADBLOCK.stub` meters from the junction it leaves)
+ * gets no loose roadblock halfway down it: a concrete row closes it off at the junction.
+ *
  * Laid out at run time from the edge and the roads, seeded by the position along the
  * edge, so it's the same on every load and the renderer, the collisions and the physics
  * all use the same list.
  */
-import type { Building, Point, Ring, Road } from '../map/types';
+import type { Building, Point, Ring, Road, RoadClass } from '../map/types';
 import { seeded } from '../map/hash';
 import { buildingTests, EDGE_KIND, edgeStretches } from './edgeFence';
 import { withWinding } from './polygon';
@@ -30,6 +35,8 @@ export interface RoadblockProp {
   p: Point;
   /** Map heading the front (+Z of the model) faces: into the playable area, toward the player. */
   rot: number;
+  /** Height it stands at (three.js y), for pieces on a flyover deck; the ground otherwise. */
+  y?: number;
 }
 
 export const ROADBLOCK = {
@@ -77,7 +84,20 @@ export const ROADBLOCK = {
    */
   groupGap: 1,
   sameWay: 0.9,
+  /**
+   * A road reaching less than this far (m) from the edge to the junction it leaves is a
+   * stub: concrete across its mouth at the junction (`stubBack` m up from the junction's
+   * edge), no loose roadblock.
+   */
+  stub: 15,
+  stubBack: 0.8,
+  /** On a flyover deck the loose rows stay this far inside its barriers (m, each side). */
+  deckInset: 0.5,
 };
+
+/** Road surface heights (three.js y) per class, as drawn (scene/cityGeometry.ts `ROAD_Y`); a deck's surface is this plus its `z`. */
+export type SurfaceY = Record<RoadClass, number>;
+const FLAT_SURFACE: SurfaceY = { path: 0.12, service: 0.16, minor: 0.2, major: 0.24 };
 
 /** Physics of the loose pieces (scene/roadblockBodies.ts): mass (kg) and collider half sizes (m, before `ROADBLOCK.scale`: x along the row, y up, z across). */
 export const ROADBLOCK_BODIES: Record<LooseKind, { mass: number; half: [number, number, number] }> = {
@@ -113,8 +133,8 @@ function footprint(kind: RoadblockKind): [number, number] {
 }
 
 /** The map's roadblocks, and the loose ones on their own (the physics and the renderer index them the same way). */
-export function roadblocksFor(map: { playable?: Ring; roads: Road[]; buildings: Building[] }): { props: RoadblockProp[]; loose: (RoadblockProp & { kind: LooseKind })[] } {
-  const props = roadblockLayout(map.playable ?? [], map.roads, map.buildings);
+export function roadblocksFor(map: { playable?: Ring; roads: Road[]; buildings: Building[] }, surfaceY: SurfaceY = FLAT_SURFACE): { props: RoadblockProp[]; loose: (RoadblockProp & { kind: LooseKind })[] } {
+  const props = roadblockLayout(map.playable ?? [], map.roads, map.buildings, surfaceY);
   return { props, loose: props.filter((p): p is RoadblockProp & { kind: LooseKind } => p.kind !== 'concrete') };
 }
 
@@ -154,7 +174,7 @@ export function barricadeRow(width: number, bw: number, dw: number, g: number): 
   return ['drum', ...half, ...centre, ...half, 'drum'];
 }
 
-/** Where a ground road's centerline crosses the playable edge. */
+/** Where a road's centerline crosses the playable edge. */
 export interface EdgeCrossing {
   road: Road;
   /** The crossing point, and how far along the edge it is (m). */
@@ -163,14 +183,23 @@ export interface EdgeCrossing {
   /** The road's direction into the playable area, and the edge's inward normal there (unit vectors). */
   dir: Point;
   normal: Point;
+  /** The road's height there (its `z`; 0 on the ground). */
+  z: number;
+  /** How far the road runs on from here into the playable area (m), the end it gets to, and the road's direction arriving there. */
+  inside: number;
+  end: Point;
+  endDir: Point;
+  /** Which end of the road that is (for its junction trim). */
+  endIndex: 0 | 1;
 }
 
 /**
- * Every place a ground road's centerline crosses the edge (a counter-clockwise ring), at
- * least `minFacing` square to it (the dot product of the road's direction and the edge's
+ * Every place a road's centerline crosses the edge (a counter-clockwise ring), at least
+ * `minFacing` square to it (the dot product of the road's direction and the edge's
  * inward normal; lower is a road running along the edge, which only gets concrete).
+ * Ground roads, or with `raised`, flyover decks (more than 1 m up) instead.
  */
-export function edgeCrossings(ccw: Ring, roads: Road[], minFacing = ROADBLOCK.minFacing): EdgeCrossing[] {
+export function edgeCrossings(ccw: Ring, roads: Road[], minFacing = ROADBLOCK.minFacing, raised = false): EdgeCrossing[] {
   const edge = new SegmentGrid<{ start: number; normal: Point }>(30);
   let at = 0;
   for (let i = 0; i < ccw.length; i++) {
@@ -184,7 +213,8 @@ export function edgeCrossings(ccw: Ring, roads: Road[], minFacing = ROADBLOCK.mi
   for (const road of roads) {
     if (road.cls === 'path') continue;
     for (let i = 0; i + 1 < road.points.length; i++) {
-      if (road.z && Math.max(road.z[i], road.z[i + 1]) > 1) continue; // flyovers pass over the edge
+      const high = !!road.z && Math.max(road.z[i], road.z[i + 1]) > 1;
+      if (high !== raised) continue; // flyovers pass over the ground's roadblocks
       const [a, b] = [road.points[i], road.points[i + 1]];
       for (const e of edge.query(a, b)) {
         const hit = segmentHit(a, b, e.a, e.b);
@@ -195,7 +225,27 @@ export function edgeCrossings(ccw: Ring, roads: Road[], minFacing = ROADBLOCK.mi
         if (dir[0] * n[0] + dir[1] * n[1] < 0) dir = [-dir[0], -dir[1]];
         if (dir[0] * n[0] + dir[1] * n[1] < minFacing) continue;
         const p: Point = [e.a[0] + (e.b[0] - e.a[0]) * hit, e.a[1] + (e.b[1] - e.a[1]) * hit];
-        out.push({ road, p, at: e.item.start + hit * Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]), dir, normal: n });
+        // Where on the road (share of segment i), its height, and the run from here on inward to the road's end.
+        const t = Math.abs(b[0] - a[0]) > Math.abs(b[1] - a[1]) ? (p[0] - a[0]) / (b[0] - a[0]) : (p[1] - a[1]) / (b[1] - a[1]);
+        const z = road.z ? road.z[i] + (road.z[i + 1] - road.z[i]) * t : 0;
+        const forward = dir[0] * (b[0] - a[0]) + dir[1] * (b[1] - a[1]) > 0;
+        const run = forward ? [p, ...road.points.slice(i + 1)] : [p, ...road.points.slice(0, i + 1).reverse()];
+        let inside = 0;
+        for (let k = 1; k < run.length; k++) inside += Math.hypot(run[k][0] - run[k - 1][0], run[k][1] - run[k - 1][1]);
+        const [pe, last] = [run[run.length - 2], run[run.length - 1]];
+        const el = Math.hypot(last[0] - pe[0], last[1] - pe[1]) || 1;
+        out.push({
+          road,
+          p,
+          at: e.item.start + hit * Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]),
+          dir,
+          normal: n,
+          z,
+          inside,
+          end: last,
+          endDir: [(last[0] - pe[0]) / el, (last[1] - pe[1]) / el],
+          endIndex: forward ? 1 : 0,
+        });
       }
     }
   }
@@ -255,7 +305,7 @@ function overlaps(a: Point[], b: Point[]): boolean {
 }
 
 /** Every roadblock piece along the playable edge (any winding), clear of the buildings and of each other. */
-export function roadblockLayout(ring: Ring, roads: Road[], buildings: Building[] = []): RoadblockProp[] {
+export function roadblockLayout(ring: Ring, roads: Road[], buildings: Building[] = [], surfaceY: SurfaceY = FLAT_SURFACE): RoadblockProp[] {
   if (ring.length < 3) return [];
   const tests = buildingTests(buildings, ring);
   const { touches } = tests;
@@ -263,16 +313,36 @@ export function roadblockLayout(ring: Ring, roads: Road[], buildings: Building[]
   const k = ROADBLOCK.scale;
   const out: RoadblockProp[] = [];
   const looseFeet: Point[][] = [];
-  /** Adds a piece unless it would stand in a building (or, loose ones, on another loose piece). */
+  /** Adds a piece unless it would stand in a building (or, loose ones, on another loose piece). Pieces on a deck are above the buildings' reach. */
   const place = (prop: RoadblockProp) => {
     const [l, d] = footprint(prop.kind);
     const foot = roadblockCorners(prop.p, prop.rot, l, d);
-    if (touches(foot)) return;
+    if (prop.y === undefined && touches(foot)) return;
     if (prop.kind !== 'concrete') {
       if (looseFeet.some((f) => overlaps(f, foot))) return;
       looseFeet.push(foot);
     }
     out.push(prop);
+  };
+  /**
+   * A line of concrete barriers end to end, `length` long, centered on c, along unit u,
+   * facing `rot`. With `deckAt`, on a deck: each at the deck's height, and left out where
+   * there's no deck under it.
+   */
+  const concreteLine = (c: Point, u: Point, length: number, rot: number, deckAt?: (p: Point) => number | undefined) => {
+    const { gap } = ROADBLOCK.concrete;
+    const cl = CONCRETE_SIZE[0];
+    const n = Math.max(1, Math.round((length + gap) / (cl + gap)));
+    for (let i = 0; i < n; i++) {
+      const along = (i - (n - 1) / 2) * (cl + gap);
+      const p: Point = [round2(c[0] + u[0] * along), round2(c[1] + u[1] * along)];
+      if (!deckAt) {
+        place({ kind: 'concrete', p, rot });
+        continue;
+      }
+      const y = deckAt(p);
+      if (y !== undefined) place({ kind: 'concrete', p, rot, y: round2(y) });
+    }
   };
 
   // Back row: concrete barriers end to end along the edge wherever a road (and its
@@ -295,14 +365,37 @@ export function roadblockLayout(ring: Ring, roads: Road[], buildings: Building[]
     }
   }
 
+  const edgeLength = ccw.reduce((sum, p, i) => sum + Math.hypot(ccw[(i + 1) % ccw.length][0] - p[0], ccw[(i + 1) % ccw.length][1] - p[1]), 0);
+  const widest = (g: EdgeCrossing[]) => Math.max(...g.map((c) => c.road.w));
+  // Road ends shared with another road: a stub that gets to one meets a junction there.
+  const ends = new Map<string, number>();
+  for (const r of roads) {
+    if (r.cls === 'path') continue;
+    for (const q of [r.points[0], r.points[r.points.length - 1]]) ends.set(`${q[0]},${q[1]}`, (ends.get(`${q[0]},${q[1]}`) ?? 0) + 1);
+  }
+  const isStub = (c: EdgeCrossing) => c.road.cls !== 'major' && c.inside < ROADBLOCK.stub;
+
+  // Short stubs: concrete across the mouth at the junction (the edge's own row closes the
+  // other end), and nothing loose halfway down a walled alley.
+  const ground = crossingGroups(edgeCrossings(ccw, roads), edgeLength);
+  for (const group of ground) {
+    if (!group.every(isStub)) continue;
+    for (const c of group) {
+      if ((ends.get(`${c.end[0]},${c.end[1]}`) ?? 0) < 2) continue; // a dead end: the edge's row is enough
+      const back = (c.road.trim?.[c.endIndex] ?? 0) + ROADBLOCK.stubBack;
+      const [dx, dy] = c.endDir;
+      const mouth: Point = [c.end[0] - dx * back, c.end[1] - dy * back];
+      // Facing the junction (the way a driver coming out of it sees them).
+      concreteLine(mouth, [dy, -dx], c.road.w + 1, Math.atan2(-dy, -dx));
+    }
+  }
+
   // The loose pieces: one roadblock per road crossing the edge (or group of crossings close
   // together), square to the road, centered on it, facing up the road. Widest roads first,
-  // so where two would clash the bigger road keeps its row.
-  const crossings = edgeCrossings(ccw, roads);
-  const edgeLength = ccw.reduce((sum, p, i) => sum + Math.hypot(ccw[(i + 1) % ccw.length][0] - p[0], ccw[(i + 1) % ccw.length][1] - p[1]), 0);
-  const groups = crossingGroups(crossings, edgeLength);
-  const widest = (g: EdgeCrossing[]) => Math.max(...g.map((c) => c.road.w));
-  for (const group of [...groups].sort((a, b) => widest(b) - widest(a) || a[0].at - b[0].at)) {
+  // so where two would clash the bigger road keeps its row. Flyovers get theirs on the deck.
+  const raised = crossingGroups(edgeCrossings(ccw, roads, ROADBLOCK.minFacing, true), edgeLength);
+  const groups = [...ground.filter((g) => !g.every(isStub)).map((g) => ({ g, deck: false })), ...raised.map((g) => ({ g, deck: true }))];
+  for (const { g: group, deck } of groups.sort((a, b) => widest(b.g) - widest(a.g) || a.g[0].at - b.g[0].at)) {
     // The edge's inward normal here, and the row's direction: along the roads when they run
     // the same way (a divided road), else straight in from the edge (a fork).
     const sum = (f: (c: EdgeCrossing) => Point): Point => {
@@ -330,36 +423,74 @@ export function roadblockLayout(ring: Ring, roads: Road[], buildings: Building[]
     const slide = (lo + hi) / 2 / (ux * px + uy * py || 1);
     const c: Point = [c0[0] + ux * slide, c0[1] + uy * slide];
     const width = hi - lo;
-    const fullWidth = width + 2 * ROADBLOCK.sidewalk;
+    // On a deck the rows stay between its barriers; on the ground they reach over the sidewalks.
+    const fullWidth = deck ? Math.max(0, width - 2 * ROADBLOCK.deckInset) : width + 2 * ROADBLOCK.sidewalk;
     // Far enough up the road that the whole row is inside the edge, even on a slant.
     const room = (depth: number) => Math.max(depth, (ROADBLOCK.minRoom + (fullWidth / 2) * Math.abs(px * nx + py * ny)) / facing);
     const at = (depth: number, across: number): Point => [round2(c[0] + dx * room(depth) + px * across), round2(c[1] + dy * room(depth) + py * across)];
-    const rand = seeded(`roadblock:${Math.round(group[0].at * 10)}`);
+    // Height of a piece: the deck's surface under it, else the ground.
+    const put = (kind: RoadblockKind, q: Point, r: number) => {
+      if (!deck) return place({ kind, p: q, rot: r });
+      // On a deck: only where there's deck under it (not in the gap between two).
+      const y = deckSurface(group, q, surfaceY);
+      if (y !== undefined) place({ kind, p: q, rot: r, y: round2(y) });
+    };
+    const rand = seeded(`roadblock:${deck ? 'deck:' : ''}${Math.round(group[0].at * 10)}`);
 
-    // Barricade row across the roads and their sidewalks, symmetric about the middle: a
+    // On a deck, the concrete row across it at the edge (the ground's runs along the edge itself).
+    if (deck) {
+      const edgeDir: Point = [ux, uy];
+      const across = width / Math.max(0.35, Math.abs(px * ux + py * uy));
+      const q: Point = [c[0] + nx * ROADBLOCK.concrete.row, c[1] + ny * ROADBLOCK.concrete.row];
+      concreteLine(q, edgeDir, Math.max(0, across - 2 * ROADBLOCK.deckInset), Math.atan2(ny, nx), (p) => deckSurface(group, p, surfaceY));
+    }
+
+    // Barricade row across the roads (and their sidewalks), symmetric about the middle: a
     // drum at each end, barricades between, and a drum in the middle when there's room.
     const [bw, dw, g] = [ROADBLOCK.loose.barricade.width * k, ROADBLOCK.loose.drum.width * k, ROADBLOCK.gap * k];
     const pieces = barricadeRow(fullWidth, bw, dw, g);
     centered(
       pieces.map((kind) => (kind === 'drum' ? dw : bw)),
       pieces.slice(1).map(() => g),
-    ).forEach((x, i) => place({ kind: pieces[i], p: at(ROADBLOCK.barricadeRow, x), rot }));
+    ).forEach((x, i) => put(pieces[i], at(ROADBLOCK.barricadeRow, x), rot));
 
     // The sign, in the middle just behind the barricades.
-    if (widest(group) >= ROADBLOCK.sign.minRoad) place({ kind: 'sign', p: at(ROADBLOCK.signRow, 0), rot });
+    if (widest(group) >= ROADBLOCK.sign.minRoad) put('sign', at(ROADBLOCK.signRow, 0), rot);
 
     // Cones scattered in a loose band in front, across the road: evenly spread, but each
     // nudged a little, at its own distance and turned its own way, the odd one missing.
+    const coneWidth = deck ? fullWidth : width;
     const every = ROADBLOCK.cones.every * k;
-    const count = Math.max(2, Math.round(width / every));
-    const spread = width / count;
+    const count = Math.max(2, Math.round(coneWidth / every));
+    const spread = coneWidth / count;
     const [near, far] = ROADBLOCK.cones.band;
     for (let i = 0; i < count; i++) {
       const [skip, jx, jd, turn] = [rand(), rand(), rand(), rand()];
       if (skip < ROADBLOCK.cones.missing) continue;
       const across = (i - (count - 1) / 2) * spread + (jx - 0.5) * spread * 0.5;
-      place({ kind: 'cone', p: at(near + jd * (far - near), across), rot: rot + (turn - 0.5) * 1.2 });
+      put('cone', at(near + jd * (far - near), across), rot + (turn - 0.5) * 1.2);
     }
   }
   return out;
+}
+
+/**
+ * The surface height (three.js y) of the nearest deck in the group at q (its class's road
+ * height plus its `z` there), or undefined if q isn't on one (between two decks).
+ */
+function deckSurface(group: EdgeCrossing[], q: Point, surfaceY: SurfaceY): number | undefined {
+  let best = { d: Infinity, y: 0, half: 0 };
+  for (const { road } of group) {
+    for (let i = 0; i + 1 < road.points.length; i++) {
+      const [a, b] = [road.points[i], road.points[i + 1]];
+      const [vx, vy] = [b[0] - a[0], b[1] - a[1]];
+      const l2 = vx * vx + vy * vy || 1;
+      const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * vx + (q[1] - a[1]) * vy) / l2));
+      const d = Math.hypot(q[0] - a[0] - vx * t, q[1] - a[1] - vy * t);
+      if (d >= best.d) continue;
+      const z = road.z ? road.z[i] + (road.z[i + 1] - road.z[i]) * t : 0;
+      best = { d, y: surfaceY[road.cls] + z, half: road.w / 2 };
+    }
+  }
+  return best.d <= best.half - ROADBLOCK.deckInset ? best.y : undefined;
 }

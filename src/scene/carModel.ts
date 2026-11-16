@@ -30,6 +30,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   DataTexture,
+  DoubleSide,
   Group,
   LinearFilter,
   Mesh,
@@ -96,7 +97,9 @@ export function restoreShine(geometry: BufferGeometry) {
 export function prepareCarModel(scene: Object3D): CarModel {
   const root = new Group();
   root.add(scene.clone(true));
-  const material = withCarShine(new MeshLambertMaterial({ vertexColors: true }), 'player');
+  // Both sides: the model is a thin shell, and from a camera pressed close to it (backing
+  // into a wall) the inside of the far panels would otherwise show through as holes.
+  const material = withCarShine(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide }), 'player');
   const lamp = (color: string, intensity: number) =>
     new MeshLambertMaterial({ vertexColors: true, emissive: color, emissiveIntensity: intensity, toneMapped: false });
   const head = lamp(LAMPS.head.color, LAMPS.head.intensity);
@@ -342,4 +345,12 @@ export function placeShadow(shadow: Mesh, x: number, groundY: number | null, z: 
   if (groundY === null) return;
   shadow.position.set(x, groundY + 0.04, z);
   shadow.rotation.set(0, yaw, 0);
+}
+
+/** After a reset the car blinks for `duration` seconds, `rate` times a second, so it's clear it moved (it no longer drops into place). */
+export const BLINK = { duration: 1, rate: 8 };
+
+/** Shows or hides the car for the blink, `since` seconds after the last reset. */
+export function blinkAfterReset(model: { root: { visible: boolean } }, since: number) {
+  model.root.visible = !(since >= 0 && since < BLINK.duration && Math.floor(since * BLINK.rate * 2) % 2 === 1);
 }

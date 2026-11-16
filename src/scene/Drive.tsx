@@ -15,9 +15,11 @@
  */
 import { useThree } from '@react-three/fiber';
 import { CuboidCollider, Physics, RigidBody, TrimeshCollider, type RapierCollider } from '@react-three/rapier';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Vector3 } from 'three';
+import { resetSpotFinder } from '../car/resetSpot';
 import { headingOfDirection, spawnOnRoad, yawForHeading, type Spawn } from '../car/spawn';
+import type { ResetPose } from '../car/vehicle';
 import { restLift, SEDAN } from '../car/spec';
 import { buildCollision } from '../geometry/collision';
 import type { MapData } from '../map/types';
@@ -69,6 +71,24 @@ export default function Drive({
   }, [map, get, start]);
 
   const solid = useMemo(() => buildCollision(map, { surfaceY: ROAD_Y }), [map]);
+  // The reset key's open-road search (car/resetSpot.ts). Building it takes about 100 ms
+  // on a desktop, so it's done a moment after the drive starts rather than while loading
+  // (or right away, if the reset key comes first).
+  const finder = useMemo(() => ({ find: null as ReturnType<typeof resetSpotFinder> | null }), []);
+  const avoid = useMemo(() => (roadblocks?.loose ?? []).map((r) => r.p), [roadblocks]);
+  useEffect(() => {
+    const t = setTimeout(() => (finder.find ??= resetSpotFinder(map, avoid)), 2000);
+    return () => clearTimeout(t);
+  }, [map, finder, avoid]);
+  const findReset = useMemo(
+    () =>
+      (x: number, y: number, z: number, heading: number): ResetPose | null => {
+        finder.find ??= resetSpotFinder(map, avoid);
+        const s = finder.find([x, -z], heading, Math.max(0, y - GROUND_Y));
+        return s && { x: s.p[0], y: ROAD_Y[s.cls] + s.z, z: -s.p[1], yaw: yawForHeading(s.heading) };
+      },
+    [map, finder, avoid],
+  );
   const spawnAt = useMemo((): [number, number] => [spawn.position[0], -spawn.position[2]], [spawn]);
   const walls = useRef<RapierCollider>(null);
 
@@ -82,7 +102,7 @@ export default function Drive({
         {/* Decks need road grip; their sides are thin enough that it barely matters. */}
         {solid.structures.indices.length > 0 && <TrimeshCollider args={[solid.structures.vertices, solid.structures.indices]} friction={1} restitution={0.1} />}
       </RigidBody>
-      <Car spec={SEDAN} spawn={spawn} onSpeed={reportSpeed} cameraBlockers={walls} session={session} paused={paused} />
+      <Car spec={SEDAN} spawn={spawn} onSpeed={reportSpeed} cameraBlockers={walls} session={session} paused={paused} findReset={findReset} />
       {parked && map.parked && <ParkedPhysics cars={map.parked} poses={parked} spawn={spawnAt} />}
       {roadblocks && roadblocks.loose.length > 0 && (
         <ParkedPhysics cars={roadblocks.loose} poses={roadblocks.poses} spawn={spawnAt} options={ROADBLOCK_POOL} groundY={ROADBLOCK_Y} />

@@ -12,7 +12,7 @@ import { ParkedCars } from './scene/ParkedCars';
 import { ParkedPoses } from './scene/parkedPoses';
 import { Roadblocks } from './scene/Roadblocks';
 import { roadblocksFor } from './geometry/roadblocks';
-import { PALETTE, type CityMeshes } from './scene/cityGeometry';
+import { PALETTE, ROAD_Y, type CityMeshes } from './scene/cityGeometry';
 import {
   alwaysRender,
   dprFor,
@@ -243,7 +243,7 @@ export default function App() {
   const start = useMemo(() => (map ? startSpot(map) : null), [map]);
   const viewData = useMemo(() => (map ? mapViewData(map) : null), [map]);
   const streetAt = useMemo(() => (map ? streetNameLookup(map) : null), [map]);
-  const roadblocks = useMemo(() => (map ? roadblocksFor(map) : null), [map]);
+  const roadblocks = useMemo(() => (map ? roadblocksFor(map, ROAD_Y) : null), [map]);
 
   const startDriving = useCallback(() => {
     // A focused button would be pressed again by the space bar (the handbrake).
@@ -329,7 +329,7 @@ export default function App() {
         <Canvas
           // A new canvas per quality: shadows and buffers are set up once, at creation.
           key={quality}
-          camera={{ position: view.position, fov: 50, near: 1, far: 12000 }}
+          camera={{ position: view.position, fov: 50, near: 0.1, far: 12000 }}
           // Driving draws every frame; otherwise only when something changes.
           frameloop={ALWAYS_RENDER || (driving && !paused && !bigMap) ? 'always' : 'demand'}
           gl={{ reversedDepthBuffer: REVERSED_DEPTH, logarithmicDepthBuffer: !REVERSED_DEPTH, antialias: settings.msaa }}

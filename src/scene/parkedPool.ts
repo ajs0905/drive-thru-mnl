@@ -23,6 +23,8 @@ import type { ParkedPoses } from './parkedPoses';
 export interface Placed {
   p: [number, number];
   rot: number;
+  /** Height it stands at (three.js y), when not the pool's ground (a roadblock on a flyover deck). */
+  y?: number;
 }
 
 export interface PoolOptions<T extends Placed> {
@@ -61,6 +63,11 @@ export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v
   private readonly radius?: number;
   private readonly margin?: number;
 
+  /** Where an item stands: its own height, else the pool's ground. */
+  private baseY(item: T): number {
+    return item.y ?? this.groundY;
+  }
+
   constructor(rapier: typeof RAPIER, world: RAPIER.World, cars: T[], poses: ParkedPoses, groundY: number, spawn: [number, number], opts: PoolOptions<T> = {}) {
     this.rapier = rapier;
     this.world = world;
@@ -92,7 +99,7 @@ export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v
   /** One frame: `player` in map space, after the physics step. */
   update(player: [number, number], dt: number, onScreen: OnScreen) {
     const { cars, poses } = this;
-    const homeOnScreen = (i: number) => onScreen(cars[i].p[0], this.groundY, -cars[i].p[1]);
+    const homeOnScreen = (i: number) => onScreen(cars[i].p[0], this.baseY(cars[i]), -cars[i].p[1]);
     const spotFree = (i: number) => Math.hypot(cars[i].p[0] - player[0], cars[i].p[1] - player[1]) > SPOT_TAKEN;
 
     for (const i of this.cleared) {
@@ -111,7 +118,7 @@ export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v
       const [hy, hw] = [Math.sin(yaw / 2), Math.cos(yaw / 2)];
       // Angle between the body's rotation and the home one (a turn around y): 2 acos |q1 . q2|.
       const turn = 2 * Math.acos(Math.min(1, Math.abs(r.y * hy + r.w * hw)));
-      const offset = Math.hypot(t.x - car.p[0], t.y - this.groundY, t.z + car.p[1]);
+      const offset = Math.hypot(t.x - car.p[0], t.y - this.baseY(car), t.z + car.p[1]);
       if (!isMoved(offset, turn)) {
         poses.clear(i);
         continue;
@@ -121,7 +128,7 @@ export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v
       this.hidden.set(i, hidden ? (this.hidden.get(i) ?? 0) + dt : 0);
       const v = body.linvel();
       if (shouldReturn(this.hidden.get(i) ?? 0, Math.hypot(v.x, v.y, v.z)) && spotFree(i)) {
-        body.setTranslation({ x: car.p[0], y: this.groundY, z: -car.p[1] }, false);
+        body.setTranslation({ x: car.p[0], y: this.baseY(car), z: -car.p[1] }, false);
         body.setRotation({ x: 0, y: hy, z: 0, w: hw }, false);
         body.setLinvel({ x: 0, y: 0, z: 0 }, false);
         body.setAngvel({ x: 0, y: 0, z: 0 }, false);
@@ -142,7 +149,7 @@ export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v
       this.hidden.delete(i);
       poses.clear(i); // only moved cars that are off screen get here: back on their spot
     }
-    for (const i of want) if (!this.bodies.has(i)) this.bodies.set(i, this.createBody(this.rapier, this.world, cars[i], this.groundY));
+    for (const i of want) if (!this.bodies.has(i)) this.bodies.set(i, this.createBody(this.rapier, this.world, cars[i], this.baseY(cars[i])));
   }
 
   /** Leaving Drive mode: remove the bodies; every car back on its spot. */

@@ -167,20 +167,28 @@ export const RESET = {
   reach: 300,
 };
 
+/** Where a reset puts the car instead of where it is (three.js space): the road surface height there, and the yaw. */
+export interface ResetPose {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+}
+
 /**
- * Puts the car back on its wheels where it is: upright, facing the way it was heading,
+ * Puts the car back on its wheels where it is (or at `to`): upright, facing the way it was heading,
  * standing still, at its resting height on the static ground below it (the ground plane,
  * a road deck; not a parked car or a cone). The height comes from the ground, never from
  * where the car was, so resetting again and again lands it in the same place. With no
  * ground found (fallen off the world), it goes to `fallbackY`.
  */
-export function resetOnGround(world: RAPIER.World, rapier: Rapier, body: RAPIER.RigidBody, spec: CarSpec, fallbackY: number) {
-  const p = body.translation();
+export function resetOnGround(world: RAPIER.World, rapier: Rapier, body: RAPIER.RigidBody, spec: CarSpec, fallbackY: number, to?: ResetPose) {
+  const p = to ? { x: to.x, y: to.y, z: to.z } : body.translation();
   const r = body.rotation();
   // Heading from the car's forward (+z) axis, flattened.
   const fx = 2 * (r.x * r.z + r.w * r.y);
   const fz = 1 - 2 * (r.x * r.x + r.y * r.y);
-  const yaw = Math.atan2(fx, fz);
+  const yaw = to ? to.yaw : Math.atan2(fx, fz);
   const from = { x: p.x, y: p.y + RESET.probe, z: p.z };
   const hit = world.castRay(new rapier.Ray(from, { x: 0, y: -1, z: 0 }), RESET.reach, true, undefined, undefined, undefined, body, (c) => {
     const parent = c.parent();

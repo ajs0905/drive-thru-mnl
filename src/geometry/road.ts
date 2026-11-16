@@ -340,6 +340,19 @@ export function pillarCorners({ p, size, rot }: Pick<Pillar, 'p' | 'size' | 'rot
 /** How deep (m) the cap beam on an outrigger pillar is. */
 export const CAP_DEPTH = 0.9;
 
+/** The curb around a deck pillar's base: height (m), and how much its corners are cut off (m). */
+export const PILLAR_CURB = { height: 0.3, chamfer: 0.35 };
+
+/** The outline of a pillar's base curb (counter-clockwise, corners cut so a car glances off them), or null without one. */
+export function pillarCurbCorners(pillar: Pick<Pillar, 'p' | 'size' | 'rot' | 'curb'>): Point[] | null {
+  if (!pillar.curb) return null;
+  const h = pillar.size / 2 + pillar.curb;
+  const k = Math.min(PILLAR_CURB.chamfer, h * 0.5);
+  const [c, s] = [Math.cos(pillar.rot), Math.sin(pillar.rot)];
+  const local: Point[] = [[h - k, -h], [h, -h + k], [h, h - k], [h - k, h], [-h + k, h], [-h, h - k], [-h, -h + k], [-h + k, -h]];
+  return local.map(([x, y]) => [pillar.p[0] + x * c - y * s, pillar.p[1] + x * s + y * c]);
+}
+
 /**
  * A pillar or post (from pipeline/structures.ts): a square column from the ground to
  * its top, plus, for one standing beside a deck, a cap beam reaching under the deck.
@@ -360,6 +373,18 @@ export function addPillar(mb: MeshBuilder, pillar: Pillar, color: RGB, underside
     }
   };
   box(pillarCorners(pillar), pillar.top, 0);
+  const curb = pillarCurbCorners(pillar);
+  if (curb) {
+    // A shade lighter than the pillar, its sides and top.
+    const light: RGB = [color[0] * 0.75 + 0.25 * 0.85, color[1] * 0.75 + 0.25 * 0.84, color[2] * 0.75 + 0.25 * 0.8];
+    for (let k = 0; k < curb.length; k++) {
+      const [a, b] = [curb[k], curb[(k + 1) % curb.length]];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      wall(mb, a, b, PILLAR_CURB.height, PILLAR_CURB.height, 0, 0, [(b[1] - a[1]) / len, 0, (b[0] - a[0]) / len], light);
+    }
+    const top = curb.map(([x, y]) => to3(x, y, PILLAR_CURB.height));
+    for (let k = 1; k + 1 < top.length; k++) facing(mb, top[0], top[k], top[k + 1], UP, light);
+  }
   if (pillar.cap) {
     // From the far side of the pillar to just past the point under the deck, pillar wide.
     const [dx, dy] = [pillar.cap[0] - pillar.p[0], pillar.cap[1] - pillar.p[1]];

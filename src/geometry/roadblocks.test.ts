@@ -133,3 +133,39 @@ describe('roadblockLayout', () => {
     expect(roadblockLayout(square, [])).toEqual([]);
   });
 });
+
+describe('flyovers and stubs at the edge', () => {
+  const surface = { path: 0.12, service: 0.16, minor: 0.2, major: 0.24 };
+  it('closes a flyover deck crossing the edge with concrete and a roadblock on the deck, at its height', () => {
+    const deck: Road = { id: 'd', highway: 'primary', cls: 'major', w: 10, points: [[50, -40], [50, 60]], z: [7, 7] };
+    const props = roadblockLayout(square, [deck], [], surface);
+    const onDeck = props.filter((p) => p.y !== undefined);
+    expect(onDeck.filter((p) => p.kind === 'concrete').length).toBeGreaterThan(0);
+    expect(onDeck.filter((p) => p.kind === 'barricade').length).toBeGreaterThan(0);
+    for (const p of onDeck) {
+      expect(p.y).toBeCloseTo(7.24);
+      // Between the deck's sides.
+      expect(Math.abs(p.p[0] - 50)).toBeLessThan(5);
+    }
+    // Nothing for it on the ground (it passes over the edge's own row).
+    expect(props.filter((p) => p.y === undefined)).toHaveLength(0);
+  });
+
+  it('closes a short alley at its junction with concrete instead of a roadblock halfway down it', () => {
+    // The main street is split at the junction, as the pipeline splits roads.
+    const west: Road = { id: 'w', highway: 'residential', cls: 'minor', w: 8, points: [[10, 10], [50, 10]] };
+    const east: Road = { id: 'e', highway: 'residential', cls: 'minor', w: 8, points: [[50, 10], [90, 10]] };
+    const alley: Road = { id: 'alley', highway: 'service', cls: 'service', w: 4, points: [[50, -20], [50, 10]] };
+    const props = roadblockLayout(square, [west, east, alley], [], surface);
+    expect(props.filter((p) => p.kind !== 'concrete')).toHaveLength(0);
+    // A row across the alley's mouth, just short of the junction.
+    const mouth = props.filter((p) => p.kind === 'concrete' && p.p[1] > 5);
+    expect(mouth.length).toBeGreaterThan(0);
+    for (const m of mouth) expect(Math.abs(m.p[0] - 50)).toBeLessThan(4);
+  });
+
+  it('keeps the full roadblock on a road that runs on past the stub length', () => {
+    const long: Road = { id: 'long', highway: 'residential', cls: 'minor', w: 8, points: [[50, -20], [50, 60]] };
+    expect(roadblockLayout(square, [long], [], surface).some((p) => p.kind === 'sign')).toBe(true);
+  });
+});

@@ -17,7 +17,7 @@ import { placeLots } from './lots';
 import { placeParkedCars } from './parking';
 import { placeSidewalkDressing } from './sidewalks';
 import { placeStructures } from './structures';
-import { dropBuildingsOnRoads, fitRoadWidths } from './fitWidths';
+import { dropBuildingsOnRoads, fitRoadWidths, trimBuildingsOffRoads } from './fitWidths';
 import { dropNestedBuildings } from './overlaps';
 import { placeCrossings } from './crossings';
 import { buildJunctions } from './junctions';
@@ -99,7 +99,8 @@ const settled = settleRaised(elevation.roads, map.buildings);
 const rounded = smoothRaisedCurves(settled.roads);
 const fitted = fitRoadWidths(rounded.roads, map.buildings);
 const onRoads = dropBuildingsOnRoads(map.buildings, fitted.roads);
-const nested = dropNestedBuildings(onRoads.buildings);
+const trimmedOff = trimBuildingsOffRoads(onRoads.buildings, fitted.roads);
+const nested = dropNestedBuildings(trimmedOff.buildings);
 const cleared = { ...onRoads, buildings: nested.buildings };
 const medians = closeMedianGaps(fitted.roads);
 const graph = buildJunctions(medians.roads);
@@ -180,7 +181,7 @@ console.log(
 );
 console.log(`  raised curves: ${rounded.smoothed} flyovers and ramps rounded (${rounded.added} points added)`);
 console.log(`  road widths: ${fitted.stats.narrowed} of ${fitted.stats.checked} roads narrowed to fit between buildings`);
-console.log(`  buildings standing on a road removed: ${cleared.dropped}`);
+console.log(`  buildings standing on a road removed: ${cleared.dropped}; ${trimmedOff.stats.trimmed} cut back off a road, ${trimmedOff.stats.dropped} dropped (mostly on it)`);
 console.log(`  buildings inside others removed: ${nested.hidden} hidden inside a bigger one, ${nested.outlines} construction outlines around a finished building`);
 console.log(`  medians: ${medians.stats.widened} carriageways widened to close slivers under ${1.2} m`);
 const g = graph.stats;
@@ -208,7 +209,7 @@ if (extras) {
 {
   const st = structures.stats;
   console.log(
-    `  structures: ${st.deckPillars} deck pillars (${st.moved} moved off a road below, ${st.outriggers} beside the deck with a cap beam, ${st.skipped} left out), ` +
+    `  structures: ${st.deckPillars} deck pillars (${st.moved} moved off a road below, ${st.outriggers} beside the deck with a cap beam, ${st.skipped} left out, ${st.curbs ?? 0} with a curb around the base), ` +
       `${st.supports} posts under ${st.raisedBuildings} raised buildings and canopies`,
   );
 }

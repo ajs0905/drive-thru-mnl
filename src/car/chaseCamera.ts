@@ -59,6 +59,13 @@ export const CHASE = {
   clipMargin: 0.4,
   minDistance: 1.5,
   clipRelease: 3,
+  /**
+   * Pressed in closer than `liftFrom` meters (backing up to a wall), the camera rises
+   * `liftPerMeter` for every meter closer, so it looks down over the roof instead of
+   * ending up inside the car's body (which is behind the roof line up to about 2.3 m).
+   */
+  liftFrom: 3,
+  liftPerMeter: 0.9,
   /** The camera's view line starts this high above the car's base (about its roof). */
   focusHeight: 1.3,
 };
@@ -72,6 +79,11 @@ export function clipDistance(current: number, hit: number | null, full: number, 
   const goal = hit === null ? full : Math.min(full, Math.max(CHASE.minDistance, hit - CHASE.clipMargin));
   if (goal <= current) return goal;
   return Math.min(goal, current + (goal - current) * damp(CHASE.clipRelease, dt));
+}
+
+/** How much higher the camera goes (m) when a wall has pressed it in to `clip` meters from the car's roof. */
+export function compressedLift(clip: number): number {
+  return Math.max(0, CHASE.liftFrom - clip) * CHASE.liftPerMeter;
 }
 
 /** Extra distance behind the car (m) for its forward acceleration (m/s^2): positive is farther. */

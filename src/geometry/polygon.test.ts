@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Point, Ring } from '../map/types';
 import {
+  clipRingToHalfPlane,
   clipPolylineToRect,
   clipRingToRect,
   convexHull,
@@ -218,5 +219,16 @@ describe('simplifyPolyline / simplifyRing (Ramer-Douglas-Peucker)', () => {
     const out = simplifyRing(ring, 0.5);
     expect(out).toHaveLength(4);
     expect(new Set(out.map((p) => p.join(',')))).toEqual(new Set(['0,0', '10,0', '10,10', '0,10']));
+  });
+});
+
+describe('clipRingToHalfPlane', () => {
+  it('keeps the part of a ring on the normal side of the line, past the offset', () => {
+    const sq: Ring = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    const kept = clipRingToHalfPlane(sq, [0, 0], [0, 1], 4);
+    expect(ringArea(kept)).toBeCloseTo(60);
+    expect(Math.min(...kept.map((p) => p[1]))).toBeCloseTo(4);
+    expect(clipRingToHalfPlane(sq, [0, 0], [0, 1], 20)).toHaveLength(0);
+    expect(clipRingToHalfPlane(sq, [0, 0], [0, 1], -5)).toEqual(sq);
   });
 });

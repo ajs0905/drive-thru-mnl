@@ -169,6 +169,8 @@ export interface Pillar {
   rot: number;
   /** For a pillar beside a deck: the point under the deck its cap beam reaches to. */
   cap?: Point;
+  /** A low concrete curb around its base, reaching this far past its sides (m); only where that stays out of the lanes. */
+  curb?: number;
 }
 
 /**
@@ -217,7 +219,7 @@ export interface MapStats {
   };
   /** Filled in when barriers and trees from the second export were added. */
   extras?: { barriers: number; barrierMeters: number; gapsCut: number; trees: number; treesMoved: number; treesClearedOfDecks?: number; fixtures: number; dropped: Record<string, number> };
-  structures?: { deckPillars: number; moved: number; outriggers: number; skipped: number; raisedBuildings: number; supports: number };
+  structures?: { deckPillars: number; moved: number; outriggers: number; skipped: number; curbs?: number; raisedBuildings: number; supports: number };
   parking?: { roads: number; slots: number; cars: number };
   lots?: LotStats;
   sidewalks?: { placed: Record<string, number>; skipped: Record<string, number> };

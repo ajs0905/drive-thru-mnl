@@ -17,16 +17,17 @@ import { useEffect, useMemo, useRef, type RefObject } from 'react';
 import { Quaternion, Vector3, type PerspectiveCamera } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { kick, STILL, stepBody } from '../car/bodyMotion';
-import { CHASE, cameraPull, chaseView, clipDistance, crashShake, damp, shakeOffset, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
+import { CHASE, cameraPull, chaseView, clipDistance, compressedLift, crashShake, damp, shakeOffset, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
 import { inputFromKeys, KEY_BINDINGS, NO_KEYS } from '../car/controls';
 import { headingOfDirection } from '../car/spawn';
 import { restLift, wheelHardPoint, type CarSpec } from '../car/spec';
-import { chassisCollider, newDriveState, resetOnGround, RESET, setupWheels, stepVehicle, type VehicleController } from '../car/vehicle';
-import { blobShadow, placeShadow, poseBody, prepareCarModel, setBrakeLights, setReverseLights, updateHalos } from './carModel';
+import { chassisCollider, newDriveState, resetOnGround, RESET, setupWheels, stepVehicle, type ResetPose, type VehicleController } from '../car/vehicle';
+import { blinkAfterReset, blobShadow, placeShadow, poseBody, prepareCarModel, setBrakeLights, setReverseLights, updateHalos } from './carModel';
 import { mergeKeys, type DriveSession } from './driveSession';
 
 /** Seconds upside down (or fallen off the world) before the car puts itself back on its wheels. */
 const STUCK_RESET = 2;
+
 /** When driving ends, the map camera rises to this far behind and above the car. */
 const EXIT_VIEW = { back: 70, up: 90 };
 
@@ -37,6 +38,7 @@ export function Car({
   cameraBlockers,
   session,
   paused = false,
+  findReset,
 }: {
   spec: CarSpec;
   spawn: { position: Vec3; yaw: number };
@@ -48,6 +50,8 @@ export function Car({
   session?: DriveSession;
   /** The physics is stopped (loading, pause menu, big map): the camera holds still too. */
   paused?: boolean;
+  /** Where a reset puts the car (an open road nearby), given where it is (three.js space) and its map heading; null resets it in place. */
+  findReset?: (x: number, y: number, z: number, heading: number) => ResetPose | null;
 }) {
   const gltf = useLoader(GLTFLoader, `${import.meta.env.BASE_URL}${spec.model}`);
   const model = useMemo(() => prepareCarModel(gltf.scene), [gltf]);
@@ -150,7 +154,9 @@ export function Car({
     if (s.reset || s.stuck > STUCK_RESET) {
       // Not again while the last reset is still settling: spamming it can't stack anything.
       if (s.time - s.lastReset >= RESET.cooldown) {
-        resetOnGround(w, rapier, b, spec, spawn.position[1] - restLift(spec));
+        const t = b.translation();
+        const heading = headingOfDirection(2 * (r.x * r.z + r.w * r.y), 1 - 2 * (r.x * r.x + r.y * r.y));
+        resetOnGround(w, rapier, b, spec, spawn.position[1] - restLift(spec), findReset?.(t.x, t.y, t.z, heading) ?? undefined);
         Object.assign(s, { lastReset: s.time, drive: { ...newDriveState(), gearbox: { ...s.drive.gearbox, gear: 1, shifting: 0 } } });
       }
       Object.assign(s, { reset: false, stuck: 0 });
@@ -172,6 +178,9 @@ export function Car({
       node.position.y = wheelHardPoint(spec, w)[1] - (vc.wheelSuspensionLength(i) ?? spec.tuning.suspensionRest);
       node.rotation.set(vc.wheelRotation(i) ?? 0, vc.wheelSteering(i) ?? 0, 0);
     });
+
+    // Blinking for a moment after a reset.
+    blinkAfterReset(model, sim.current.time - sim.current.lastReset);
 
     const v = view.current;
     const drive = sim.current.drive;
@@ -209,7 +218,7 @@ export function Car({
     v.clip = clipDistance(Math.min(v.clip, full), hit ? hit.timeOfImpact : null, full, dt);
     const camera = state.camera as PerspectiveCamera;
     const [sx, sy] = shakeOffset(v.shake, state.clock.elapsedTime);
-    camera.position.set(from.x + dir.x * v.clip - dir.z * sx, from.y + dir.y * v.clip + sy, from.z + dir.z * v.clip + dir.x * sx);
+    camera.position.set(from.x + dir.x * v.clip - dir.z * sx, from.y + dir.y * v.clip + sy + compressedLift(v.clip), from.z + dir.z * v.clip + dir.x * sx);
     camera.lookAt(...cam.lookAt);
     const fov = speedFov(v.speed);
     if (Math.abs(camera.fov - fov) > 0.01) {

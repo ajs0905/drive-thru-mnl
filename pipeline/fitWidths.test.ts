@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Building, Point, Ring, Road } from '../src/map/types';
-import { dropBuildingsOnRoads, fitRoadWidths, MIN_WIDTH } from './fitWidths';
+import { dropBuildingsOnRoads, fitRoadWidths, MIN_WIDTH, TRIM, trimBuildingsOffRoads } from './fitWidths';
+import { distanceToSegment, ringArea } from '../src/geometry/polygon';
 
 const box = (x0: number, y0: number, x1: number, y1: number): Ring => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
 const house = (id: string, ring: Ring, extra: Partial<Building> = {}): Building => ({
@@ -90,5 +91,33 @@ describe('dropBuildingsOnRoads', () => {
     expect(dropBuildingsOnRoads([over], [tunnel]).dropped).toBe(0);
     expect(dropBuildingsOnRoads([over], [flyover]).dropped).toBe(0);
     expect(dropBuildingsOnRoads([canopy], [road]).dropped).toBe(0);
+  });
+});
+
+describe('trimBuildingsOffRoads', () => {
+  it('cuts a wall back to the road edge plus a gap, keeping the rest of the house', () => {
+    const r = street([[-50, 0], [100, 0]], 8);
+    const { buildings, stats } = trimBuildingsOffRoads([house('h', box(0, 2, 20, 14))], [r]);
+    expect(stats).toEqual({ trimmed: 1, dropped: 0 });
+    for (const p of buildings[0].rings[0]) expect(distanceToSegment(p, [-50, 0], [100, 0])).toBeGreaterThanOrEqual(4 + TRIM.gap - 1e-6);
+    expect(ringArea(buildings[0].rings[0])).toBeCloseTo(20 * (14 - 4.2), 1);
+  });
+
+  it('drops a building that would lose most of itself, and leaves small overlaps alone', () => {
+    const r = street([[-50, 0], [100, 0]], 8);
+    expect(trimBuildingsOffRoads([house('h', box(0, 1, 20, 5))], [r]).stats.dropped).toBe(1);
+    const light = trimBuildingsOffRoads([house('h', box(0, 3.9, 20, 14))], [r]);
+    expect(light.stats.trimmed).toBe(0);
+  });
+
+  it('leaves passages, raised buildings, courtyards and big buildings by service roads alone', () => {
+    const through = street([[-50, 8], [100, 8]], 6);
+    const passage = trimBuildingsOffRoads([house('h', box(0, 2, 20, 14))], [through]);
+    expect(passage.stats.trimmed).toBe(0);
+    const r = street([[-50, 0], [100, 0]], 8);
+    expect(trimBuildingsOffRoads([house('c', box(0, 2, 20, 14), { minH: 4 })], [r]).stats.trimmed).toBe(0);
+    expect(trimBuildingsOffRoads([house('y', box(0, 2, 20, 14), { rings: [box(0, 2, 20, 14), box(5, 6, 10, 10)] })], [r]).stats.trimmed).toBe(0);
+    const service = street([[-50, 0], [200, 0]], 6, { cls: 'service', highway: 'service' });
+    expect(trimBuildingsOffRoads([house('mall', box(0, 2, 100, 60))], [service]).stats.trimmed).toBe(0);
   });
 });

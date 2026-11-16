@@ -48,6 +48,8 @@ const MEDIAN_SLACK = 0.5;
 const OUTRIGGER = 2.5;
 /** Pillars only where the deck's underside is more than this high (m). */
 const MIN_TOP = 2;
+/** A low curb around a road deck's pillar, reaching this far past its sides (m), where that keeps out of the lanes below. */
+const CURB = 0.45;
 
 export interface StructureStats {
   deckPillars: number;
@@ -57,6 +59,8 @@ export interface StructureStats {
   outriggers: number;
   /** Places left without a pillar (no spot clear of the roads below). */
   skipped: number;
+  /** Deck pillars with a curb around their base. */
+  curbs?: number;
   /** Raised buildings and canopies, and the posts under them. */
   raisedBuildings: number;
   supports: number;
@@ -156,6 +160,11 @@ export function placeStructures(roads: Road[], buildings: Building[]): { pillars
           if (pass === 'outrigger') {
             pillar.cap = [round2(c.p[0]), round2(c.p[1])];
             stats.outriggers++;
+          }
+          // Under road decks, a curb around the base where it stays out of the lanes (same margin as the pillar itself).
+          if (road.cls !== 'path' && !onRoad(spot, shape.pillarSize + 2 * CURB, c.top, road, c.rot)) {
+            pillar.curb = CURB;
+            stats.curbs = (stats.curbs ?? 0) + 1;
           }
           pillars.push(pillar);
           stats.deckPillars++;

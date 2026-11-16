@@ -115,6 +115,25 @@ export function ringBounds(ring: Ring): Rect {
 }
 
 /**
+ * Sutherland-Hodgman clip of a ring against a half-plane: keeps the part where
+ * (p - origin) . normal >= offset (`normal` a unit vector).
+ */
+export function clipRingToHalfPlane(ring: Ring, origin: Point, normal: Point, offset: number): Ring {
+  const side = (p: Point) => (p[0] - origin[0]) * normal[0] + (p[1] - origin[1]) * normal[1] - offset;
+  const out: Ring = [];
+  for (let i = 0; i < ring.length; i++) {
+    const [a, b] = [ring[i], ring[(i + 1) % ring.length]];
+    const [sa, sb] = [side(a), side(b)];
+    if (sa >= 0) out.push(a);
+    if ((sa >= 0) !== (sb >= 0)) {
+      const t = sa / (sa - sb);
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    }
+  }
+  return out;
+}
+
+/**
  * Sutherland-Hodgman clip of a ring against an axis-aligned rectangle.
  * Works for any (even concave) subject polygon because the clip shape is convex.
  * Returns [] if nothing is left.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHASE, cameraPull, chaseView, clipDistance, crashShake, damp, shakeOffset, speedFov, turnToward } from './chaseCamera';
+import { CHASE, cameraPull, chaseView, clipDistance, compressedLift, crashShake, damp, shakeOffset, speedFov, turnToward } from './chaseCamera';
 
 describe('chaseView', () => {
   it('sits behind and above the car, looking ahead of it', () => {
@@ -116,5 +116,15 @@ describe('crash handling', () => {
       const [x, y] = shakeOffset(1, t);
       expect(Math.hypot(x, y)).toBeLessThanOrEqual(CHASE.shake * Math.SQRT2 + 1e-9);
     }
+  });
+});
+
+describe('compressedLift', () => {
+  it('leaves the camera alone at its usual distance and lifts it over the roof when a wall presses it in', () => {
+    expect(compressedLift(6)).toBe(0);
+    expect(compressedLift(CHASE.liftFrom)).toBe(0);
+    // Pressed all the way in, it ends up well above the roof (the view line starts at roof height, the car is about 1.7 m tall).
+    const lowest = CHASE.focusHeight + compressedLift(CHASE.minDistance) - 0.5;
+    expect(lowest).toBeGreaterThan(2.1);
   });
 });
