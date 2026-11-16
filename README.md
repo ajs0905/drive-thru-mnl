@@ -16,6 +16,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 - Polyline offsetting, mitred deck joints and convex-hull junction stitching: road ribbons, flyover decks without cracks, one polygon per junction
 - Catmull-Rom splines: round the flyovers' and ramps' curves
 - Contour tracing, Ramer-Douglas-Peucker simplification and a breadth-first distance transform: wall off empty lots at the back of the sidewalk
+- Rotating calipers (minimum-area rectangles) and polygon scaling: hip roofs on houses and towers stepped back from their podiums
 - Separating Axis Theorem (SAT) overlap tests: keep parked cars, roadblocks, street furniture and reset spots clear of obstacles
 
 **Spatial indexing and graph algorithms**
@@ -35,7 +36,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Metric | Value | Notes |
 | :--- | :--- | :--- |
 | **Build & Bundle** | | |
-| Main / Drive bundle | 387 KB / 861 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
+| Main / Drive bundle | 389 KB / 861 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
 | Map file (`bgc.json`) | 3.31 MB (779 KB gzipped) | Deterministic: CI rebuilds it from the raw data and fails if a byte differs |
 | Pipeline | 17 steps, a few seconds | Node + TypeScript, offline |
 | **World Data** | | |
@@ -47,14 +48,14 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Fixed-step physics | 60 Hz | The same step function runs in the game and in headless tests |
 | **Performance & Quality** | | |
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
-| Draw calls | About 55 to 105 per view | The whole city, built in the browser in about 300 to 400 ms; an idle view costs nothing |
-| Automated tests | 649 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
+| Automated tests | 657 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 25 automated checks | A CI gate: counts can only go down |
 
 ## How It Works
 
 1. **Offline map pipeline** (`pipeline/`): turns raw OpenStreetMap GeoJSON into one deterministic, versioned map file. It works out building heights, flyover heights and ramps, junction polygons, zebras, walls, lots, traffic lights, street lights, parked cars and street furniture, then runs 25 map QA checks before the file ships.
-2. **Procedural 3D city** (`src/geometry/`, `src/scene/`): the browser builds road ribbons, flyover decks, extruded buildings, trees and barriers from the map file, merged into 1.2 km grid cells, with GPU instancing for repeated props and GLSL shaders for markings, windows and car paint.
+2. **Procedural 3D city** (`src/geometry/`, `src/scene/`): the browser builds road ribbons, flyover decks, buildings (hip-roofed houses, podium towers, shopfronts), trees and barriers from the map file, merged into 1.2 km grid cells, with GPU instancing for repeated props and GLSL shaders for markings, windows and car paint.
 3. **Physics and vehicle** (`src/car/`): Rapier at a fixed 60 Hz, with arcade assists (slip-angle drift control, anti-spin, a hysteresis gearbox) and camera ray clipping. Parked cars, roadblock pieces and street furniture become physics bodies only near the player, from capped pools, so you can knock over lamp posts and smash through waiting sheds without the whole map in the physics world. The car code doesn't touch React or three.js, so the same step function runs in headless Vitest suites.
 4. **Render on demand, adaptive quality**: frames are drawn only when something changes, shadows re-render on a throttle, the pixel ratio follows the frame rate, and the 2D maps paste cached tiles. Low, Medium and High tiers aim at desktops and low-mid range Android phones (phone numbers still to be measured).
 
@@ -74,14 +75,14 @@ Free-roam arcade driving on BGC's real streets, for once without the traffic (he
 
 - Map pipeline: OSM export to one compact, deterministic map file, with heights, flyovers, junctions, crossings, trees, walls, walled-off lots, traffic lights, street lights, street furniture and parked cars worked out by rule
 - Map QA: 25 checks run in CI, each with a baseline that can only go down
-- 3D city: buildings with windows and roof details, painted roads with clean intersections, a physically based sky, shadows, and filler city and real skylines past the edge
+- 3D city: buildings with windows, shopfronts, hip roofs, podium towers and roof details, painted roads with clean intersections, a physically based sky, shadows, and filler city and real skylines past the edge
 - Performance: three quality tiers, adaptive resolution, grid culling, render on demand, reversed depth
 - Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, walled-off lots, street furniture you can knock over or smash through, parked cars and roadblocks you can push around
 - UI: a road sign menu, loading screens, a road sign HUD with a heading-up minimap and a full map, a pause menu, touch controls for phones
 
 ## Planned
 
-- Measure it on a phone, then better buildings and utility poles
+- Measure it on a phone, then utility poles and more building detail (balconies, materials, signage)
 - Later: engine, tire and crash sounds, ambience and music
 - First deploy on Vercel
 - Game modes: sprint from A to B, ride-hailing, light traffic, a police chase

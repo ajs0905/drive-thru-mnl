@@ -7,7 +7,9 @@
  *   windows  style packed by windowCode() in src/geometry/extrude.ts
  *
  * Kinds: 0 plain (roofs, warehouses), 1 glass curtain wall, 2 office grid,
- * 3 apartment rows, 4 house windows, 5 parking decks (open bands between posts).
+ * 3 apartment rows, 4 house windows, 5 parking decks (open bands between posts). With
+ * the shops flag (geometry/buildingForm.ts) the ground floor is shop windows between
+ * thin mullions under a band of shop signs, each sign a color picked per pair of bays.
  * Walls also darken over their bottom 4 m (cheap baked ambient occlusion: the
  * ground blocks part of the sky there). Each window gets a slightly different tint from a hash of its column, floor and
  * the building's variant, so facades don't look stamped. Once windows get smaller
@@ -16,7 +18,11 @@
  */
 import { MeshLambertMaterial } from 'three';
 import { hexToRgb, srgbToLinear } from '../geometry/meshBuilder';
-import { FLOOR_HEIGHT } from '../geometry/extrude';
+import { FLOOR_HEIGHT, WINDOWS_SHOPS } from '../geometry/extrude';
+import { SHOPS } from '../geometry/buildingForm';
+
+/** Shopfront glass and sign colors. */
+export const SHOP_COLORS = { glass: ['#26343c', '#5a7480'], signs: ['#c23a2c', '#e9b324', '#2f6c9e', '#3f8f5a', '#efe9dc'] } as const;
 
 const vec3 = (hex: string) => `vec3(${srgbToLinear(hexToRgb(hex)).map((c) => c.toFixed(4)).join(', ')})`;
 
@@ -49,10 +55,33 @@ const PAINT = /* glsl */ `
   // Baked contact shading: walls darken toward the ground, where little sky reaches.
   if (vWallAux.z > 0.0) diffuseColor.rgb *= mix(0.68, 1.0, smoothstep(0.0, 4.0, vWallAux.y));
   float code = floor(vWallAux.w + 0.5);
+  float shops = step(${(WINDOWS_SHOPS - 0.5).toFixed(1)}, code) * step(0.0, vWallAux.z - 0.001);
+  code -= shops * ${WINDOWS_SHOPS}.0;
   float kind = mod(code, 8.0);
-  if (kind > 0.5) {
+  float shopTop = ${SHOPS.top.toFixed(2)};
+  if (shops > 0.5 && vWallAux.y < shopTop) {
     float variant = mod(floor(code / 8.0), 16.0);
-    float floors = floor(code / 128.0);
+    float u = vWallAux.x;
+    float v = vWallAux.y;
+    float len = vWallAux.z;
+    float bays = max(1.0, floor(len / 3.2));
+    float cell = u / (len / bays);
+    float aaU = fwidth(cell);
+    float aaV = fwidth(v);
+    float far = smoothstep(0.15, 0.45, aaU);
+    float pane = winBand(fract(cell), 0.05, 0.95, aaU) * winBand(v, 0.3, 3.2, aaV);
+    pane = mix(pane, 0.8, far);
+    float sign = winBand(v, 3.42, shopTop - 0.12, aaV);
+    float pick = winHash(vec3(floor(cell / 2.0), variant, 7.0));
+    vec3 signColor = pick < 0.2 ? ${vec3(SHOP_COLORS.signs[0])} : pick < 0.4 ? ${vec3(SHOP_COLORS.signs[1])} : pick < 0.6 ? ${vec3(SHOP_COLORS.signs[2])} : pick < 0.8 ? ${vec3(SHOP_COLORS.signs[3])} : ${vec3(SHOP_COLORS.signs[4])};
+    vec3 shopGlass = mix(${vec3(SHOP_COLORS.glass[0])}, ${vec3(SHOP_COLORS.glass[1])}, mix(winHash(vec3(floor(cell), variant, 3.0)), 0.5, far));
+    // A dark frame, glass in the bays, the signs above.
+    diffuseColor.rgb *= 0.75;
+    diffuseColor.rgb = mix(diffuseColor.rgb, shopGlass, pane);
+    diffuseColor.rgb = mix(diffuseColor.rgb, signColor, sign);
+  } else if (kind > 0.5) {
+    float variant = mod(floor(code / 8.0), 16.0);
+    float floors = mod(floor(code / 128.0), 256.0);
     float u = vWallAux.x;
     float v = vWallAux.y;
     float len = vWallAux.z;
@@ -86,6 +115,8 @@ const PAINT = /* glsl */ `
     mask = mix(mask, width * (hi - lo), far);
     // No windows above the top floor, on walls too short for one, or in the dark below 0.
     mask *= step(level + 0.5, floors) * step(1.6, len) * step(0.0, v);
+    // Above a shop floor, windows start over its signs.
+    mask *= 1.0 - shops * (1.0 - step(shopTop, v));
 
     float tint = winHash(vec3(col, level, variant));
     // Curtain walls vary less window to window; everything blends to the middle far away.
@@ -108,6 +139,6 @@ export function createBuildingMaterial(): MeshLambertMaterial {
       .replace('#include <common>', `#include <common>\n${FUNCTIONS}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${PAINT}`);
   };
-  m.customProgramCacheKey = () => 'building-windows-v3';
+  m.customProgramCacheKey = () => 'building-windows-v4';
   return m;
 }

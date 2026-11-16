@@ -142,8 +142,9 @@ describe('addFlatPolygon', () => {
 describe('wall coordinates for windows', () => {
   it('packs and unpacks a window style', () => {
     const code = windowCode(WINDOWS.glass, 11, 42);
-    expect(decodeWindows(code)).toEqual({ kind: WINDOWS.glass, variant: 11, floors: 42 });
-    expect(decodeWindows(windowCode(WINDOWS.house, 99, -3))).toEqual({ kind: WINDOWS.house, variant: 15, floors: 0 });
+    expect(decodeWindows(code)).toEqual({ kind: WINDOWS.glass, variant: 11, floors: 42, shops: false });
+    expect(decodeWindows(windowCode(WINDOWS.office, 4, 200, true))).toEqual({ kind: WINDOWS.office, variant: 4, floors: 200, shops: true });
+    expect(decodeWindows(windowCode(WINDOWS.house, 99, -3))).toEqual({ kind: WINDOWS.house, variant: 15, floors: 0, shops: false });
   });
 
   it('gives wall vertices meters along the wall, meters up, the wall length and the style', () => {

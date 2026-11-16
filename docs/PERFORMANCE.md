@@ -105,6 +105,10 @@ Closing off empty lots and the sidewalk furniture ([ADR 0018](decisions/0018-wor
 
 The street furniture left the static collision meshes (125k to 99k triangles) for pooled bodies near the player ([ADR 0019](decisions/0019-knockable-and-breakaway-props.md)): at most 28 knockable bodies within 35 m (asleep until hit, put to sleep after 3 s lying still), fixed bodies for the sheds, kiosks and booth within 40 m, and at most 30 debris bodies (no shadows, removed after 12 s out of sight). The renderer redraws the dressing's instance lists only when a piece moves or the focus moves 20 m (a loop over the 4,040 pieces, a fraction of a millisecond). Main bundle 387 KB gzipped (was 384), Drive chunk 861 KB.
 
+### Building forms
+
+Hip roofs, podium towers and shopfronts ([ADR 0020](decisions/0020-building-forms.md)) are built into the same merged building cells: no new draw calls. Same Medium views as above: 58 / 236k, 107 / 499k, 80 / 385k (4k to 27k more triangles, mostly the hip roofs at 6 each). The shopfronts are a branch in the building shader for the ground floor only. The city build took about 40 to 90 ms longer in the headless browser (each building's form is worked out once and cached; the roof props reuse it). Main bundle 389 KB gzipped (was 387).
+
 ### Desktop with a GPU
 
 Run `npm run dev`, open the page with `?debug` at the end of the address, and read the overlay (FPS, draw calls, triangles, build time): top middle on the menu and while driving, bottom left in the map view (`?view=map`). On laptops with two GPUs, check that the browser runs on the dedicated one (`chrome://gpu`, or Windows Settings > Display > Graphics > browser > High performance).

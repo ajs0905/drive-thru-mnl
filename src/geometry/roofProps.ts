@@ -9,6 +9,7 @@
 import { seeded } from '../map/hash';
 import type { Building, Point } from '../map/types';
 import type { Prop } from './props';
+import { buildingForm } from './buildingForm';
 import { distanceToRing, pointInRing, ringArea, ringBounds } from './polygon';
 
 export type RoofPropKind = 'housing' | 'ac' | 'tank';
@@ -32,7 +33,10 @@ const HOUSES = new Set(['house', 'detached', 'terrace', 'semidetached_house', 'b
 const BLANK = new Set(['roof', 'construction', 'parking', 'garage', 'garages']);
 
 export function roofProps(b: Building): RoofProp[] {
-  const ring = b.rings[0];
+  // Nothing on a hip roof; on a tower over a podium, only on the tower's own roof.
+  const form = buildingForm(b);
+  if (form.hip) return [];
+  const ring = form.podium?.tower ?? b.rings[0];
   if (!ring || ring.length < 3 || (b.minH ?? 0) > 0 || b.scenery || BLANK.has(b.type)) return [];
   const area = ringArea(ring);
   const rand = seeded(b.id);

@@ -2,7 +2,8 @@
  * Turns MapData into a handful of merged meshes (one per layer). The whole city
  * renders in about 5 draw calls instead of one per building or road.
  */
-import { addFlatPolygon, addWalls, extrudeBuilding, FLOOR_HEIGHT, windowCode, WINDOWS } from '../geometry/extrude';
+import { addFlatPolygon, addWalls, FLOOR_HEIGHT, windowCode, WINDOWS } from '../geometry/extrude';
+import { addFormedBuilding, buildingForm, CIVIC, COMMERCIAL, HOUSES, RESIDENTIAL, UTILITY } from '../geometry/buildingForm';
 import { addEdgeFence } from '../geometry/edgeFence';
 import { hexToRgb, MeshBuilder, shade, srgbToLinear, type RGB } from '../geometry/meshBuilder';
 import type { Area, BarrierKind, Building, MapData, Point, Road, RoadClass } from '../map/types';
@@ -123,10 +124,6 @@ export const CROSSING_Y = 0.28;
 export const ROAD_LIFT = 0.004;
 const SIDEWALK_WIDTH: Record<RoadClass, number> = { major: 3, minor: 2, service: 1.5, path: 0 };
 
-const RESIDENTIAL = new Set(['house', 'detached', 'residential', 'apartments', 'terrace', 'semidetached_house', 'bungalow', 'dormitory']);
-const COMMERCIAL = new Set(['office', 'commercial', 'hotel', 'retail', 'supermarket']);
-const CIVIC = new Set(['school', 'university', 'college', 'hospital', 'government', 'public', 'civic', 'church', 'chapel', 'cathedral', 'kindergarten']);
-const UTILITY = new Set(['industrial', 'warehouse', 'garage', 'garages', 'roof', 'parking', 'shed', 'service', 'construction']);
 
 export function buildingColor(b: Building): string {
   if (RESIDENTIAL.has(b.type)) return PALETTE.residential;
@@ -136,17 +133,16 @@ export function buildingColor(b: Building): string {
   return b.h >= 25 ? PALETTE.commercial : PALETTE.lowGeneric; // untyped: towers read as glass, low ones as concrete
 }
 
-const HOUSES = new Set(['house', 'detached', 'terrace', 'semidetached_house', 'bungalow']);
 const PARKING = new Set(['parking', 'garage', 'garages']);
 
-/** Window style for a building's walls (windowCode), from its type and height. */
-export function windowStyle(b: Building): number {
+/** Window style for a building's walls (windowCode), from its type and height; `shops` puts shop windows on the ground floor. */
+export function windowStyle(b: Building, shops = false): number {
   const base = b.minH ?? 0;
   const tall = b.h - base;
   if (base >= 2.5 || tall < 2.5) return 0; // canopies, skybridges, sheds
   const floors = Math.floor(tall / FLOOR_HEIGHT);
   const variant = Math.floor(idUnit(`${b.id}#windows`) * 16);
-  const style = (kind: (typeof WINDOWS)[keyof typeof WINDOWS]) => windowCode(kind, variant, floors);
+  const style = (kind: (typeof WINDOWS)[keyof typeof WINDOWS]) => windowCode(kind, variant, floors, shops);
   if (PARKING.has(b.type)) return tall >= 5 ? style(WINDOWS.parking) : 0;
   if (UTILITY.has(b.type)) return 0; // warehouses, factories, roofs: blank walls
   if (HOUSES.has(b.type)) return style(WINDOWS.house);
@@ -235,8 +231,15 @@ export function buildCity(map: MapData): CityMeshes {
     const jitter = 0.92 + idUnit(b.id) * 0.14;
     const wall: RGB = b.scenery ? col(PALETTE.scenery) : shade(col(buildingColor(b)), jitter);
     const base = b.minH ?? 0;
-    const colors = { wall, roof: shade(wall, 0.8), windows: windowStyle(b) };
-    if (b.rings[0]?.length) extrudeBuilding((b.scenery ? scenery : buildings).at(b.rings[0][0]), b.rings, b.h - base, colors, base);
+    const form = buildingForm(b);
+    const colors = { wall, roof: shade(wall, 0.8), windows: windowStyle(b, form.shops), hipRoof: form.hip ? shade(col(form.hip.color), jitter) : undefined, towerWindows: 0 };
+    if (form.podium) {
+      // The podium: office windows over shops; the tower above it: its own style, floors counted from the podium's top.
+      const variant = Math.floor(idUnit(`${b.id}#windows`) * 16);
+      colors.windows = windowCode(WINDOWS.office, variant, Math.floor(form.podium.height / FLOOR_HEIGHT), true);
+      colors.towerWindows = windowCode(WINDOWS.glass, variant, Math.floor((b.h - form.podium.height) / FLOOR_HEIGHT));
+    }
+    if (b.rings[0]?.length) addFormedBuilding((b.scenery ? scenery : buildings).at(b.rings[0][0]), b.rings, b.h - base, colors, form, base);
   }
 
   const concrete = { color: col(PALETTE.concrete), underside: col(PALETTE.concreteUnder) };

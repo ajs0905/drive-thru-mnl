@@ -42,19 +42,23 @@ export const FLOOR_HEIGHT = 3.2;
 
 /**
  * Window styles, packed into one float per wall vertex for the building shader
- * (src/scene/buildingMaterial.ts): kind + 8·variant + 128·floors.
+ * (src/scene/buildingMaterial.ts): kind + 8·variant + 128·floors, plus `WINDOWS_SHOPS`
+ * for shop windows and a sign band on the ground floor (geometry/buildingForm.ts).
  */
 export const WINDOWS = { none: 0, glass: 1, office: 2, apartment: 3, house: 4, parking: 5 } as const;
 export type WindowKind = (typeof WINDOWS)[keyof typeof WINDOWS];
 
-export function windowCode(kind: WindowKind, variant: number, floors: number): number {
+/** The shopfront flag in a window code (above the most floors' bits). */
+export const WINDOWS_SHOPS = 32768;
+
+export function windowCode(kind: WindowKind, variant: number, floors: number, shops = false): number {
   const v = Math.max(0, Math.min(15, Math.floor(variant)));
   const f = Math.max(0, Math.min(200, Math.floor(floors)));
-  return kind + 8 * v + 128 * f;
+  return kind + 8 * v + 128 * f + (shops ? WINDOWS_SHOPS : 0);
 }
 
-export function decodeWindows(code: number): { kind: number; variant: number; floors: number } {
-  return { kind: code % 8, variant: Math.floor(code / 8) % 16, floors: Math.floor(code / 128) };
+export function decodeWindows(code: number): { kind: number; variant: number; floors: number; shops: boolean } {
+  return { kind: code % 8, variant: Math.floor(code / 8) % 16, floors: Math.floor(code / 128) % 256, shops: code >= WINDOWS_SHOPS };
 }
 
 /**
