@@ -6,14 +6,18 @@
  * - Nodes are road ends. Roads are split where they meet, so the ends of meeting roads
  *   are the same point; ends at different heights (a ramp's foot and a deck above it) are
  *   different nodes.
- * - Each drivable road is one edge, or two (one per direction, "twins") if it's two-way.
+ * - Each drivable road inside the playable area is one edge, or two (one per direction,
+ *   "twins") if it's two-way. Roads poking out past the edge are left out (it's a wall), and
+ *   so are roads closed by bollards or blocks across them (closures.ts).
  *   An edge keeps its polyline in the direction of travel, its cumulative lengths, its
  *   heights, its lanes that way and its travel time at the class's free-flow speed.
  * - Strongly connected components (Tarjan) mark the main network: from any edge in it
  *   you can reach any other and come back. Roads cut off by the playable edge (one-way
  *   stubs) fall outside it; routes and traffic stay inside it.
  */
+import { distanceToRing, pointInRing } from '../geometry/polygon';
 import { SegmentGrid } from '../geometry/spatialGrid';
+import { closedRoads } from './closures';
 import { laneCount } from '../map/roads';
 import type { MapData, Point, Road } from '../map/types';
 
@@ -60,10 +64,15 @@ export interface RoadGraph {
   grid: SegmentGrid<{ edge: number; i: number }>;
 }
 
-/** Roads the graph takes: drivable (no footpaths) and inside the playable area. */
-export const graphRoad = (r: Road) => r.cls !== 'path' && !r.scenery && r.points.length >= 2;
+/** Roads the graph takes: drivable (no footpaths), not scenery, and (given the playable area) inside it all the way. */
+export function graphRoad(r: Road, playable?: Point[]): boolean {
+  if (r.cls === 'path' || r.scenery || r.points.length < 2) return false;
+  if (!playable || playable.length < 3) return true;
+  // A road poking out past the edge (a ramp the edge cuts across) can't be driven: the edge is a wall.
+  return r.points.every((p) => pointInRing(p, playable) || distanceToRing(p, playable) < 1);
+}
 
-export function buildRoadGraph(map: Pick<MapData, 'roads'>): RoadGraph {
+export function buildRoadGraph(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, 'playable' | 'fixtures'>>): RoadGraph {
   const nodes: Point[] = [];
   const nodeZ: number[] = [];
   const ids = new Map<string, number>();
@@ -79,8 +88,9 @@ export function buildRoadGraph(map: Pick<MapData, 'roads'>): RoadGraph {
     return id;
   };
   const edges: GraphEdge[] = [];
+  const closed = closedRoads(map.roads, map.fixtures ?? []);
   map.roads.forEach((r, ri) => {
-    if (!graphRoad(r)) return;
+    if (!graphRoad(r, map.playable) || closed.has(ri)) return;
     const z = r.points.map((_, i) => r.z?.[i] ?? 0);
     const acc = [0];
     for (let i = 1; i < r.points.length; i++) acc.push(acc[i - 1] + Math.hypot(r.points[i][0] - r.points[i - 1][0], r.points[i][1] - r.points[i - 1][1]));

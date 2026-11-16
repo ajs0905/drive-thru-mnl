@@ -4,11 +4,14 @@
  * the cargo runs' loading bays and drop-offs use the same spots.
  *
  * A spot keeps the car's footprint clear of parked cars, solid street furniture, fixtures
- * (gates, booms, bollards: likely driveways) and zebra crossings, stays away from junctions
- * and bends, and is on the ground (no flyovers). If the asked-for spot isn't clear it slides
+ * (gates, booms, bollards: likely driveways), pillars, walls and zebra crossings, stays out
+ * from beside or under a ramp or deck too low to drive under (its side walls reach the
+ * ground), away from junctions and bends, and is on the ground (no flyovers). If the asked-for spot isn't clear it slides
  * along the curb, nearest first, up to `CURB.search` meters either way.
  */
 import { DRESSING, dressingCorners } from '../geometry/dressing';
+import { distanceToSegment, segmentDistanceToRing } from '../geometry/polygon';
+import { pillarCorners } from '../geometry/road';
 import { SegmentGrid } from '../geometry/spatialGrid';
 import type { MapData, Point, Road } from '../map/types';
 import { PARKED_MODELS } from './parked';
@@ -31,6 +34,9 @@ export const CURB = {
   maxBend: 12,
   /** Room (m) along the road kept from a zebra crossing's band. */
   crossingRoom: 3,
+  /** Room (m) kept from walls and pillars, and from a ramp or deck lower than `lowDeck` (m) beside or over the spot. */
+  wallRoom: 1,
+  lowDeck: 5,
 };
 
 /** On the ground, drivable, a real street (not a service lane), wide enough to park on. */
@@ -44,7 +50,7 @@ export interface CurbFinder {
   along(road: Road, s: number, forward: boolean): Spawn | null;
 }
 
-export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, 'parked' | 'dressing' | 'fixtures' | 'crossings'>>): CurbFinder {
+export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, 'parked' | 'dressing' | 'fixtures' | 'crossings' | 'pillars' | 'barriers'>>): CurbFinder {
   const roads = map.roads.filter(curbRoad);
   const segments = new SegmentGrid<{ road: Road; i: number }>(40);
   for (const road of roads) for (let i = 0; i + 1 < road.points.length; i++) segments.insert(road.points[i], road.points[i + 1], { road, i });
@@ -70,6 +76,18 @@ export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, '
   for (const f of map.fixtures ?? []) {
     const r = Math.max(1.5, (f.span ?? 0) / 2);
     block([[f.p[0] - r, f.p[1] - r], [f.p[0] + r, f.p[1] - r], [f.p[0] + r, f.p[1] + r], [f.p[0] - r, f.p[1] + r]]);
+  }
+  for (const q of map.pillars ?? []) block(pillarCorners(q));
+  // Walls, and ramps and decks too low to drive under (their sides reach the ground): kept `wallRoom` away.
+  const walls = new SegmentGrid<true>(30);
+  for (const w of map.barriers ?? []) if (!w.scenery) for (let i = 0; i + 1 < w.points.length; i++) walls.insert(w.points[i], w.points[i + 1], true);
+  const decks = new SegmentGrid<number>(30);
+  for (const r of map.roads) {
+    if (!r.z || r.cls === 'path') continue;
+    for (let i = 0; i + 1 < r.points.length; i++) {
+      const z = Math.min(r.z[i], r.z[i + 1]);
+      if (Math.max(r.z[i], r.z[i + 1]) > 0.5 && z < CURB.lowDeck) decks.insert(r.points[i], r.points[i + 1], r.w / 2);
+    }
   }
   const crossings = map.crossings ?? [];
 
@@ -104,7 +122,10 @@ export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, '
       if (Math.abs(dx * x.dir[0] + dy * x.dir[1]) < x.w / 2 + CURB.crossingRoom && Math.abs(-dx * x.dir[1] + dy * x.dir[0]) < x.half + 2) return null;
     }
     const foot = carCorners(p, h, CURB.room);
-    if (blockers.query([p[0] - 6, p[1] - 6], [p[0] + 6, p[1] + 6]).some((e) => footprintsOverlap(foot, e.item))) return null;
+    const [lo, hi]: Point[] = [[p[0] - 6, p[1] - 6], [p[0] + 6, p[1] + 6]];
+    if (blockers.query(lo, hi).some((e) => footprintsOverlap(foot, e.item))) return null;
+    if (walls.query(lo, hi).some((e) => segmentDistanceToRing(e.a, e.b, foot) < CURB.wallRoom)) return null;
+    if (decks.query(lo, hi, 15).some((e) => foot.some((c) => distanceToSegment(c, e.a, e.b) < e.item + CURB.wallRoom))) return null;
     return { p, heading: Math.atan2(Math.sin(h), Math.cos(h)) };
   };
 

@@ -24,7 +24,8 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 - Union-find and road graph walks: merge nearby junctions of divided roads, follow roads through junctions
 - Greedy graph coloring: give overlapping roads at interchanges a draw order, so nothing flickers
 - Constrained placement search: pillars out of the lanes below, cars along the curbs, the nearest open road for a reset
-- A directed road graph with Tarjan's strongly connected components, and routes by an edge-based A* with ALT landmark bounds: about 210 states expanded per route against Dijkstra's 1,580 (`npm run bench`)
+- A directed road graph with Tarjan's strongly connected components, and routes by an edge-based A* with ALT landmark bounds: about 180 states expanded per route against Dijkstra's 1,450 (`npm run bench`)
+- Deterministic headless simulation: golden replays of cargo runs driven by a pure-pursuit autopilot in the real physics, played back in CI (`npm run replay` records them)
 
 **Rendering, physics and automated QA**
 - Rasterization and flood fill: find unpaved holes in the road network, then pave them with the same detector
@@ -50,7 +51,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | **Performance & Quality** | | |
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
 | Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
-| Automated tests | 699 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 705 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 32 automated checks | A CI gate: counts can only go down |
 
 ## How It Works

@@ -6,9 +6,15 @@
  * 8 landmarks. Prints states expanded and time per route, checks all three agree, and
  * the one-off costs (building the graph, the landmarks).
  *
+ * Physics: the golden replays (tests/replays) played headless in the real physics with
+ * the map's collision: steps per second, against the 60 a second the game needs.
+ *
  * Numbers depend on the machine; the expanded counts don't.
  */
-import { readFileSync } from 'node:fs';
+import RAPIER from '@dimforge/rapier3d-compat';
+import { readdirSync, readFileSync } from 'node:fs';
+import { playReplay } from '../src/sim/headless';
+import type { Replay } from '../src/sim/replay';
 import { seeded } from '../src/map/hash';
 import type { MapData } from '../src/map/types';
 import { buildRoadGraph } from '../src/routing/graph';
@@ -68,3 +74,19 @@ for (const [name, h] of methods) {
 const disagree = costs[0].filter((c, i) => costs.some((o) => Math.abs(o[i] - c) > 1e-6)).length;
 console.log(disagree ? `\n${disagree} routes where the methods disagree: a bug` : '\nall three methods agree on every route');
 if (disagree) process.exitCode = 1;
+
+// --- Physics, headless.
+await RAPIER.init();
+console.log('\nphysics, golden replays played headless (map collision included):');
+for (const f of readdirSync('tests/replays').filter((x) => x.endsWith('.json'))) {
+  const replay = JSON.parse(readFileSync(`tests/replays/${f}`, 'utf8')) as Replay;
+  let steps = 0;
+  let t1 = 0;
+  const t = performance.now();
+  playReplay(RAPIER, map, replay, (_, i) => {
+    steps = i + 1;
+    if (i === 0) t1 = performance.now();
+  });
+  const run = ms(t1);
+  console.log(`${f.replace('.json', '').padEnd(22)} ${steps} steps in ${run.toFixed(0)} ms: ${Math.round((steps / run) * 1000).toLocaleString('en-US')} steps/s (setup ${(t1 - t).toFixed(0)} ms)`);
+}

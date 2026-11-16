@@ -71,7 +71,9 @@ src/
   game/       the modes: places and runs (events.json), cargo     pure TS, no three.js, no React
               rules and receipt, run state machine, the game
               session (wallet, GPS), saved progress (validated)
-  routing/    road graph, A* and ALT routes, route tracking       pure TS, no three.js, no React
+  routing/    road graph, closures, A* and ALT routes, tracking  pure TS, no three.js, no React
+  sim/        headless drive (the game's physics without a       pure TS, no three.js, no React
+              screen), replays, autopilot                          (Rapier passed in)
   scene/      three.js / React Three Fiber components            the only place that knows about rendering
   ui/         menu, loading screens, HUD, maps, pause menu       DOM and 2D canvas, no three.js
   App.tsx     screens, drive mode, wiring
@@ -92,6 +94,7 @@ docs/         this folder
 | `src/car` | `src/map/types`, Rapier (types; the engine is passed in) | three.js, React, `src/scene`, `pipeline` |
 | `src/game` | `src/map`, `src/geometry`, `src/car`, `src/routing` | three.js, React, `src/scene`, `pipeline` |
 | `src/routing` | `src/map`, `src/geometry` | three.js, React, `src/scene`, `pipeline` |
+| `src/sim` | `src/car`, `src/geometry`, `src/map`, `src/routing`, Rapier (passed in) | three.js, React, `src/scene`, `pipeline` |
 | `src/scene` | `src/geometry`, `src/map`, three.js, React | `pipeline` |
 | `src/ui` | `src/geometry`, `src/map`, `src/car`, React, the drive session in `src/scene` | `pipeline` |
 | `pipeline` | `src/geo`, `src/geometry`, `src/map`, `src/routing`, `src/car` | `src/scene`, three.js, React |
@@ -328,6 +331,8 @@ Budgets per tier: [PERFORMANCE.md](PERFORMANCE.md).
 | Pure math and geometry | Unit tests with known answers (projection vs haversine, shoelace, clipping, offsets), random tests against brute force (spatial grid), winding checks on every generated triangle | `src/geometry/*.test.ts`, `src/geo/*.test.ts` |
 | Pipeline steps | Small hand-built fixtures per edge case (multipolygons, indoor ways, creek bridges, skywalks, alleys) | `pipeline/*.test.ts`, `pipeline/__fixtures__/` |
 | Whole map | `npm run qa`: counts of known problem kinds on the real output, with camera links. Road checks rasterize what the renderer paves to find enclosed holes | `pipeline/qa.ts`, `pipeline/qaRoads.ts` |
+| Whole drives | Golden replays: cargo runs driven by an autopilot in the real physics and collision, recorded as keys per step; played back twice (must agree exactly) and against where they ended. A tuning or collision change shows up as a replay ending elsewhere (`npm run replay` records them again). One is also scored as a delivery | `tests/replay.test.ts`, `tests/replays/`, `src/sim` |
+| Performance | `npm run bench`: routing (Dijkstra, A*, ALT on 1,000 seeded routes, checked to agree) and headless physics speed | `tools/bench.ts` |
 | Architecture | Import rules from section 3 | `tests/architecture.test.ts` |
 | Visual | Camera links (`?cam=x,y,z,tx,ty,tz`) to known spots, screenshots before and after changes | manual |
 | Devices | Desktop + a low-mid range Android phone via `chrome://inspect` remote DevTools | [PERFORMANCE.md](PERFORMANCE.md) |
@@ -376,6 +381,7 @@ One page each in [decisions/](decisions/):
 | [0021](decisions/0021-far-side-traffic-lights.md) | Traffic lights on the far side of the intersection | Accepted |
 | [0022](decisions/0022-road-graph-and-alt-routing.md) | Road graph built at load time, routes by ALT | Accepted |
 | [0023](decisions/0023-cargo-runs.md) | Cargo runs: a pure game session, integrity from measured physics, a parody receipt | Accepted |
+| [0024](decisions/0024-deterministic-replays.md) | Deterministic headless drives and golden replays | Accepted |
 
 ## 12. Roadmap through the architecture
 
