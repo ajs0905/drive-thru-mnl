@@ -115,6 +115,11 @@ export class GameSession {
     return this.map !== null;
   }
 
+  /** The road graph (built on first use): routes, and the traffic. */
+  get graph(): RoadGraph {
+    return this.world.graph;
+  }
+
   get runs(): RunDef[] {
     return this.world.runs;
   }

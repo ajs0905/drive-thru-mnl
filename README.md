@@ -26,6 +26,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 - Constrained placement search: pillars out of the lanes below, cars along the curbs, the nearest open road for a reset
 - A directed road graph with Tarjan's strongly connected components, and routes by an edge-based A* with ALT landmark bounds: about 180 states expanded per route against Dijkstra's 1,450 (`npm run bench`)
 - Deterministic headless simulation: golden replays of cargo runs driven by a pure-pursuit autopilot in the real physics, played back in CI (`npm run replay` records them)
+- Light traffic by the Intelligent Driver Model on the road graph, with junctions clustered by union-find and reserved one movement at a time: about 10 µs per step for 10 cars, measured overlap-free in tests
 
 **Rendering, physics and automated QA**
 - Rasterization and flood fill: find unpaved holes in the road network, then pave them with the same detector
@@ -51,7 +52,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | **Performance & Quality** | | |
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
 | Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
-| Automated tests | 705 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 712 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 32 automated checks | A CI gate: counts can only go down |
 
 ## How It Works
@@ -69,7 +70,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 
 ## The game
 
-Free-roam arcade driving on BGC's real streets, for once without the traffic (hence the name). Drift the corners, take the flyovers, send the roadblocks at the edge flying. Take cargo runs between loading bays and landmarks for pesos: on time and without denting the cargo, with a GPS route on the minimap and a delivery receipt at the end. Police chases are next. Runs in the browser on desktops and phones, nothing to install.
+Free-roam arcade driving on BGC's real streets, for once without the traffic (hence the name). Drift the corners, take the flyovers, send the roadblocks at the edge flying. Take cargo runs between loading bays and landmarks for pesos: on time and without denting the cargo, with a GPS route on the minimap and a delivery receipt at the end. A little traffic now drives the avenues (light, as the name promises), and you can knock it around. Police chases are next. Runs in the browser on desktops and phones, nothing to install.
 
 **Controls:** W A S D or the arrow keys to drive, Space for the handbrake, R to reset the car, M for the map, Esc to pause, MODES / CARS at the top right. On a phone, hold it sideways and use the buttons on screen.
 
@@ -82,13 +83,14 @@ Free-roam arcade driving on BGC's real streets, for once without the traffic (he
 - Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, walled-off lots, street furniture you can knock over or smash through, parked cars and roadblocks you can push around
 - UI: a road sign menu, loading screens, a welcome card, a road sign HUD with a heading-up minimap and a full map, a pause menu, touch controls for phones
 - Modes: cargo runs (courier and vault) between curbside loading bays and landmarks, routed by A* with landmarks, with checkpoints, a cargo integrity rating, a delivery receipt and a peso wallet saved in the browser
+- Light traffic on the avenues: 6 to 10 cars around the player by quality tier, solid near the player and knocked loose when hit
 
 ## Planned
 
 - Measure it on a phone, then utility poles and more building detail (balconies, materials, signage)
 - Later: engine, tire and crash sounds, ambience and music
 - First deploy on Vercel
-- Modes: light traffic, Kamote Mode (police chases), and the van, muscle car and coupe to buy with pesos
+- Modes: Kamote Mode (police chases), and the van, muscle car, coupe and police cars from the vehicle pack
 - Tile streaming, then more of Metro Manila: the districts around BGC and the highways between them
 
 ## Known issues and fixes

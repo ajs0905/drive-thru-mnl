@@ -97,6 +97,10 @@ Closing off empty lots and the sidewalk furniture ([ADR 0018](decisions/0018-wor
 - Collisions: about 87k to 113k triangles (the furniture is 8 triangles a box, the new bollards hexagonal prisms), 3.2 to 4.1 MB.
 - Map data 3.25 MB, 766 KB gzipped (was 3.05 MB, 723 KB); `props.glb` 21 KB gzipped, loaded after the city like the parked cars. Main bundle 383 KB gzipped (was 382).
 
+### Light traffic
+
+6, 8 or 10 cars by tier (ADR 0025). The simulation costs about 8 to 14 µs per 60 Hz step at those counts (headless, `npm run bench`). Drawn with the parked cars' models: one instanced mesh per model plus one for the blob shadows, so at most 7 more draw calls and about 16k triangles at 10 cars (the models are 1,400 to 1,750 triangles). Cars within 70 m of the player are kinematic physics bodies (a box each). Not yet measured on a phone.
+
 ### Street and traffic lights
 
 1,106 street lights and 194 traffic lights as dressing (a fourth reach tier, `dressingMid`: 220 m on Low, 320 on Medium, 450 on High, so the tall poles don't pop in at the street clutter's 90 to 120 m and are drawn on Low too). Three more instanced meshes: at most 3 more draw calls (measured +2 in the same three Medium views as above: 58 / 232k, 107 / 472k, 80 / 366k). The poles are 100 triangles (street light), 320 (mast arm with two heads) and 164 (short pole). Collisions grew by about 9k triangles (8 per pole box). Map data 3.31 MB, 779 KB gzipped; `props.glb` 24 KB gzipped.

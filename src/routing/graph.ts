@@ -47,6 +47,9 @@ export interface GraphEdge {
   /** Road width (m) and lanes in this direction. */
   w: number;
   lanes: number;
+  /** Meters at the start and end covered by a junction polygon (0 if none), in the direction of travel. */
+  trimStart: number;
+  trimEnd: number;
   oneway: boolean;
   /** In the main strongly connected component. */
   main: boolean;
@@ -101,10 +104,11 @@ export function buildRoadGraph(map: Pick<MapData, 'roads'> & Partial<Pick<MapDat
     const total = laneCount(r);
     const lanes = r.oneway ? total : Math.max(1, Math.floor(total / 2));
     const base = { road: ri, length, time: length / SPEEDS[cls], cls, w: r.w, lanes, oneway: !!r.oneway, main: false };
+    const [t0, t1] = [Math.max(0, r.trim?.[0] ?? 0), Math.max(0, r.trim?.[1] ?? 0)];
     const fwd = edges.length;
-    edges.push({ ...base, forward: true, from: a, to: b, points: r.points, acc, z, twin: -1 });
+    edges.push({ ...base, forward: true, from: a, to: b, points: r.points, acc, z, twin: -1, trimStart: t0, trimEnd: t1 });
     if (!r.oneway) {
-      edges.push({ ...base, forward: false, from: b, to: a, points: [...r.points].reverse(), acc: acc.map((s) => length - s).reverse(), z: [...z].reverse(), twin: fwd });
+      edges.push({ ...base, forward: false, from: b, to: a, points: [...r.points].reverse(), acc: acc.map((s) => length - s).reverse(), z: [...z].reverse(), twin: fwd, trimStart: t1, trimEnd: t0 });
       edges[fwd].twin = fwd + 1;
     }
   });

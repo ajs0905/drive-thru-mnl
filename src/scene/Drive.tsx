@@ -10,8 +10,9 @@
  * meshes: walls (buildings, walls and fences, the playable edge), which the chase camera
  * keeps in front of, and structures (flyover decks and ramps, footbridge sides, posts).
  * Parked cars near the player are physics bodies too (ParkedPhysics.tsx), and so are the
- * roadblocks' cones, drums, barricades and signs. On tiers that
- * have it, fast driving blurs the screen's edges (SpeedBlur.tsx).
+ * roadblocks' cones, drums, barricades and signs. Light traffic drives the avenues
+ * around the player (Traffic.tsx), and the modes run alongside (RunDriver.tsx). On tiers
+ * that have it, fast driving blurs the screen's edges (SpeedBlur.tsx).
  */
 import { useThree } from '@react-three/fiber';
 import { CuboidCollider, Physics, RigidBody, TrimeshCollider, type RapierCollider, type RapierRigidBody } from '@react-three/rapier';
@@ -32,6 +33,7 @@ import type { DebrisStore } from './breakaway';
 import { PropPhysics } from './PropPhysics';
 import { ROADBLOCK_POOL, ROADBLOCK_Y, type LooseProp } from './roadblockBodies';
 import { RunDriver } from './RunDriver';
+import { Traffic } from './Traffic';
 import { RunMarkers } from './RunMarkers';
 import { SpeedBlur } from './SpeedBlur';
 import type { GameSession } from '../game/session';
@@ -50,6 +52,8 @@ export default function Drive({
   paused = false,
   props,
   game,
+  traffic = 0,
+  shadows = false,
 }: {
   map: MapData;
   parked?: ParkedPoses;
@@ -64,6 +68,9 @@ export default function Drive({
   props?: { knock: Dressing[]; broke: Dressing[]; knockPoses: ParkedPoses; breakPoses: ParkedPoses; debris: DebrisStore };
   /** The modes (cargo runs): stepped every frame, and their markers drawn. */
   game?: GameSession;
+  /** Cars of light traffic to keep around the player (0: none), and whether they cast shadows. */
+  traffic?: number;
+  shadows?: boolean;
 }) {
   const get = useThree((s) => s.get);
   const speed = useRef(0);
@@ -122,6 +129,7 @@ export default function Drive({
       )}
       {game && session && <RunDriver game={game} session={session} paused={paused} />}
       {game && <RunMarkers game={game} />}
+      {game && session && traffic > 0 && <Traffic game={game} session={session} map={map} count={traffic} shadows={shadows} car={carBody} />}
       {speedBlur && <SpeedBlur speed={speed} />}
     </Physics>
   );

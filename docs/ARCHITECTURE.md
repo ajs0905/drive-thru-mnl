@@ -74,6 +74,8 @@ src/
   routing/    road graph, closures, A* and ALT routes, tracking  pure TS, no three.js, no React
   sim/        headless drive (the game's physics without a       pure TS, no three.js, no React
               screen), replays, autopilot                          (Rapier passed in)
+  traffic/    light traffic: IDM car-following, junction           pure TS, no three.js, no React
+              clusters, spawning around the player
   scene/      three.js / React Three Fiber components            the only place that knows about rendering
   ui/         menu, loading screens, HUD, maps, pause menu       DOM and 2D canvas, no three.js
   App.tsx     screens, drive mode, wiring
@@ -95,6 +97,7 @@ docs/         this folder
 | `src/game` | `src/map`, `src/geometry`, `src/car`, `src/routing` | three.js, React, `src/scene`, `pipeline` |
 | `src/routing` | `src/map`, `src/geometry` | three.js, React, `src/scene`, `pipeline` |
 | `src/sim` | `src/car`, `src/geometry`, `src/map`, `src/routing`, Rapier (passed in) | three.js, React, `src/scene`, `pipeline` |
+| `src/traffic` | `src/map`, `src/geometry`, `src/routing` | three.js, React, `src/scene`, `pipeline` |
 | `src/scene` | `src/geometry`, `src/map`, three.js, React | `pipeline` |
 | `src/ui` | `src/geometry`, `src/map`, `src/car`, React, the drive session in `src/scene` | `pipeline` |
 | `pipeline` | `src/geo`, `src/geometry`, `src/map`, `src/routing`, `src/car` | `src/scene`, three.js, React |
@@ -220,6 +223,8 @@ sequenceDiagram
 
 **Modes** (`src/game`, `src/routing`): the game around the driving lives in one plain object, `game/session.ts`, which the HUD and menus subscribe to and `scene/RunDriver.tsx` steps once per frame (not while paused) with what the car reported to the drive session: speed, smoothed acceleration, drifting and its crash counter. The road graph, its ALT landmarks and the run places (curb spots on real streets, `game/events.json`) are built on first use, about 100 ms. A cargo run is a pure state machine (`game/run.ts`: to the pickup, intro, countdown, running, done or failed) with checkpoints every 400 m along the planned route, integrity rules from measured braking (`game/cargo.ts`) and a receipt that pays into the wallet; the save goes through a validating parser. The session asks the drive to move the car (`requestTeleport` on the drive session: the next physics step puts it on the road there) and holds it still during the intro and countdown (handbrake on, input ignored). The GPS route is re-planned from the car once it's been 25 m off the route for over a second. The MODES / CARS menu (`ui/ModesMenu.tsx`) previews a run on the 2D map (the same tiles as the minimap) with the route drawn over it; `ui/RunHud.tsx` and `ui/RunPanels.tsx` draw the banner, countdown, intro and receipt. Markers at the stops are additive glow columns without fog (`scene/RunMarkers.tsx`).
 
+**Traffic** (`src/traffic`, `scene/Traffic.tsx`): a few cars of light traffic around the player (6, 8 or 10 by tier), simulated in plain TypeScript and stepped before each 60 Hz physics step. They drive the avenues and wider streets without parked cars, on the largest strongly connected part of those, following the Intelligent Driver Model and taking turns at junction clusters (nodes joined by very short roads are one junction; stop lines sit before the junction polygon). Within 70 m of the player they're kinematic bodies; a crash with one knocks it loose into a dynamic body. Drawn with the parked cars' models (`scene/carPaint.ts` shares their materials). See ADR 0025.
+
 **Touch screens** (`ui/TouchControls.tsx`, a coarse pointer): buttons that hold a control while a finger is on them (pointer capture, several at once) write to the drive session's touch keys, which the car merges with the keyboard's every physics step; they let go when the controls hide or the window loses focus. Phones play sideways: while driving with the phone held upright, the whole app is drawn turned 90 degrees clockwise (`ui/sideways.ts`, a CSS transform with the width and height swapped), so no warning, fullscreen or orientation lock is needed; the canvas measures its size without transforms (`offsetSize`) so the view keeps its shape. The menu stays upright.
 
 **Debug map view** (`?cam=...` or `?view=map`): the old free camera view with the map legend and Drive here (Enter), which starts the car where the camera looks; Back to menu returns to it, with the camera lifted to an overview of where the car stopped. Map QA's camera links and the screenshot scripts use it. `?debug` shows the frame rate in either.
@@ -332,7 +337,8 @@ Budgets per tier: [PERFORMANCE.md](PERFORMANCE.md).
 | Pipeline steps | Small hand-built fixtures per edge case (multipolygons, indoor ways, creek bridges, skywalks, alleys) | `pipeline/*.test.ts`, `pipeline/__fixtures__/` |
 | Whole map | `npm run qa`: counts of known problem kinds on the real output, with camera links. Road checks rasterize what the renderer paves to find enclosed holes | `pipeline/qa.ts`, `pipeline/qaRoads.ts` |
 | Whole drives | Golden replays: cargo runs driven by an autopilot in the real physics and collision, recorded as keys per step; played back twice (must agree exactly) and against where they ended. A tuning or collision change shows up as a replay ending elsewhere (`npm run replay` records them again). One is also scored as a delivery | `tests/replay.test.ts`, `tests/replays/`, `src/sim` |
-| Performance | `npm run bench`: routing (Dijkstra, A*, ALT on 1,000 seeded routes, checked to agree) and headless physics speed | `tools/bench.ts` |
+| Traffic | The IDM's behavior (free road, stopping behind a car), lanes, and the simulation on the real map: four minutes around a moving player with no footprints overlapping, the same every time for a seed, stopping for the player's car | `src/traffic/traffic.test.ts` |
+| Performance | `npm run bench`: routing (Dijkstra, A*, ALT on 1,000 seeded routes, checked to agree), headless physics speed, and traffic (cost per step, cars moving, overlaps) at each tier's count | `tools/bench.ts` |
 | Architecture | Import rules from section 3 | `tests/architecture.test.ts` |
 | Visual | Camera links (`?cam=x,y,z,tx,ty,tz`) to known spots, screenshots before and after changes | manual |
 | Devices | Desktop + a low-mid range Android phone via `chrome://inspect` remote DevTools | [PERFORMANCE.md](PERFORMANCE.md) |
@@ -382,6 +388,7 @@ One page each in [decisions/](decisions/):
 | [0022](decisions/0022-road-graph-and-alt-routing.md) | Road graph built at load time, routes by ALT | Accepted |
 | [0023](decisions/0023-cargo-runs.md) | Cargo runs: a pure game session, integrity from measured physics, a parody receipt | Accepted |
 | [0024](decisions/0024-deterministic-replays.md) | Deterministic headless drives and golden replays | Accepted |
+| [0025](decisions/0025-light-traffic.md) | Light traffic: IDM on the road graph, junctions as reserved clusters | Accepted |
 
 ## 12. Roadmap through the architecture
 
@@ -397,7 +404,7 @@ One page each in [decisions/](decisions/):
 | World channelling (done) | `pipeline/lots.ts` (walls around empty lots, open zones, parking yard), `pipeline/sidewalks.ts` (street furniture), `dressing` in the data, `scene/Dressing.tsx` (one instanced mesh per kind, refilled around the focus), `tools/props-to-glb.ts` (`public/models/props.glb`), one new QA check. See [ADR 0018](decisions/0018-world-channelling.md) |
 | Street and traffic lights (done) | `pipeline/lights.ts`, three pole kinds in `dressing` |
 | Better buildings, lite (done) | `geometry/buildingForm.ts`: hip roofs, podium towers, shopfronts in the building shader. See ADR 0020 |
-| Modes (in steps) | Done: `src/routing` (road graph, A* and ALT, ADR 0022), `src/game` (cargo runs, wallet, the game session, ADR 0023), the MODES / CARS menu, the GPS route on the maps. Next: light traffic, then Kamote Mode (police chases) and the other cars |
+| Modes (in steps) | Done: `src/routing` (road graph, A* and ALT, ADR 0022), `src/game` (cargo runs, wallet, the game session, ADR 0023), the MODES / CARS menu, the GPS route on the maps, `src/sim` (headless drives, golden replays, ADR 0024), `src/traffic` (light traffic, ADR 0025). Next: Kamote Mode (police chases), and the other cars and the police with the vehicle pack |
 | Polish | Landmarks, day/night, sounds and music |
 | Ship | Vercel deploy, measured budgets in PERFORMANCE.md, README media |
 | Expansion | New Overpass exports per area, tiles make size mostly irrelevant to memory |

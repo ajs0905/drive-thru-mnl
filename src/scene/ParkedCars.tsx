@@ -15,13 +15,13 @@
  */
 import { useFrame, useLoader, useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
-import { BufferAttribute, Color, Euler, Frustum, InstancedMesh, Matrix4, MeshBasicMaterial, MeshLambertMaterial, Quaternion, Sphere, Vector3, type BufferGeometry, type Camera, type Mesh } from 'three';
+import { BufferAttribute, Color, Euler, Frustum, InstancedMesh, Matrix4, Quaternion, Sphere, Vector3, type Camera } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PARKED_MODELS, PARKED_PAINTS } from '../car/parked';
 import { parkedCarShape } from '../geometry/parkedCarShape';
 import type { ParkedCar } from '../map/types';
-import { blobShadowGeometry, restoreShine } from './carModel';
-import { withCarShine } from './carShine';
+import { blobShadowGeometry } from './carModel';
+import { blobMaterial, paintMaterial, parkedGeometries } from './carPaint';
 import { geometryFromArrays } from './meshUtils';
 import { homePose, PARKED_Y, type ParkedPoses } from './parkedPoses';
 
@@ -35,35 +35,11 @@ const VIEW_MARGIN = 8;
 /** Blob shadow size around a car's footprint, and how dark it is in the middle. */
 const BLOB = { grow: 1.06, darkness: 0.4, lift: 0.04 };
 
-/** Lambert with vertex colors where instance color replaces the painted parts, plus the shine. */
-function paintMaterial(): MeshLambertMaterial {
-  return withCarShine(new MeshLambertMaterial({ vertexColors: true }), 'parked', (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float paint;')
-      // After three's own color code (vertex color times instance color): paint takes the
-      // instance color outright, everything else keeps its vertex color.
-      .replace('#include <color_vertex>', '#include <color_vertex>\n#ifdef USE_INSTANCING_COLOR\n  vColor.rgb = mix(color.rgb, instanceColor.rgb, paint);\n#endif');
-  });
-}
-
-function blobMaterial(): MeshBasicMaterial {
-  // Drawn just over the road surface without fighting it (like the player's blob).
-  return new MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-}
-
 export function ParkedCars({ cars, near, far, poses, shadows }: { cars: ParkedCar[]; near: number; far: number; poses: ParkedPoses; shadows: boolean }) {
   const gltf = useLoader(GLTFLoader, `${import.meta.env.BASE_URL}models/parked-cars.glb`);
   const built = useMemo(() => {
     const material = paintMaterial();
-    const geometries = PARKED_MODELS.map((m) => {
-      const mesh = gltf.scene.getObjectByName(m.name) as Mesh | undefined;
-      if (!mesh) throw new Error(`parked-cars.glb has no ${m.name}`);
-      const g = (mesh.geometry as BufferGeometry).clone();
-      g.setAttribute('paint', g.getAttribute('_paint') ?? new BufferAttribute(new Float32Array(g.getAttribute('position').count), 1));
-      g.deleteAttribute('_paint');
-      restoreShine(g);
-      return g;
-    });
+    const geometries = parkedGeometries(gltf.scene);
     const count = (v: number) => cars.filter((c) => c.v === v).length;
     const nearMeshes = geometries.map((g, v) => new InstancedMesh(g, material, Math.max(1, count(v))));
     const box = parkedCarShape();

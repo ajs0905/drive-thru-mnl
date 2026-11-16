@@ -6,6 +6,10 @@
  * 8 landmarks. Prints states expanded and time per route, checks all three agree, and
  * the one-off costs (building the graph, the landmarks).
  *
+ * Traffic: the light traffic (traffic/sim.ts) around a player driving across BGC for
+ * five minutes, at each tier's count: time per 60 Hz step, how much of the time cars are
+ * moving, and how often two cars' footprints overlap (sampled twice a second).
+ *
  * Physics: the golden replays (tests/replays) played headless in the real physics with
  * the map's collision: steps per second, against the 60 a second the game needs.
  *
@@ -14,6 +18,11 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { readdirSync, readFileSync } from 'node:fs';
 import { playReplay } from '../src/sim/headless';
+import { PARKED_MODELS, PARKED_PAINTS } from '../src/car/parked';
+import { footprintsOverlap } from '../src/car/resetSpot';
+import { snap } from '../src/routing/graph';
+import { pointOnRoute, Router } from '../src/routing/route';
+import { roadsWithParking, TrafficSim, type Agent } from '../src/traffic/sim';
 import type { Replay } from '../src/sim/replay';
 import { seeded } from '../src/map/hash';
 import type { MapData } from '../src/map/types';
@@ -89,4 +98,35 @@ for (const f of readdirSync('tests/replays').filter((x) => x.endsWith('.json')))
   });
   const run = ms(t1);
   console.log(`${f.replace('.json', '').padEnd(22)} ${steps} steps in ${run.toFixed(0)} ms: ${Math.round((steps / run) * 1000).toLocaleString('en-US')} steps/s (setup ${(t1 - t).toFixed(0)} ms)`);
+}
+
+// --- Traffic.
+const across = new Router(graph, 4).route(snap(graph, [-500, -600])!, snap(graph, [800, 1200])!)!;
+const avoid = roadsWithParking(map.roads, map.parked ?? []);
+const foot = (a: Agent): [number, number][] => {
+  const [c, s, hl, hw] = [Math.cos(a.heading), Math.sin(a.heading), a.len / 2, a.width / 2];
+  return [[a.x + c * hl - s * hw, a.y + s * hl + c * hw], [a.x - c * hl - s * hw, a.y - s * hl + c * hw], [a.x - c * hl + s * hw, a.y - s * hl - c * hw], [a.x + c * hl + s * hw, a.y + s * hl - c * hw]];
+};
+console.log(`\ntraffic, 5 minutes around a player driving ${(across.length / 1000).toFixed(1)} km across BGC at 12 m/s:`);
+console.log('cars   us per step   moving   overlapping footprints (samples)');
+for (const count of [6, 8, 10]) {
+  const sim = new TrafficSim(graph, { count, models: PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]], weight: m.weight })), paints: PARKED_PAINTS.map((p) => p.weight), avoid });
+  let [moving, total, overlaps, time] = [0, 0, 0, 0];
+  for (let i = 0; i < 60 * 300; i++) {
+    const at = pointOnRoute(across, ((i / 60) * 12) % across.length);
+    const t = performance.now();
+    sim.step(1 / 60, at.p, [{ p: at.p, speed: 12, heading: at.heading, half: 2.25 }]);
+    time += performance.now() - t;
+    for (const a of sim.agents) {
+      total++;
+      if (a.v > 0.5) moving++;
+    }
+    if (i % 30 === 0)
+      for (let x = 0; x < sim.agents.length; x++)
+        for (let y = x + 1; y < sim.agents.length; y++) {
+          const [a, b] = [sim.agents[x], sim.agents[y]];
+          if (Math.abs(a.z - b.z) < 1.5 && Math.hypot(a.x - b.x, a.y - b.y) < 6 && footprintsOverlap(foot(a), foot(b))) overlaps++;
+        }
+  }
+  console.log(`${String(count).padStart(4)}   ${fixed((time / (60 * 300)) * 1000, 0)}       ${fixed((moving / total) * 100, 0)}%   ${overlaps} of ${60 * 10}`);
 }

@@ -431,6 +431,8 @@ export default function App() {
                 session={session}
                 paused={holdPhysics}
                 game={game}
+                traffic={MAP_VIEW ? 0 : settings.traffic}
+                shadows={settings.shadowMap > 0}
               />
             )}
           </Suspense>
