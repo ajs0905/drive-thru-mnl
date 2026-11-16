@@ -125,13 +125,16 @@ Run `npm run dev`, open the page with `?debug` at the end of the address, and re
 | 2026-11-14 | same | Low | 139 to 144 | After the first pass (144 Hz screen cap) |
 | 2026-11-14 | same | High | 144 while moving, idle when still | After the second pass (capped by the 144 Hz screen) |
 
-### Low-mid range phone
+### Phones
 
-To fill in (see below for how).
+Measured on two Android phones while driving, with the `?debug` overlay (before light traffic was added). Draw calls, triangles and build time are from the High screenshots.
 
-| Date | Browser | FPS (overview) | FPS (street level) | Build time | JS heap |
-| --- | --- | --- | --- | --- | --- |
-| | | | | | |
+| Date | Phone | Low | Medium | High | Draw calls / triangles (High) | City build (High) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-16 | A low-mid range Android phone | 60+ FPS | 60+ FPS, dips to the low 50s | 30 to 50 FPS | 126 / 533k | 695 ms |
+| 2026-11-16 | A newer mid-range Android phone | Smooth | Smooth | 62 FPS | 91 / 370k | 428 ms |
+
+**Against the budgets:** the low-mid range phone holds Low and Medium well above the 30 FPS Low target. High is a desktop tier and drops to 30 to 50 there; touch screens start on Low. Slower phones than these would likely land under 60 on Medium, which is what Low is for.
 
 ## How to measure on an Android phone
 

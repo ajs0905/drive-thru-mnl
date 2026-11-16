@@ -39,7 +39,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Metric | Value | Notes |
 | :--- | :--- | :--- |
 | **Build & Bundle** | | |
-| Main / Drive bundle | 389 KB / 861 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
+| Main / Drive bundle | 404 KB / 866 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
 | Map file (`bgc.json`) | 3.31 MB (775 KB gzipped) | Deterministic: CI rebuilds it from the raw data and fails if a byte differs |
 | Pipeline | 17 steps, a few seconds | Node + TypeScript, offline |
 | **World Data** | | |
@@ -51,6 +51,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Fixed-step physics | 60 Hz | The same step function runs in the game and in headless tests |
 | **Performance & Quality** | | |
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
+| Frame rate (phones) | 60+ FPS on Low and Medium | On a low-mid range Android phone (30 to 50 on High); a newer mid-range one holds 62 on High |
 | Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
 | Automated tests | 712 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 32 automated checks | A CI gate: counts can only go down |
