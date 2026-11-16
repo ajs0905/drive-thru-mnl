@@ -92,15 +92,49 @@ export function AboutPanel({ map, onClose }: { map: MapData | null; onClose: () 
   );
 }
 
-export function PauseMenu({ onResume, onReset, onHelp, onSettings, onQuit }: { onResume: () => void; onReset: () => void; onHelp: () => void; onSettings: () => void; onQuit: () => void }) {
+export function PauseMenu({
+  run,
+  onResume,
+  onReset,
+  onCheckpoint,
+  onAbandon,
+  onModes,
+  onHelp,
+  onSettings,
+  onQuit,
+}: {
+  /** The run in play's phase, if one is. */
+  run: string | null;
+  onResume: () => void;
+  onReset: () => void;
+  onCheckpoint: () => void;
+  onAbandon: () => void;
+  onModes: () => void;
+  onHelp: () => void;
+  onSettings: () => void;
+  onQuit: () => void;
+}) {
   return (
     <Panel title="PAUSED" color="green">
       <div className="actions">
         <button type="button" className="chip on" onClick={onResume} autoFocus>
           Resume
         </button>
+        {run === 'running' && (
+          <button type="button" className="chip" onClick={onCheckpoint}>
+            Back to last checkpoint
+          </button>
+        )}
+        {run && (
+          <button type="button" className="chip" onClick={onAbandon}>
+            Abandon run
+          </button>
+        )}
         <button type="button" className="chip" onClick={onReset}>
           Reset car
+        </button>
+        <button type="button" className="chip" onClick={onModes}>
+          Modes / cars
         </button>
         <button type="button" className="chip" onClick={onHelp}>
           How to play

@@ -18,15 +18,18 @@ import { Quaternion, Vector3, type PerspectiveCamera } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { kick, STILL, stepBody } from '../car/bodyMotion';
 import { CHASE, cameraPull, chaseView, clipDistance, compressedLift, crashShake, damp, shakeOffset, speedFov, turnToward, type Vec3 } from '../car/chaseCamera';
-import { inputFromKeys, KEY_BINDINGS, NO_KEYS } from '../car/controls';
-import { headingOfDirection } from '../car/spawn';
+import { inputFromKeys, KEY_BINDINGS, NO_KEYS, type DriveInput } from '../car/controls';
+import { headingOfDirection, yawForHeading } from '../car/spawn';
 import { restLift, wheelHardPoint, type CarSpec } from '../car/spec';
-import { chassisCollider, newDriveState, resetOnGround, RESET, setupWheels, stepVehicle, type ResetPose, type VehicleController } from '../car/vehicle';
+import { chassisCollider, newDriveState, resetOnGround, RESET, setupWheels, stepVehicle, type DriveState, type ResetPose, type VehicleController } from '../car/vehicle';
 import { blinkAfterReset, blobShadow, placeShadow, poseBody, prepareCarModel, setBrakeLights, setReverseLights, updateHalos } from './carModel';
 import { mergeKeys, type DriveSession } from './driveSession';
 
 /** Seconds upside down (or fallen off the world) before the car puts itself back on its wheels. */
 const STUCK_RESET = 2;
+
+/** Input while held still (a run's countdown): nothing but the handbrake. */
+const HOLD: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: true };
 
 /** When driving ends, the map camera rises to this far behind and above the car. */
 const EXIT_VIEW = { back: 70, up: 90 };
@@ -155,18 +158,23 @@ export function Car({
     s.stuck = upY < 0.3 || b.translation().y < -20 ? s.stuck + dt : 0;
     s.time += dt;
     if (session?.takeReset()) s.reset = true;
-    if (s.reset || s.stuck > STUCK_RESET) {
+    const teleport = session?.takeTeleport();
+    if (teleport) {
+      // Somewhere else entirely (a run's start, a checkpoint): on the road there, standing still.
+      resetOnGround(w, rapier, b, spec, spawn.position[1] - restLift(spec), { x: teleport.p[0], y: teleport.z, z: -teleport.p[1], yaw: yawForHeading(teleport.heading) });
+      Object.assign(s, { lastReset: s.time, reset: false, stuck: 0, drive: { ...newDriveState(), gearbox: { ...s.drive.gearbox, gear: 1, shifting: 0 }, impacts: s.drive.impacts } });
+    } else if (s.reset || s.stuck > STUCK_RESET) {
       // Not again while the last reset is still settling: spamming it can't stack anything.
       if (s.time - s.lastReset >= RESET.cooldown) {
         const t = b.translation();
         const heading = headingOfDirection(2 * (r.x * r.z + r.w * r.y), 1 - 2 * (r.x * r.x + r.y * r.y));
         resetOnGround(w, rapier, b, spec, spawn.position[1] - restLift(spec), findReset?.(t.x, t.y, t.z, heading) ?? undefined);
-        Object.assign(s, { lastReset: s.time, drive: { ...newDriveState(), gearbox: { ...s.drive.gearbox, gear: 1, shifting: 0 } } });
+        Object.assign(s, { lastReset: s.time, drive: { ...newDriveState(), gearbox: { ...s.drive.gearbox, gear: 1, shifting: 0 }, impacts: s.drive.impacts } });
       }
       Object.assign(s, { reset: false, stuck: 0 });
     }
     const keys = session ? mergeKeys(s.keys, session.touch, s.held) : s.keys;
-    stepVehicle(s.vc, b, spec, s.drive, inputFromKeys(keys), dt);
+    stepVehicle(s.vc, b, spec, s.drive, session?.hold ? HOLD : inputFromKeys(keys), dt);
   });
 
   useFrame((state, frameDt) => {
@@ -254,7 +262,7 @@ export function Car({
     v.toCamera.copy(camera.position).sub(v.pos).normalize();
     const facing = v.fwd.dot(v.toCamera);
     updateHalos(model, braking, -facing, facing, reversing);
-    if (session) writeCar(session, v.pos, v.fwd, speed);
+    if (session) writeCar(session, v.pos, v.fwd, speed, drive);
     onSpeed?.(speed);
   });
 
@@ -277,13 +285,18 @@ export function Car({
   );
 }
 
-/** Where the car is, for the HUD (map space). */
-function writeCar(session: DriveSession, pos: Vector3, fwd: Vector3, speed: number) {
+/** Where the car is and what it's doing, for the HUD and the runs (map space). */
+function writeCar(session: DriveSession, pos: Vector3, fwd: Vector3, speed: number, drive: DriveState) {
   const c = session.car;
   c.x = pos.x;
   c.y = -pos.z;
   c.height = pos.y;
   c.heading = headingOfDirection(fwd.x, fwd.z);
   c.speed = speed;
+  c.accel = drive.accel.forward;
+  c.drifting = drive.drifting;
+  c.impacts = drive.impacts;
+  c.impact = drive.impact;
+  c.crashing = drive.crashing;
   c.placed = true;
 }

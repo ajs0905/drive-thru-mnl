@@ -181,3 +181,80 @@ function textWidth(ctx: CanvasRenderingContext2D, text: string, size: number): n
 export function drawMapLabels(ctx: CanvasRenderingContext2D, data: MapViewData, view: MapViewport) {
   drawLabels(ctx, data, view);
 }
+
+/** Colors for what the game draws over the map: the GPS route, the pickup and the drop-off. */
+export const ROUTE_COLORS = { route: '#3fa9ff', pickup: '#ffd23f', dropoff: '#2fe07f' };
+
+/**
+ * A route over the map (after the tiles): a dark casing under a bright line, from `from`
+ * meters along it to the end. Widths in canvas pixels.
+ */
+export function drawRoute(ctx: CanvasRenderingContext2D, points: Point[], acc: number[], from: number, view: MapViewport, width: number, color = ROUTE_COLORS.route) {
+  const { width: w, height: h } = ctx.canvas;
+  if (points.length < 2) return;
+  let i = 0;
+  while (i < points.length - 2 && acc[i + 1] < from) i++;
+  const [a, b] = [points[i], points[i + 1]];
+  const t = Math.max(0, Math.min(1, (from - acc[i]) / (acc[i + 1] - acc[i] || 1)));
+  const start: Point = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const path = () => {
+    ctx.beginPath();
+    const s = toCanvas(start, view, w, h);
+    ctx.moveTo(s[0], s[1]);
+    for (let k = i + 1; k < points.length; k++) {
+      const q = toCanvas(points[k], view, w, h);
+      ctx.lineTo(q[0], q[1]);
+    }
+  };
+  ctx.strokeStyle = 'rgba(5,10,20,0.75)';
+  ctx.lineWidth = width + 3;
+  path();
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  path();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * A stop on the map: a ringed dot at `p`, or, if it's outside the canvas (less `inset`
+ * pixels), an arrow at the rim pointing toward it. Sizes in canvas pixels.
+ */
+export function drawStop(ctx: CanvasRenderingContext2D, p: Point, view: MapViewport, radius: number, color: string, inset = 0) {
+  const { width: w, height: h } = ctx.canvas;
+  const [x, y] = toCanvas(p, view, w, h);
+  ctx.save();
+  if (x >= inset && y >= inset && x <= w - inset && y <= h - inset) {
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = Math.max(2, radius * 0.35);
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    // Clamp onto the rim along the line from the center, and point outward.
+    const [cx, cy] = [w / 2, h / 2];
+    const [dx, dy] = [x - cx, y - cy];
+    const k = Math.min((w / 2 - inset) / Math.abs(dx || 1e-9), (h / 2 - inset) / Math.abs(dy || 1e-9));
+    const [ex, ey] = [cx + dx * k, cy + dy * k];
+    ctx.translate(ex, ey);
+    ctx.rotate(Math.atan2(dy, dx));
+    ctx.fillStyle = color;
+    ctx.strokeStyle = 'rgba(5,10,20,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(radius * 0.9, 0);
+    ctx.lineTo(-radius * 0.9, radius * 0.8);
+    ctx.lineTo(-radius * 0.45, 0);
+    ctx.lineTo(-radius * 0.9, -radius * 0.8);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fill();
+  }
+  ctx.restore();
+}

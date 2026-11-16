@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "places": [
+    { "id": "bay-26th", "name": "26th Street Loading Bay", "kind": "bay", "road": "way/32488144", "s": 70 },
+    { "id": "bay-lawton", "name": "Lawton Freight Bay", "kind": "bay", "road": "way/425382122/0", "s": 100 },
+    { "id": "bay-forbes", "name": "Forbes Town Road Bay", "kind": "bay", "road": "way/61760309/1", "s": 45 },
+    { "id": "bay-kalayaan", "name": "Kalayaan Depot", "kind": "bay", "road": "way/4940313/2", "s": 250 },
+    { "id": "uptown-atrium", "name": "Uptown Atrium", "kind": "landmark", "road": "way/617111196", "s": 60 },
+    { "id": "market-hall", "name": "Market Hall", "kind": "landmark", "road": "way/38414022", "s": 110 },
+    { "id": "science-dome", "name": "The Science Dome", "kind": "landmark", "road": "way/23370670", "s": 90 },
+    { "id": "circle-park", "name": "Circle Park Cafés", "kind": "landmark", "road": "way/45568781", "s": 140 },
+    { "id": "seventh-arcade", "name": "Seventh Avenue Arcade", "kind": "landmark", "road": "way/617111195", "s": 120 },
+    { "id": "c5-hub", "name": "C5 Logistics Hub", "kind": "bay", "road": "way/371450815", "s": 120 },
+    { "id": "reserve-bank", "name": "Fort Reserve Bank", "kind": "landmark", "road": "way/27443032", "s": 38 },
+    { "id": "mckinley-gallery", "name": "McKinley Gallery", "kind": "landmark", "road": "way/29127361", "s": 35 }
+  ],
+  "runs": [
+    { "id": "morning-parcels", "name": "Morning Parcels", "kind": "courier", "cargo": "Parcels", "from": "bay-26th", "to": "science-dome" },
+    { "id": "bakery-run", "name": "Bakery Run", "kind": "courier", "cargo": "Bread and pastries", "from": "bay-forbes", "to": "circle-park" },
+    { "id": "mall-restock", "name": "Mall Restock", "kind": "courier", "cargo": "Store stock", "from": "bay-kalayaan", "to": "uptown-atrium" },
+    { "id": "fresh-produce", "name": "Fresh Produce", "kind": "courier", "cargo": "Fruit and vegetables", "from": "bay-lawton", "to": "market-hall" },
+    { "id": "gadget-drop", "name": "Gadget Drop", "kind": "courier", "cargo": "Phones and laptops", "from": "c5-hub", "to": "seventh-arcade" },
+    { "id": "cash-transfer", "name": "Cash Transfer", "kind": "vault", "cargo": "Sealed cash boxes", "from": "bay-forbes", "to": "reserve-bank" },
+    { "id": "gallery-pieces", "name": "Gallery Pieces", "kind": "vault", "cargo": "Framed paintings", "from": "reserve-bank", "to": "mckinley-gallery" }
+  ]
+}

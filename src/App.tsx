@@ -1,8 +1,8 @@
 import { MapControls } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
 import { curbStart } from './car/curbSpot';
-import { loadSave, writeSave, type Save } from './game/save';
+import { GameSession } from './game/session';
 import { mapViewData, streetNameLookup } from './geometry/mapView';
 import { loadMap, type MapSource } from './map/loadMap';
 import { BACKDROP, backdropReady } from './ui/backdrop';
@@ -41,6 +41,8 @@ import { Menu, type LoadStatus } from './ui/Menu';
 import { AboutPanel, PauseMenu, SettingsPanel } from './ui/Panels';
 import { useSideways } from './ui/sideways';
 import { TouchControls } from './ui/TouchControls';
+import { ModesMenu } from './ui/ModesMenu';
+import { RunIntro, RunResult } from './ui/RunPanels';
 import { Welcome } from './ui/Welcome';
 import './ui/ui.css';
 
@@ -245,23 +247,27 @@ export default function App() {
   const [drive, setDrive] = useState({ step: STEP.engine as number, mounted: false, waiting: false, loaderShown: false, count: 0 });
   const [paused, setPaused] = useState(false);
   const [bigMap, setBigMap] = useState(false);
-  // Progress kept between visits (game/save.ts), and "How to play" opened from the pause menu.
-  const [save, setSave] = useState<Save>(loadSave);
-  const updateSave = useCallback((change: (s: Save) => Save) => {
-    setSave((s) => {
-      const next = change(s);
-      writeSave(next);
-      return next;
-    });
-  }, []);
+  // The modes and the progress kept between visits (game/session.ts), "How to play" from the
+  // pause menu, and the modes and cars menu. The game is read through small snapshots, so
+  // the run's clock ticking doesn't re-render the whole app.
+  const [game] = useState(() => new GameSession());
+  const save = useSyncExternalStore(game.subscribe, () => game.save);
+  const runPhase = useSyncExternalStore(game.subscribe, () => game.run?.phase ?? null);
   const [help, setHelp] = useState(false);
+  const [modes, setModes] = useState(false);
   const driving = screen === 'drive';
   const loading = driving && drive.step < STEP.done;
   // The very first drive ends its loading on the welcome card instead of "press any key".
   const firstWelcome = driving && drive.waiting && !save.seenWelcome;
-  const holdPhysics = loading || drive.waiting || paused || bigMap || panel !== null || help;
+  // The intro holds the car (game.holding) but keeps the physics running, so the teleport to the pickup shows behind it.
+  const runCard = runPhase === 'intro' || runPhase === 'done' || runPhase === 'failed';
+  const holdPhysics = loading || drive.waiting || paused || bigMap || panel !== null || help || modes || (runCard && runPhase !== 'intro');
 
   const start = useMemo(() => (map ? curbStart(map) : null), [map]);
+  useEffect(() => {
+    if (map) game.setMap(map);
+    game.setTeleport((pose) => session.requestTeleport(pose));
+  }, [map, game, session]);
   const viewData = useMemo(() => (map ? mapViewData(map) : null), [map]);
   const streetAt = useMemo(() => (map ? streetNameLookup(map) : null), [map]);
   const roadblocks = useMemo(() => (map ? roadblocksFor(map, ROAD_Y) : null), [map]);
@@ -291,13 +297,15 @@ export default function App() {
 
   const leaveDriving = useCallback(() => {
     session.releaseTouch();
+    game.abandon();
+    setModes(false);
     setHelp(false);
     setPaused(false);
     setBigMap(false);
     setPanel(null);
     setDrive((d) => ({ ...d, mounted: false, loaderShown: false, waiting: false }));
     setScreen(MAP_VIEW ? 'map' : 'menu');
-  }, [session]);
+  }, [session, game]);
 
   // The car is placed once its first frame has run: then the loading screen waits for a
   // key or a tap (so there's time to read the controls) before it fades out.
@@ -317,8 +325,8 @@ export default function App() {
 
   const startPlaying = useCallback(() => {
     setDrive((d) => ({ ...d, waiting: false, loaderShown: false }));
-    if (!save.seenWelcome) updateSave((s) => ({ ...s, seenWelcome: true }));
-  }, [save.seenWelcome, updateSave]);
+    if (!game.save.seenWelcome) game.updateSave((s) => ({ ...s, seenWelcome: true }));
+  }, [game]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -337,6 +345,8 @@ export default function App() {
         if (e.code === 'Escape') setHelp(false);
         return;
       }
+      // The modes menu and a run's cards handle their own keys.
+      if (modes || runCard) return;
       if (loading) return;
       if (e.code === 'Escape') {
         if (bigMap) setBigMap(false);
@@ -346,7 +356,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screen, driving, loading, drive.waiting, firstWelcome, help, bigMap, panel, paused, cityReady, startDriving, startPlaying]);
+  }, [screen, driving, loading, drive.waiting, firstWelcome, help, modes, runCard, bigMap, panel, paused, cityReady, startDriving, startPlaying]);
 
   // Phones held upright: the drive is drawn turned a quarter, the menu stays upright.
   const sideways = useSideways(driving && TOUCH);
@@ -420,6 +430,7 @@ export default function App() {
                 start={MAP_VIEW ? undefined : start}
                 session={session}
                 paused={holdPhysics}
+                game={game}
               />
             )}
           </Suspense>
@@ -478,8 +489,8 @@ export default function App() {
       )}
 
       {driving && viewData && streetAt && drive.step === STEP.done && !drive.waiting && (
-        <Hud session={session} view={viewData} streetAt={streetAt} onMap={() => setBigMap(true)} touch={TOUCH}>
-          {TOUCH && !paused && !bigMap && !panel && <TouchControls session={session} onPause={() => setPaused(true)} />}
+        <Hud session={session} view={viewData} streetAt={streetAt} onMap={() => setBigMap(true)} onModes={() => setModes(true)} game={game} touch={TOUCH}>
+          {TOUCH && !paused && !bigMap && !panel && !modes && !runCard && <TouchControls session={session} onPause={() => setPaused(true)} />}
         </Hud>
       )}
 
@@ -491,12 +502,29 @@ export default function App() {
 
       {driving && bigMap && viewData && <BigMap view={viewData} session={session} touch={TOUCH} onClose={() => setBigMap(false)} />}
 
-      {driving && paused && !panel && !help && (
+      {driving && modes && viewData && <ModesMenu game={game} view={viewData} touch={TOUCH} onClose={() => setModes(false)} />}
+      {driving && runPhase === 'intro' && <RunIntro game={game} touch={TOUCH} />}
+      {driving && (runPhase === 'done' || runPhase === 'failed') && <RunResult game={game} touch={TOUCH} />}
+
+      {driving && paused && !panel && !help && !modes && (
         <PauseMenu
+          run={runPhase}
           onResume={() => setPaused(false)}
           onReset={() => {
             session.requestReset();
             setPaused(false);
+          }}
+          onCheckpoint={() => {
+            game.toCheckpoint();
+            setPaused(false);
+          }}
+          onAbandon={() => {
+            game.abandon();
+            setPaused(false);
+          }}
+          onModes={() => {
+            setPaused(false);
+            setModes(true);
           }}
           onHelp={() => setHelp(true)}
           onSettings={() => setPanel('settings')}

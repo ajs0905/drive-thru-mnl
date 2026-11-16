@@ -31,7 +31,10 @@ import type { ParkedPoses } from './parkedPoses';
 import type { DebrisStore } from './breakaway';
 import { PropPhysics } from './PropPhysics';
 import { ROADBLOCK_POOL, ROADBLOCK_Y, type LooseProp } from './roadblockBodies';
+import { RunDriver } from './RunDriver';
+import { RunMarkers } from './RunMarkers';
 import { SpeedBlur } from './SpeedBlur';
+import type { GameSession } from '../game/session';
 
 /** Top of the physics ground: about where roads are drawn (0.16 to 0.24 m), so tires sit on them. */
 const GROUND_Y = 0.2;
@@ -46,6 +49,7 @@ export default function Drive({
   session,
   paused = false,
   props,
+  game,
 }: {
   map: MapData;
   parked?: ParkedPoses;
@@ -58,6 +62,8 @@ export default function Drive({
   paused?: boolean;
   /** Street furniture the car can knock over or break, and where moved pieces and debris are (shared with the renderer). */
   props?: { knock: Dressing[]; broke: Dressing[]; knockPoses: ParkedPoses; breakPoses: ParkedPoses; debris: DebrisStore };
+  /** The modes (cargo runs): stepped every frame, and their markers drawn. */
+  game?: GameSession;
 }) {
   const get = useThree((s) => s.get);
   const speed = useRef(0);
@@ -114,6 +120,8 @@ export default function Drive({
       {roadblocks && roadblocks.loose.length > 0 && (
         <ParkedPhysics cars={roadblocks.loose} poses={roadblocks.poses} spawn={spawnAt} options={ROADBLOCK_POOL} groundY={ROADBLOCK_Y} />
       )}
+      {game && session && <RunDriver game={game} session={session} paused={paused} />}
+      {game && <RunMarkers game={game} />}
       {speedBlur && <SpeedBlur speed={speed} />}
     </Physics>
   );

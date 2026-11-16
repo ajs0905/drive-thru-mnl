@@ -979,3 +979,427 @@ kbd.wide {
     flex-direction: column;
   }
 }
+
+/* ---------- Modes button and run banner on the HUD ---------- */
+.hud-top-right {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.hud-top-right .pause-hint {
+  position: static;
+}
+.modes-btn {
+  border-radius: 9px;
+  padding: 3px;
+}
+.modes-btn .face {
+  border-width: 2px;
+  padding: 7px 12px 5px;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+}
+.touch .hud-top-right {
+  top: 14px;
+  /* Left of the reset and pause buttons (two 44 px buttons, 10 px apart, 16 px from the edge). */
+  right: 124px;
+}
+.touch .modes-btn .face {
+  padding: 6px 9px 4px;
+  font-size: 12px;
+}
+.run-banner {
+  position: absolute;
+  top: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px 5px;
+  border-radius: 8px;
+  background: rgba(10, 14, 20, 0.78);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 800;
+}
+.run-banner .tag {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  padding: 3px 6px 1px;
+  border-radius: 4px;
+  color: #111;
+}
+.run-banner .tag.pickup {
+  background: #ffd23f;
+}
+.run-banner .tag.dropoff {
+  background: #2fe07f;
+}
+.run-banner b {
+  font-variant-numeric: tabular-nums;
+}
+.run-banner b.late {
+  color: #ff6b5b;
+}
+.run-banner small {
+  font-weight: 700;
+  opacity: 0.75;
+}
+.run-banner .integrity {
+  width: 90px;
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+.run-banner .integrity i {
+  display: block;
+  height: 100%;
+  background: #2fe07f;
+  transition: width 0.25s ease;
+}
+.run-banner .integrity i.low {
+  background: #ff6b5b;
+}
+.run-flash {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 54px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #fff;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.7);
+  animation: flash-in 0.35s ease-out;
+  pointer-events: none;
+}
+.run-flash.count {
+  font-size: 96px;
+}
+@keyframes flash-in {
+  from {
+    transform: translate(-50%, -50%) scale(1.4);
+    opacity: 0;
+  }
+}
+.touch .run-banner {
+  top: 54px;
+  gap: 8px;
+  font-size: 12px;
+  padding: 5px 9px 3px;
+}
+.touch .run-banner .where {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.touch .run-banner .integrity {
+  width: 56px;
+}
+.touch .run-flash {
+  font-size: 36px;
+}
+.touch .run-flash.count {
+  font-size: 64px;
+}
+
+/* ---------- Run cards: intro and result ---------- */
+.run-card .face {
+  gap: 10px;
+}
+.run-title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tag.courier,
+.tag.vault {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  padding: 3px 7px 1px;
+  border-radius: 4px;
+  color: #111;
+  background: #2fe07f;
+}
+.tag.vault {
+  background: #ffd23f;
+}
+.run-card.failed {
+  background: #8f1d16;
+}
+.receipt-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow: auto;
+}
+.receipt-wrap .row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.receipt {
+  background: #fbfaf5;
+  color: #1a1a1a;
+  font: 13px/1.45 ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  padding: 16px 18px 14px;
+  border-radius: 4px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  /* A torn edge at the bottom. */
+  -webkit-mask: linear-gradient(#000, #000) top / 100% calc(100% - 8px) no-repeat, conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 12px 8px repeat-x;
+  mask: linear-gradient(#000, #000) top / 100% calc(100% - 8px) no-repeat, conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 12px 8px repeat-x;
+}
+.receipt header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #777;
+}
+.receipt header b {
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+.receipt .meta {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed #777;
+}
+.receipt ul {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0;
+  border-bottom: 1px dashed #777;
+}
+.receipt li,
+.receipt .net {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.receipt li span:last-child,
+.receipt .net span:last-child {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.receipt .net {
+  padding: 8px 0 4px;
+  font-weight: 800;
+  font-size: 15px;
+}
+.receipt footer {
+  font-size: 12px;
+  color: #555;
+  text-align: center;
+  padding-top: 6px;
+}
+@media (max-height: 460px) {
+  .receipt {
+    font-size: 11px;
+    padding: 10px 14px 12px;
+  }
+  .run-card .face {
+    gap: 6px;
+  }
+}
+
+/* ---------- Modes and cars menu ---------- */
+.modes {
+  width: min(900px, 100%);
+  max-height: 100%;
+  overflow: auto;
+}
+.modes .face {
+  gap: 10px;
+  padding: 12px 14px 12px;
+}
+.modes-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.modes-head .tabs {
+  display: flex;
+  gap: 8px;
+  flex: 1 1 auto;
+}
+.wallet {
+  font-size: 20px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  background: #fff;
+  color: var(--sign-blue);
+  border-radius: 6px;
+  padding: 6px 10px 3px;
+}
+.modes .row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.chip.soon {
+  opacity: 0.5;
+  cursor: default;
+}
+.chip.soon small {
+  font-size: 10px;
+  margin-left: 4px;
+}
+.chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.modes-body {
+  display: flex;
+  gap: 12px;
+  min-height: 0;
+}
+.run-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 340px;
+  overflow: auto;
+}
+.run {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 8px 10px 6px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
+.run.on {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+}
+.run:focus-visible {
+  outline: 3px solid var(--sign-orange);
+}
+.run b {
+  font-size: 15px;
+  font-weight: 800;
+}
+.run small {
+  grid-column: 1 / -1;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.run-detail {
+  flex: 1.2 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.run-detail p {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.route-preview {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: 300px;
+  border-radius: 10px;
+  border: 2px solid #fff;
+  background: #161c24;
+}
+.modes .go .chip {
+  flex: 1 1 auto;
+  text-align: center;
+}
+.car-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+.car {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+}
+.car.on {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+}
+.car b {
+  font-size: 16px;
+  font-weight: 900;
+}
+.car small {
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  opacity: 0.85;
+  flex: 1 1 auto;
+}
+.car .state {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+/* Phones held sideways: tighter, and the preview shorter. */
+@media (max-height: 460px) {
+  .modes .face {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .modes .chip {
+    min-height: 34px;
+    padding: 6px 10px 4px;
+    font-size: 13px;
+  }
+  .wallet {
+    font-size: 15px;
+  }
+  .run-list {
+    max-height: 170px;
+  }
+  .run {
+    padding: 5px 8px 3px;
+  }
+  .route-preview {
+    max-height: 150px;
+  }
+}
+@media (max-width: 560px) {
+  .modes-body {
+    flex-direction: column;
+  }
+}
+/* Buttons straight on the dimmed game (under the receipt) need their own backing. */
+.receipt-wrap .chip:not(.on) {
+  background: rgba(10, 14, 20, 0.88);
+}

@@ -22,7 +22,7 @@ Related: [DATA.md](DATA.md) (how the map data is made), [PERFORMANCE.md](PERFORM
 
 **Goal:** turn real OpenStreetMap data into a drivable low-poly city that runs in the browser, starting with Bonifacio Global City (BGC) and growing to more of Metro Manila.
 
-**The game:** open-world arcade driving. Free roam through real Manila, with time trials and races started from spots on the map, and arcade handling on real physics ([ADR 0014](decisions/0014-open-world-arcade-driving-game.md), [ADR 0008](decisions/0008-car-physics.md)).
+**The game:** open-world arcade driving. Free roam through real Manila, with modes started from a menu (cargo runs now, police chases next), and arcade handling on real physics ([ADR 0014](decisions/0014-open-world-arcade-driving-game.md), [ADR 0008](decisions/0008-car-physics.md)).
 
 | Constraint | What it means for the design |
 | --- | --- |
@@ -68,7 +68,9 @@ src/
   car/        car spec and tuning, arcade controls, drift         pure TS, no three.js, no React
               assist, gearbox, body lean, chase camera math,      (Rapier objects passed in)
               spawn and curb spots, Rapier vehicle setup and step
-  game/       saved progress (validated), and later the modes    pure TS, no three.js, no React
+  game/       the modes: places and runs (events.json), cargo     pure TS, no three.js, no React
+              rules and receipt, run state machine, the game
+              session (wallet, GPS), saved progress (validated)
   routing/    road graph, A* and ALT routes, route tracking       pure TS, no three.js, no React
   scene/      three.js / React Three Fiber components            the only place that knows about rendering
   ui/         menu, loading screens, HUD, maps, pause menu       DOM and 2D canvas, no three.js
@@ -212,6 +214,8 @@ sequenceDiagram
 **Drive mode** (in now): Play shows the drive loading screen (the steps below, the controls, a tip), loads `scene/Drive.tsx` and the physics engine as a separate chunk, builds the collisions, and parks the car at the right-hand curb nearest the middle of High Street, parallel to the road and facing the way that lane goes (`car/curbSpot.ts`: on a ground street at least 6 m wide, clear of parked cars, solid furniture, driveways and zebras, 8 m from junctions, off bends; it slides along the curb to the nearest clear spot). The canvas switches from on-demand to continuous rendering. Once everything is ready, the loading screen waits for a key or a tap, then fades out; on the very first drive it ends on a welcome card instead (`ui/Welcome.tsx`: what there is to do and the controls for keys or touch, closed with its button; remembered in the save, `game/save.ts`, and opened again from the pause menu's How to play). Esc pauses (Resume, Reset car, How to play, Settings, Back to menu); the physics is paused while loading, paused, on the big map or on the welcome card. The save is one localStorage key read through a parser that keeps only valid fields and fills in defaults, so a hand-edited, old or cut-short save can't break the game.
 
 **Drive session** (`scene/driveSession.ts`): one plain object the car writes every frame (map position, height, heading, speed) and the DOM HUD reads in its own animation loop, plus touch buttons and reset requests going the other way. Nothing goes through React state per frame. The HUD (`ui/Hud.tsx`) writes the speed straight into its element, looks up the street 4 times a second (`streetNameLookup` in `geometry/mapView.ts`, a segment grid that prefers roads at the car's level and, at a junction, the one the car is driving along; `ui/streetSign.ts` only changes the sign once the car has stayed on a street for a second, and doesn't show it again for a street it just showed) and redraws the heading-up minimap about 20 times a second; the minimap and the big map (`ui/BigMap.tsx`) draw the same `mapViewData` (roads by class, low buildings, the drivable edge, one label per street; everything is clipped to the edge, with a soft shadow along its inside) on a 2D canvas (`ui/mapCanvas.ts`). Neither draws the map shapes every frame: both paste cached 256 px tiles (`ui/mapTiles.ts`), each drawn once per zoom level (levels double from 0.25 to 16 px per meter; a view uses the first one at least as detailed, so tiles only shrink), least recently used dropped. Street names are drawn on top each frame, their widths cached. The minimap only redraws when the car has moved or turned enough to see.
+
+**Modes** (`src/game`, `src/routing`): the game around the driving lives in one plain object, `game/session.ts`, which the HUD and menus subscribe to and `scene/RunDriver.tsx` steps once per frame (not while paused) with what the car reported to the drive session: speed, smoothed acceleration, drifting and its crash counter. The road graph, its ALT landmarks and the run places (curb spots on real streets, `game/events.json`) are built on first use, about 100 ms. A cargo run is a pure state machine (`game/run.ts`: to the pickup, intro, countdown, running, done or failed) with checkpoints every 400 m along the planned route, integrity rules from measured braking (`game/cargo.ts`) and a receipt that pays into the wallet; the save goes through a validating parser. The session asks the drive to move the car (`requestTeleport` on the drive session: the next physics step puts it on the road there) and holds it still during the intro and countdown (handbrake on, input ignored). The GPS route is re-planned from the car once it's been 25 m off the route for over a second. The MODES / CARS menu (`ui/ModesMenu.tsx`) previews a run on the 2D map (the same tiles as the minimap) with the route drawn over it; `ui/RunHud.tsx` and `ui/RunPanels.tsx` draw the banner, countdown, intro and receipt. Markers at the stops are additive glow columns without fog (`scene/RunMarkers.tsx`).
 
 **Touch screens** (`ui/TouchControls.tsx`, a coarse pointer): buttons that hold a control while a finger is on them (pointer capture, several at once) write to the drive session's touch keys, which the car merges with the keyboard's every physics step; they let go when the controls hide or the window loses focus. Phones play sideways: while driving with the phone held upright, the whole app is drawn turned 90 degrees clockwise (`ui/sideways.ts`, a CSS transform with the width and height swapped), so no warning, fullscreen or orientation lock is needed; the canvas measures its size without transforms (`offsetSize`) so the view keeps its shape. The menu stays upright.
 
@@ -369,6 +373,9 @@ One page each in [decisions/](decisions/):
 | [0018](decisions/0018-world-channelling.md) | Close off most empty lots, open three zones, solid sidewalk furniture | Accepted |
 | [0019](decisions/0019-knockable-and-breakaway-props.md) | Knockable and breakaway street furniture, pooled near the player | Accepted |
 | [0020](decisions/0020-building-forms.md) | Building forms: hip roofs, podium towers and shopfronts | Accepted |
+| [0021](decisions/0021-far-side-traffic-lights.md) | Traffic lights on the far side of the intersection | Accepted |
+| [0022](decisions/0022-road-graph-and-alt-routing.md) | Road graph built at load time, routes by ALT | Accepted |
+| [0023](decisions/0023-cargo-runs.md) | Cargo runs: a pure game session, integrity from measured physics, a parody receipt | Accepted |
 
 ## 12. Roadmap through the architecture
 
@@ -384,6 +391,7 @@ One page each in [decisions/](decisions/):
 | World channelling (done) | `pipeline/lots.ts` (walls around empty lots, open zones, parking yard), `pipeline/sidewalks.ts` (street furniture), `dressing` in the data, `scene/Dressing.tsx` (one instanced mesh per kind, refilled around the focus), `tools/props-to-glb.ts` (`public/models/props.glb`), one new QA check. See [ADR 0018](decisions/0018-world-channelling.md) |
 | Street and traffic lights (done) | `pipeline/lights.ts`, three pole kinds in `dressing` |
 | Better buildings, lite (done) | `geometry/buildingForm.ts`: hip roofs, podium towers, shopfronts in the building shader. See ADR 0020 |
+| Modes (in steps) | Done: `src/routing` (road graph, A* and ALT, ADR 0022), `src/game` (cargo runs, wallet, the game session, ADR 0023), the MODES / CARS menu, the GPS route on the maps. Next: light traffic, then Kamote Mode (police chases) and the other cars |
 | Polish | Landmarks, day/night, sounds and music |
 | Ship | Vercel deploy, measured budgets in PERFORMANCE.md, README media |
 | Expansion | New Overpass exports per area, tiles make size mostly irrelevant to memory |

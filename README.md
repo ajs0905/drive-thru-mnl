@@ -50,7 +50,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | **Performance & Quality** | | |
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
 | Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
-| Automated tests | 683 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 699 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 32 automated checks | A CI gate: counts can only go down |
 
 ## How It Works
@@ -68,9 +68,9 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 
 ## The game
 
-Free-roam arcade driving on BGC's real streets, for once without the traffic (hence the name). Drift the corners, take the flyovers, send the roadblocks at the edge flying. Checkpoint races, ride-hailing and police chases are next. Runs in the browser on desktops and phones, nothing to install.
+Free-roam arcade driving on BGC's real streets, for once without the traffic (hence the name). Drift the corners, take the flyovers, send the roadblocks at the edge flying. Take cargo runs between loading bays and landmarks for pesos: on time and without denting the cargo, with a GPS route on the minimap and a delivery receipt at the end. Police chases are next. Runs in the browser on desktops and phones, nothing to install.
 
-**Controls:** W A S D or the arrow keys to drive, Space for the handbrake, R to reset the car, M for the map, Esc to pause. On a phone, hold it sideways and use the buttons on screen.
+**Controls:** W A S D or the arrow keys to drive, Space for the handbrake, R to reset the car, M for the map, Esc to pause, MODES / CARS at the top right. On a phone, hold it sideways and use the buttons on screen.
 
 ## What's built
 
@@ -79,14 +79,15 @@ Free-roam arcade driving on BGC's real streets, for once without the traffic (he
 - 3D city: buildings with windows, shopfronts, hip roofs, podium towers and roof details, painted roads with clean intersections, a physically based sky, shadows, and filler city and real skylines past the edge
 - Performance: three quality tiers, adaptive resolution, grid culling, render on demand, reversed depth
 - Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, walled-off lots, street furniture you can knock over or smash through, parked cars and roadblocks you can push around
-- UI: a road sign menu, loading screens, a road sign HUD with a heading-up minimap and a full map, a pause menu, touch controls for phones
+- UI: a road sign menu, loading screens, a welcome card, a road sign HUD with a heading-up minimap and a full map, a pause menu, touch controls for phones
+- Modes: cargo runs (courier and vault) between curbside loading bays and landmarks, routed by A* with landmarks, with checkpoints, a cargo integrity rating, a delivery receipt and a peso wallet saved in the browser
 
 ## Planned
 
 - Measure it on a phone, then utility poles and more building detail (balconies, materials, signage)
 - Later: engine, tire and crash sounds, ambience and music
 - First deploy on Vercel
-- Game modes: sprint from A to B, ride-hailing, light traffic, a police chase
+- Modes: light traffic, Kamote Mode (police chases), and the van, muscle car and coupe to buy with pesos
 - Tile streaming, then more of Metro Manila: the districts around BGC and the highways between them
 
 ## Known issues and fixes

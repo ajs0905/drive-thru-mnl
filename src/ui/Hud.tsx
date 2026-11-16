@@ -8,12 +8,14 @@
  * street looked up 4 times a second (when the sign shows: streetSign.ts).
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { GameSession } from '../game/session';
 import { headingUpRotation, type MapViewData } from '../geometry/mapView';
 import type { Point } from '../map/types';
 import type { DriveSession } from '../scene/driveSession';
 import { CarArrow } from './icons';
-import { MAP_COLORS, type MapViewport } from './mapCanvas';
+import { drawRoute, drawStop, MAP_COLORS, ROUTE_COLORS, type MapViewport } from './mapCanvas';
 import { MapTiles } from './mapTiles';
+import { RunHud } from './RunHud';
 import { StreetSign } from './streetSign';
 
 /** Minimap: meters across, redraws per second; street sign: seconds between lookups (when it shows: streetSign.ts). */
@@ -24,6 +26,8 @@ export function Hud({
   view,
   streetAt,
   onMap,
+  onModes,
+  game,
   touch,
   children,
 }: {
@@ -31,6 +35,10 @@ export function Hud({
   view: MapViewData;
   streetAt: (p: Point, raised?: boolean, heading?: number) => string | undefined;
   onMap: () => void;
+  /** Opens the modes and cars menu. */
+  onModes: () => void;
+  /** The run in play and the GPS route, drawn on the minimap. */
+  game: GameSession;
   touch: boolean;
   /** Extra HUD parts (the touch controls). */
   children?: ReactNode;
@@ -44,7 +52,7 @@ export function Hud({
   }, [view]);
 
   useEffect(() => {
-    const state = { frame: 0, lastDraw: 0, lastStreet: 0, drawn: { x: NaN, y: 0, heading: 0, complete: false } };
+    const state = { frame: 0, lastDraw: 0, lastStreet: 0, drawn: { x: NaN, y: 0, heading: 0, complete: false, version: -1 } };
     const sign = new StreetSign();
     const tick = (now: number) => {
       state.frame = requestAnimationFrame(tick);
@@ -60,25 +68,31 @@ export function Hud({
         state.lastDraw = t;
         // Only when the car has moved or turned enough to see, or tiles are still missing.
         const d = state.drawn;
-        if (!d.complete || Math.hypot(car.x - d.x, car.y - d.y) > 0.25 || Math.abs(car.heading - d.heading) > 0.004) {
-          Object.assign(d, { x: car.x, y: car.y, heading: car.heading, complete: drawMinimap(canvas.current, tiles, car) });
+        if (!d.complete || d.version !== game.version || Math.hypot(car.x - d.x, car.y - d.y) > 0.25 || Math.abs(car.heading - d.heading) > 0.004) {
+          Object.assign(d, { x: car.x, y: car.y, heading: car.heading, version: game.version, complete: drawMinimap(canvas.current, tiles, car, game) });
         }
       }
     };
     state.frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(state.frame);
-  }, [session, tiles, streetAt]);
+  }, [session, tiles, streetAt, game]);
 
   return (
     <div className="hud2">
       <div className={street.shown ? 'sign street' : 'sign street hidden'} aria-live="polite">
         <div className="face">{street.name}</div>
       </div>
-      {!touch && (
-        <div className="pause-hint">
-          <kbd>ESC</kbd> Pause
-        </div>
-      )}
+      <div className="hud-top-right">
+        <button type="button" className="sign modes-btn" onClick={onModes}>
+          <span className="face">MODES / CARS</span>
+        </button>
+        {!touch && (
+          <div className="pause-hint">
+            <kbd>ESC</kbd> Pause
+          </div>
+        )}
+      </div>
+      <RunHud game={game} />
       <button type="button" className="minimap" aria-label="Open the big map" onClick={onMap}>
         <canvas ref={canvas} />
         <CarArrow className="me" />
@@ -92,8 +106,8 @@ export function Hud({
   );
 }
 
-/** One minimap frame: the map turned so the car points up. False if some tiles weren't drawn yet. */
-function drawMinimap(canvas: HTMLCanvasElement | null, tiles: MapTiles, car: { x: number; y: number; heading: number }): boolean {
+/** One minimap frame: the map turned so the car points up, the GPS route and its stop. False if some tiles weren't drawn yet. */
+function drawMinimap(canvas: HTMLCanvasElement | null, tiles: MapTiles, car: { x: number; y: number; heading: number }, game: GameSession): boolean {
   if (!canvas) return false;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const [w, h] = [Math.round(canvas.clientWidth * dpr), Math.round(canvas.clientHeight * dpr)];
@@ -102,5 +116,11 @@ function drawMinimap(canvas: HTMLCanvasElement | null, tiles: MapTiles, car: { x
   const ctx = canvas.getContext('2d');
   if (!ctx) return false;
   const view: MapViewport = { center: [car.x, car.y], scale: w / HUD.minimapMeters, rotation: headingUpRotation(car.heading) };
-  return tiles.draw(ctx, view, MAP_COLORS.outside);
+  const complete = tiles.draw(ctx, view, MAP_COLORS.outside);
+  const gps = game.gps;
+  if (gps) {
+    drawRoute(ctx, gps.route.points, gps.route.acc, gps.s, view, 4 * dpr);
+    drawStop(ctx, gps.target, view, 6 * dpr, gps.kind === 'pickup' ? ROUTE_COLORS.pickup : ROUTE_COLORS.dropoff, 10 * dpr);
+  } else if (game.run?.phase === 'intro' || game.run?.phase === 'countdown') drawStop(ctx, game.run.pickup, view, 6 * dpr, ROUTE_COLORS.pickup, 10 * dpr);
+  return complete;
 }

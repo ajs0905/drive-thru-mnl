@@ -12,6 +12,7 @@ const TIPS = {
     'Stuck or flipped? Press R',
     'Cones and drums go flying. The concrete ones don’t move',
     'Parked cars can be shoved. They go back once you look away',
+    'Cargo runs pay pesos: MODES / CARS at the top right',
   ],
   touch: [
     'Tap the handbrake mid-turn to drift, stay on the gas to hold it',
@@ -19,6 +20,7 @@ const TIPS = {
     'Stuck or flipped? Tap reset at the top right',
     'Cones and drums go flying. The concrete ones don’t move',
     'Parked cars can be shoved. They go back once you look away',
+    'Cargo runs pay pesos: MODES / CARS at the top right',
   ],
 };
 
@@ -31,4 +33,7 @@ export function tipFor(touch: boolean, n: number): string {
 /** What the welcome card lists (ui/Welcome.tsx): free roam always, the modes and cars once they're in. */
 export const WELCOME_ROWS: { title: string; text: string }[] = [
   { title: 'FREE ROAM', text: "Drive BGC's real streets. Try the handling, take the flyovers, find your own shortcuts." },
+  { title: 'MODES', text: 'Cargo runs pay pesos: deliver on time with the cargo in one piece. Kamote Mode chases are on the way.' },
+  { title: 'CARS', text: 'Save up your pesos for faster cars.' },
+  { title: 'WHERE', text: 'MODES / CARS is at the top right, and in the pause menu.' },
 ];
