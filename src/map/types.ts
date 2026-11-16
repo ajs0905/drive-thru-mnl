@@ -26,6 +26,8 @@ export interface Road {
   lanes?: number;
   /** One-way carriageway (half of a divided road, a ramp, a roundabout). */
   oneway?: true;
+  /** Part of a roundabout or traffic circle (OSM junction=roundabout or circular). */
+  roundabout?: true;
   /** Which sides have a sidewalk. Drivable roads only. */
   sidewalk?: SidewalkSides;
   /** Sides where the street parking tags rule out parking. */

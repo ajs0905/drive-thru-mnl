@@ -51,6 +51,8 @@ export interface GraphEdge {
   trimStart: number;
   trimEnd: number;
   oneway: boolean;
+  /** Part of a roundabout or traffic circle. */
+  roundabout: boolean;
   /** In the main strongly connected component. */
   main: boolean;
 }
@@ -103,7 +105,7 @@ export function buildRoadGraph(map: Pick<MapData, 'roads'> & Partial<Pick<MapDat
     const [a, b] = [node(r.points[0], z[0]), node(r.points[r.points.length - 1], z[z.length - 1])];
     const total = laneCount(r);
     const lanes = r.oneway ? total : Math.max(1, Math.floor(total / 2));
-    const base = { road: ri, length, time: length / SPEEDS[cls], cls, w: r.w, lanes, oneway: !!r.oneway, main: false };
+    const base = { road: ri, length, time: length / SPEEDS[cls], cls, w: r.w, lanes, oneway: !!r.oneway, roundabout: !!r.roundabout, main: false };
     const [t0, t1] = [Math.max(0, r.trim?.[0] ?? 0), Math.max(0, r.trim?.[1] ?? 0)];
     const fwd = edges.length;
     edges.push({ ...base, forward: true, from: a, to: b, points: r.points, acc, z, twin: -1, trimStart: t0, trimEnd: t1 });

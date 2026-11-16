@@ -7,7 +7,7 @@ import { buildRoadGraph } from '../routing/graph';
 import { pointOnRoute, Router } from '../routing/route';
 import { snap } from '../routing/graph';
 import { IDM, idmAccel } from './idm';
-import { laneOffset, laneWidth, parkingRoom, roadsWithParking, TrafficSim, type Agent } from './sim';
+import { laneOffset, laneWidth, oncomingRoom, parkingRoom, roadsWithParking, TRAFFIC, TrafficSim, type Agent } from './sim';
 
 const MODELS = PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]] as [number, number], weight: m.weight }));
 const PAINTS = PARKED_PAINTS.map((p) => p.weight);
@@ -85,6 +85,27 @@ const rect = (p: Point, heading: number, len: number, width: number): Point[] =>
 };
 /** Footprint of a traffic car. */
 const foot = (a: Agent): Point[] => rect([a.x, a.y], a.heading, a.len, a.width);
+
+describe('oncoming carriageways', () => {
+  it('keeps a one-way carriageway mapped too wide off the one coming the other way beside it', () => {
+    // Eastbound 16 m wide, westbound 8 m wide, center lines 6 m apart: the drawn widths overlap by 6 m.
+    const roads: Road[] = [
+      { id: 'east', highway: 'secondary', cls: 'major', w: 16, oneway: true, points: [[0, 0], [200, 0]] },
+      { id: 'west', highway: 'secondary', cls: 'major', w: 8, oneway: true, points: [[200, 6], [0, 6]] },
+    ];
+    const graph = buildRoadGraph({ roads });
+    const room = graph.edges.map((e) => [e.w / 2, e.w / 2] as [number, number]);
+    oncomingRoom(graph, room);
+    const [east, west] = [graph.edges.findIndex((e) => e.w === 16), graph.edges.findIndex((e) => e.w === 8)];
+    // Each gets its share of the 6 m between them on that side, by width: 4 m and 2 m.
+    expect(room[east][0]).toBeCloseTo(4);
+    expect(room[west][0]).toBeCloseTo(2);
+    // The far sides keep their full room.
+    expect(room[east][1]).toBe(8);
+    // Lanes still fit.
+    expect(laneWidth(graph.edges[east], room[east])).toBeGreaterThanOrEqual(TRAFFIC.laneMin);
+  });
+});
 
 describe('traffic on the real map', () => {
   const map = JSON.parse(bgcRaw) as MapData;
@@ -193,5 +214,104 @@ describe('traffic on the real map', () => {
     expect(moved === undefined || moved.edge !== a.edge || moved.s > before).toBe(true);
     sim.knock(a.id);
     expect(sim.agents.find((x) => x.id === a.id)?.knocked).toBe(true);
+  });
+
+  it('steers like a car: the front axle on the path, the rear trailing it a wheelbase behind, the body pointing from one to the other', () => {
+    const { sim } = drive(10, 60);
+    let turning = 0;
+    for (const a of sim.agents) {
+      if (a.knocked) continue;
+      const [fx, fy] = [a.x + (Math.cos(a.heading) * a.wb) / 2, a.y + (Math.sin(a.heading) * a.wb) / 2];
+      expect(Math.hypot(fx - a.rx, fy - a.ry)).toBeCloseTo(a.wb, 5);
+      expect(Math.abs(a.steer)).toBeLessThan(0.7);
+      if (Math.abs(a.steer) > 0.02) turning++;
+    }
+    expect(sim.agents.every((a) => a.wb > 2 && a.wb < a.len)).toBe(true);
+    expect(turning).toBeGreaterThanOrEqual(0);
+  });
+
+  it('changes lanes on wider roads with the signal on, over 12 to 20 m of road, and never sideways in a jump', () => {
+    const sim = new TrafficSim(graph, { count: 30, models: MODELS, paints: PAINTS, room, seed: 'lanes' });
+    const seen = new Map<number, { lane: number; edge: number; laneAt: number }>();
+    let [changes, signaled] = [0, 0];
+    for (let i = 0; i < 60 * 180; i++) {
+      const at = pointOnRoute(route, ((i / 60) * 12) % route.length);
+      sim.step(1 / 60, at.p, [{ p: at.p, speed: 12, heading: at.heading, half: 2.25 }]);
+      for (const a of sim.agents) {
+        const was = seen.get(a.id);
+        if (was && was.edge === a.edge && was.laneAt !== a.laneAt && !a.knocked) {
+          changes++;
+          expect(a.latLen).toBeGreaterThanOrEqual(TRAFFIC.latMin);
+          expect(a.latLen).toBeLessThanOrEqual(TRAFFIC.latMax);
+          if (a.signal === (a.latTo > a.latFrom ? 1 : -1)) signaled++;
+        }
+        seen.set(a.id, { lane: a.lane, edge: a.edge, laneAt: a.laneAt });
+      }
+    }
+    expect(changes).toBeGreaterThan(5);
+    expect(signaled).toBe(changes);
+  });
+
+  it('takes an exit off a roundabout: nobody goes round more than twice', () => {
+    // Laps of each ring, by walking it.
+    const lapOf = (edge: number) => {
+      let [cur, total] = [edge, 0];
+      for (let k = 0; k < 40; k++) {
+        total += graph.edges[cur].length;
+        const next = graph.out[graph.edges[cur].to].find((n) => graph.edges[n].roundabout);
+        if (next === undefined || next === edge) break;
+        cur = next;
+      }
+      return total;
+    };
+    let [entries, worst] = [0, 0];
+    // Parked next to Gomez Circle and Burgos Circle, so cars spawn all around them.
+    for (const at of [[-644, -547], [-771, 242]] as Point[]) {
+      const sim = new TrafficSim(graph, { count: 30, models: MODELS, paints: PAINTS, room, seed: 'ring' });
+      const stay = new Map<number, number>();
+      for (let i = 0; i < 60 * 240; i++) {
+        sim.step(1 / 60, at, []);
+        for (const a of sim.agents) {
+          if (!graph.edges[a.edge].roundabout) {
+            stay.delete(a.id);
+            continue;
+          }
+          if (!stay.has(a.id)) entries++;
+          const d = (stay.get(a.id) ?? 0) + a.v / 60;
+          stay.set(a.id, d);
+          worst = Math.max(worst, d / lapOf(a.edge));
+        }
+      }
+    }
+    expect(entries).toBeGreaterThan(20);
+    expect(worst).toBeLessThan(2);
+  });
+
+  it('puts a knocked car back on its lane where it stopped, easing back to the lane center', () => {
+    const sim = new TrafficSim(graph, { count: 6, models: MODELS, paints: PAINTS, room, seed: 'rejoin' });
+    const p = pointOnRoute(route, 0).p;
+    for (let i = 0; i < 300; i++) sim.step(1 / 60, p);
+    const a = sim.agents.find((x) => !graph.edges[x.edge].roundabout && graph.edges[x.edge].length - x.s > 60 && x.s > 30)!;
+    expect(a).toBeDefined();
+    sim.knock(a.id);
+    // Shoved 0.8 m to the left and turned 15 degrees, then it settles.
+    const h = a.heading + 0.26;
+    const [x, y] = [a.x - Math.sin(a.heading) * 0.8, a.y + Math.cos(a.heading) * 0.8];
+    sim.moveKnocked(a.id, x, y, a.z, h);
+    const before = { edge: a.edge, s: a.s };
+    expect(sim.rejoin(a.id, x, y, a.z, h, 0)).toBe(true);
+    expect([a.edge, Math.round(a.s)], JSON.stringify(before)).toEqual([before.edge, Math.round(before.s)]);
+    expect(a.knocked).toBe(false);
+    // Where it was left, not snapped to the lane.
+    expect(Math.hypot(a.x - x, a.y - y)).toBeLessThan(0.3);
+    expect(a.shift).toBeGreaterThan(0.4);
+    const start = a.odo;
+    for (let i = 0; i < 60 * 10 && a.latP < 1; i++) sim.step(1 / 60, p);
+    expect(a.latP).toBe(1);
+    expect(a.shift).toBeCloseTo(0, 5);
+    expect(a.odo - start).toBeGreaterThan(5);
+    // Facing across the road: no lane to rejoin.
+    sim.knock(a.id);
+    expect(sim.rejoin(a.id, a.x, a.y, a.z, a.heading + Math.PI / 2, 0)).toBe(false);
   });
 });

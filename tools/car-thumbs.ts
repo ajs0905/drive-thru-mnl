@@ -3,22 +3,38 @@
  * PNG, so the menu shows a picture without a second WebGL canvas (`npm run thumbs`).
  *
  * A tiny software renderer: the binary glTF files our model tools write (non-indexed
- * triangles with vertex colors, positions already placed), flat Lambert shading with the
- * game's sun direction, a soft ground shadow, drawn at 3x and filtered down. Same output
- * every run.
+ * triangles with vertex colors, positions already placed), or a car straight from the
+ * vehicle pack's FBX for cars whose model isn't in the game yet. Flat Lambert shading with
+ * the game's sun direction, the same sky reflections as in the game (scene/carShine.ts:
+ * clear coat on the paint, sky in the glass, bright rims), a soft ground shadow with a
+ * darker contact patch under each tire, drawn at 3x and filtered down. Same output every run.
  *
- *   npx tsx tools/car-thumbs.ts
+ *   npx tsx tools/car-thumbs.ts ["<vehicle pack folder>"]
  *
- * Cars whose model isn't in yet (CARS[].ready and no model below) keep their outline
- * drawing in the menu.
+ * Without the pack folder, the pack's cars keep the pictures already in public/models/cars.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { Color, type Mesh } from 'three';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { CAR_SHINE } from '../src/scene/carShine';
+import { SKY } from '../src/scene/skyConfig';
+import { bake, SCALE } from './car-to-glb';
 import { writePng } from './png';
 
 type V3 = [number, number, number];
 
-/** Which model each car in the CARS tab uses: a file, and a node in it. */
-const MODELS: Record<string, { file: string; node: string; paint?: V3; place?: Record<string, V3> }> = {
+interface Source {
+  /** A binary glTF and a node in it, or a car in the vehicle pack (path inside the pack folder). */
+  file?: string;
+  node?: string;
+  fbx?: string;
+  paint?: V3;
+  place?: Record<string, V3>;
+}
+
+/** Which model each car in the CARS tab uses. */
+const MODELS: Record<string, Source> = {
   // The player's sedan: the wheels are modeled at the origin and placed by the game (car/spec.ts
   // SEDAN: track 0.873, axle 1.368, wheel centers 0.165 below the body's origin), and the
   // body's origin sits 0.51 m above the road.
@@ -35,6 +51,9 @@ const MODELS: Record<string, { file: string; node: string; paint?: V3; place?: R
   },
   // The cargo van is the vehicle pack's van, the same one parked around the city, in white.
   van: { file: 'public/models/parked-cars.glb', node: 'van', paint: [0.9, 0.9, 0.88] },
+  // Not drivable yet: drawn straight from the pack (its own paint colors).
+  muscle: { fbx: 'Muscle/Muscle.fbx' },
+  coupe: { fbx: 'Sports/Sports.fbx' },
 };
 
 const [W, H, SS] = [320, 160, 3];
@@ -53,6 +72,29 @@ const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 interface Tri {
   p: [V3, V3, V3];
   color: V3;
+  /** How it reflects the sky (tools/car-to-glb.ts `shineOf`): 0 matte, 1 paint, 2 glass, 3 metal. */
+  shine: number;
+}
+
+/** A car from the vehicle pack's FBX: each part baked like tools/car-to-glb.ts does (meters, colors, shine), placed where the pack has it. */
+function readFbx(file: string): Tri[] {
+  const buf = readFileSync(file);
+  const fbx = new FBXLoader().parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '');
+  fbx.updateMatrixWorld(true);
+  const tris: Tri[] = [];
+  fbx.traverse((o) => {
+    const mesh = o as Mesh;
+    if (!mesh.isMesh) return;
+    const at = mesh.getWorldPosition(mesh.position.clone()).multiplyScalar(SCALE);
+    for (const g of Object.values(bake(mesh))) {
+      const [pos, col, shine] = [g.getAttribute('position'), g.getAttribute('color'), g.getAttribute('shine')];
+      for (let v = 0; v < pos.count; v += 3) {
+        const p = [0, 1, 2].map((k) => [pos.getX(v + k) + at.x, pos.getY(v + k) + at.y, pos.getZ(v + k) + at.z] as V3) as [V3, V3, V3];
+        tris.push({ p, color: [col.getX(v), col.getY(v), col.getZ(v)], shine: shine.getX(v) });
+      }
+    }
+  });
+  return tris;
 }
 
 /** The triangles under one node of a binary glTF (meshes of it and its children). */
@@ -81,11 +123,12 @@ function readTriangles(file: string, nodeName: string, paint?: V3, place: Record
         const pos = read(prim.attributes.POSITION, 3)!;
         const col = read(prim.attributes.COLOR_0, 3);
         const pnt = read(prim.attributes._PAINT, 1);
+        const shn = read(prim.attributes._SHINE, 1);
         for (let v = 0; v < pos.length / 3; v += 3) {
           const p = [0, 1, 2].map((k) => [pos[(v + k) * 3] + at[0], pos[(v + k) * 3 + 1] + at[1], pos[(v + k) * 3 + 2] + at[2]] as V3) as [V3, V3, V3];
           let color: V3 = col ? [col[v * 3], col[v * 3 + 1], col[v * 3 + 2]] : [0.7, 0.7, 0.7];
           if (paint && pnt && pnt[v] > 0.5) color = paint;
-          tris.push({ p, color });
+          tris.push({ p, color, shine: shn ? shn[v] : 0 });
         }
       }
     for (const c of node.children ?? []) walk(c, at);
@@ -94,6 +137,30 @@ function readTriangles(file: string, nodeName: string, paint?: V3, place: Record
   if (root < 0) throw new Error(`${file}: no node ${nodeName}`);
   walk(root, [0, 0, 0]);
   return tris;
+}
+
+const linear = (hex: string): V3 => {
+  const c = new Color(hex);
+  return [c.r, c.g, c.b];
+};
+const SUN_COLOR = linear(SKY.sun);
+const [HORIZON, ZENITH, GROUND] = [linear(SKY.horizon), linear(CAR_SHINE.zenith), linear(CAR_SHINE.ground)];
+const mix = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+/** A face's color: Lambert, then the game's sky reflection and sun glint for shiny parts (scene/carShine.ts). */
+function faceColor(t: Tri, n: V3, toCam: V3): V3 {
+  const light = AMBIENT + DIFFUSE * Math.max(0, dot(n, SUN));
+  let c: V3 = [t.color[0] * light, t.color[1] * light, t.color[2] * light];
+  if (t.shine < 0.5) return c;
+  const k = t.shine < 1.5 ? CAR_SHINE.paint : t.shine < 2.5 ? CAR_SHINE.glass : CAR_SHINE.metal;
+  const nv = Math.max(0, dot(n, toCam));
+  const r: V3 = [2 * nv * n[0] - toCam[0], 2 * nv * n[1] - toCam[1], 2 * nv * n[2] - toCam[2]];
+  const sky = r[1] > 0 ? mix(HORIZON, ZENITH, r[1] ** 0.6) : mix(HORIZON, GROUND, Math.min(1, -r[1] * 5));
+  const fresnel = (1 - nv) ** 4;
+  // Less of the sky than in the game, and a softer glint: a picture on a card has no street around it to reflect.
+  c = mix(c, sky, 0.55 * Math.min(1, k.base + k.grazing * fresnel));
+  const glint = Math.max(0, dot(r, SUN)) ** (k.sharpness / 4) * k.glint * 0.6;
+  return [c[0] + SUN_COLOR[0] * glint, c[1] + SUN_COLOR[1] * glint, c[2] + SUN_COLOR[2] * glint];
 }
 
 /** glTF vertex colors are linear; the PNG is sRGB. */
@@ -156,7 +223,21 @@ export function render(tris: Tri[]): { width: number; height: number; data: Uint
     [s[0], s[1], s[2]],
     [s[0], s[2], s[3]],
   ])
-    fill(a, b, c, (i) => (shade[i] = 0.42));
+    fill(a, b, c, (i) => (shade[i] = 0.36));
+  // Contact patches: a darker spot under each tire, so the car sits on the ground.
+  const touching = new Set<string>();
+  for (const t of tris)
+    for (const p of t.p) {
+      if (p[1] > 0.05) continue;
+      // One spot per few centimeters of tread.
+      const key = `${Math.round(p[0] * 10)},${Math.round(p[2] * 10)}`;
+      if (touching.has(key)) continue;
+      touching.add(key);
+      const q = screen(project([p[0], 0, p[2]]));
+      const r = 5 * SS;
+      for (let y = Math.max(0, Math.floor(q[1] - r)); y <= Math.min(h - 1, Math.ceil(q[1] + r)); y++)
+        for (let x = Math.max(0, Math.floor(q[0] - 2 * r)); x <= Math.min(w - 1, Math.ceil(q[0] + 2 * r)); x++) if (((x - q[0]) / 2) ** 2 + (y - q[1]) ** 2 < r * r) shade[y * w + x] = 0.75;
+    }
   const blur = (src: Float32Array, r: number, horizontal: boolean) => {
     const out = new Float32Array(src.length);
     for (let y = 0; y < h; y++)
@@ -178,8 +259,7 @@ export function render(tris: Tri[]): { width: number; height: number; data: Uint
     const n = norm(cross([t.p[1][0] - t.p[0][0], t.p[1][1] - t.p[0][1], t.p[1][2] - t.p[0][2]], [t.p[2][0] - t.p[0][0], t.p[2][1] - t.p[0][1], t.p[2][2] - t.p[0][2]]));
     // Both sides drawn (some model faces are single-sided the other way); light the side we see.
     const facing = dot(n, toCam) < 0 ? ([-n[0], -n[1], -n[2]] as V3) : n;
-    const light = AMBIENT + DIFFUSE * Math.max(0, dot(facing, SUN));
-    const color: V3 = [t.color[0] * light, t.color[1] * light, t.color[2] * light];
+    const color = faceColor(t, facing, toCam);
     const [a, b, c] = t.p.map((p) => screen(project(p)));
     fill(a, b, c, (i, z) => {
       if (z <= depth[i]) return;
@@ -215,8 +295,13 @@ export function render(tris: Tri[]): { width: number; height: number; data: Uint
 
 if (process.argv[1]?.endsWith('car-thumbs.ts')) {
   mkdirSync('public/models/cars', { recursive: true });
+  const pack = process.argv[2];
   for (const [id, m] of Object.entries(MODELS)) {
-    const png = writePng(render(readTriangles(m.file, m.node, m.paint, m.place)));
+    if (m.fbx && !(pack && existsSync(join(pack, m.fbx)))) {
+      console.log(`${id}: kept (give the vehicle pack folder to redraw it)`);
+      continue;
+    }
+    const png = writePng(render(m.fbx ? readFbx(join(pack!, m.fbx)) : readTriangles(m.file!, m.node!, m.paint, m.place)));
     writeFileSync(`public/models/cars/${id}.png`, png);
     console.log(`public/models/cars/${id}.png: ${(png.length / 1024).toFixed(1)} KB`);
   }

@@ -4,6 +4,8 @@
  * the frame rate within each tier. Automatic tier switching comes with the tiles and
  * tiers milestone (docs/ARCHITECTURE.md §8).
  */
+import { TRAFFIC_TIERS } from '../traffic/tiers';
+
 export type Quality = 'low' | 'medium' | 'high';
 export const QUALITIES: Quality[] = ['low', 'medium', 'high'];
 
@@ -27,8 +29,9 @@ export interface QualitySettings {
   propsDistance: number;
   /** Trees, the same way: they stay visible farther than small props. */
   treeDistance: number;
-  /** Cars of light traffic kept around the player while driving. */
+  /** Cars of traffic kept around the player while driving, and how far (m) from the camera they're drawn as the full model (past that, a 32-triangle box car). */
   traffic: number;
+  trafficNear: number;
   /** Parked cars: real models out to `parkedNear` (m), simple box cars out to `parkedFar`, none past it. */
   parkedNear: number;
   parkedFar: number;
@@ -48,9 +51,9 @@ export interface QualitySettings {
 }
 
 export const QUALITY: Record<Quality, QualitySettings> = {
-  low: { dpr: [0.6, 1], msaa: false, shadowMap: 0, shadowEvery: 0, filler: 0.4, clouds: false, propsDistance: 500, treeDistance: 1000, treeModels: false, parkedNear: 35, parkedFar: 170, speedBlur: false, dressingNear: 0, dressingFar: 600, dressingMid: 220, traffic: 10 },
-  medium: { dpr: [0.75, 1.25], msaa: true, shadowMap: 1024, shadowEvery: 4, filler: 1, clouds: true, propsDistance: 900, treeDistance: 1800, treeModels: true, parkedNear: 70, parkedFar: 300, speedBlur: true, dressingNear: 90, dressingFar: 900, dressingMid: 320, traffic: 14 },
-  high: { dpr: [1, 1.25], msaa: true, shadowMap: 2048, shadowEvery: 2, filler: 1, clouds: true, propsDistance: 1400, treeDistance: 3000, treeModels: true, parkedNear: 100, parkedFar: 450, speedBlur: true, dressingNear: 120, dressingFar: 1400, dressingMid: 450, traffic: 18 },
+  low: { dpr: [0.6, 1], msaa: false, shadowMap: 0, shadowEvery: 0, filler: 0.4, clouds: false, propsDistance: 500, treeDistance: 1000, treeModels: false, parkedNear: 35, parkedFar: 170, speedBlur: false, dressingNear: 0, dressingFar: 600, dressingMid: 220, traffic: TRAFFIC_TIERS.low.count, trafficNear: TRAFFIC_TIERS.low.near },
+  medium: { dpr: [0.75, 1.25], msaa: true, shadowMap: 1024, shadowEvery: 4, filler: 1, clouds: true, propsDistance: 900, treeDistance: 1800, treeModels: true, parkedNear: 70, parkedFar: 300, speedBlur: true, dressingNear: 90, dressingFar: 900, dressingMid: 320, traffic: TRAFFIC_TIERS.medium.count, trafficNear: TRAFFIC_TIERS.medium.near },
+  high: { dpr: [1, 1.25], msaa: true, shadowMap: 2048, shadowEvery: 2, filler: 1, clouds: true, propsDistance: 1400, treeDistance: 3000, treeModels: true, parkedNear: 100, parkedFar: 450, speedBlur: true, dressingNear: 120, dressingFar: 1400, dressingMid: 450, traffic: TRAFFIC_TIERS.high.count, trafficNear: TRAFFIC_TIERS.high.near },
 };
 
 /** Pixel ratio for a performance factor (1 = full) within a tier's range, never above the screen's. */

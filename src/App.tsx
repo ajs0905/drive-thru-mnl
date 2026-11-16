@@ -484,6 +484,7 @@ export default function App() {
                 paused={holdPhysics}
                 game={game}
                 traffic={MAP_VIEW ? 0 : settings.traffic}
+                trafficNear={settings.trafficNear}
               />
             )}
           </Suspense>

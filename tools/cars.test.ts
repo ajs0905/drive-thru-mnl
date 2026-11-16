@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { carParts } from '../src/car/carParts';
 import { PARKED_MODELS } from '../src/car/parked';
+import { CARS } from '../src/game/cars';
 import { readPng } from './png';
 
 /** One attribute of a node's mesh in a binary glTF written by our model tools (float accessors). */
@@ -36,12 +37,19 @@ it('finds four wheels and both pairs of lamps on every traffic model in public/m
   }
 });
 
-it('has a picture for every car the CARS tab shows one for (tools/car-thumbs.ts)', () => {
-  for (const id of ['sedan', 'van']) {
-    const png = readPng(readFileSync(`public/models/cars/${id}.png`));
+it('has a picture for every car in the CARS tab (tools/car-thumbs.ts)', () => {
+  for (const car of CARS) {
+    const png = readPng(readFileSync(`public/${car.picture}`));
     expect([png.width, png.height]).toEqual([320, 160]);
     // Transparent corners, the car in the middle.
     expect(png.data[3]).toBe(0);
     expect(png.data[(80 * 320 + 160) * 4 + 3]).toBe(255);
+  }
+});
+
+it('describes every car in one sentence, without dashes', () => {
+  for (const car of CARS) {
+    expect(car.blurb.match(/[.!?](\s|$)/g), car.id).toHaveLength(1);
+    expect(car.blurb, car.id).not.toMatch(/\u2014|\u2013| - /);
   }
 });

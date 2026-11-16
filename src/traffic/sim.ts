@@ -11,11 +11,22 @@
  *   parked cars leave no lane-wide gap isn't used. At the end of an edge a car takes the
  *   next one it picked when it entered (straight on more often than turning, avenues
  *   over streets, no U-turns unless it's a dead end).
- * - **How it moves**: the pose follows the lane, its heading smoothed over a few meters so
+ * - **How it moves**: the path follows the lane, its heading smoothed over a few meters so
  *   bends in a road don't snap; from where one edge's junction polygon starts to where the
  *   next one's ends, it follows a curve (a cubic from lane to lane, so turns are arcs and a
- *   change of lane through a junction is gradual). Speed and acceleration are smooth too.
- *   `acc` is kept for brake lights.
+ *   change of lane through a junction is gradual; U-turns swing wide). The car is a
+ *   bicycle model on that path: the front axle follows it and the rear axle trails it
+ *   (a tractrix), so the body turns with the turning radius, the rear cuts a little inside
+ *   on a bend like a real car's, and `steer` is the front wheels' angle. Sideways moves
+ *   (going round something, changing lanes, getting back on the lane after a knock) are
+ *   S-curves over 12 to 20 m. Speed and acceleration are smooth too. `acc` is kept for
+ *   brake lights.
+ * - **Lane changes** on roads with two or more lanes one way: when the next lane lets the
+ *   car go faster and the car behind there has room (a light take on MOBIL), with the
+ *   turn signal on. Signals also come on before turns and roundabout exits.
+ * - **Roundabouts** (and traffic circles): a car picks its exit as it enters, keeps to
+ *   the ring until it's there (moving to the outer lane on a two-lane ring), and after a
+ *   lap more than planned takes the next exit, so no car circles forever.
  * - **How fast** (idm.ts): each car follows the nearest thing ahead in its lane: another
  *   car (on this edge or the next, or any car going its way physically in front of it in
  *   its lane's corridor, for merges and roads drawn close together), a stop line it
@@ -41,8 +52,8 @@ import { IDM, idmAccel } from './idm';
 
 export const TRAFFIC = {
   spawnMin: 140,
-  spawnMax: 320,
-  despawn: 380,
+  spawnMax: 280,
+  despawn: 330,
   /** The first fill can start this close (m): there's nobody around yet. */
   firstMin: 45,
   /** Free room (m) a new car needs on its lane, either side. */
@@ -81,6 +92,26 @@ export const TRAFFIC = {
   passOver: 0.3,
   /** Knocked cars go once this far (m) from the player. */
   knockedGone: 160,
+  /** Wheelbase as a share of a car's length: the front axle follows the path, the rear trails it. */
+  wheelbase: 0.6,
+  /** U-turns: speed (m/s), and how much wider (m) than a plain half circle the curve swings. */
+  uturnSpeed: 3.5,
+  uturnSwing: 2,
+  /** Sideways moves (going round, lane changes, back onto the lane after a knock): S-curves over `latPerSpeed` s of driving, `latMin` to `latMax` m of road, and no slower than `latTime` s when crawling. */
+  latMin: 12,
+  latMax: 20,
+  latPerSpeed: 1.6,
+  latTime: 2,
+  /** Lane changes: at most one per `laneEvery` s per car, only above `laneFrom` m/s, when the next lane lets it accelerate at least `laneGain` m/s² harder (up to twice that for calmer drivers), and the car behind there wouldn't have to brake harder than `laneSafe` m/s². */
+  laneEvery: 6,
+  laneFrom: 3,
+  laneGain: 0.35,
+  laneSafe: 3,
+  /** Roundabouts: top speed on the ring (m/s), and laps (past the planned exit) after which a car takes the next exit. */
+  ringSpeed: 7,
+  ringSlack: 0.5,
+  /** Turn signals come on this far (m) before a turn. */
+  signalFrom: 35,
 };
 
 export interface TrafficModel {
@@ -100,9 +131,30 @@ export interface Agent {
   nextLane: number;
   prev: number;
   prevLane: number;
-  /** How far it has moved over to the left of its lane to get round something stopped (m), and how far it wants to. */
+  /** How far it has moved over to the left of its lane (m: going round something stopped, or still on its way over from the last lane), and how far it wants to. */
   shift: number;
   shiftTo: number;
+  /** The sideways move under way: from and to (shift, m), how far along it is (0 to 1), over how many meters of road, and whether it may go on while crawling (by time: going round something it's stopped behind). */
+  latFrom: number;
+  latTo: number;
+  latP: number;
+  latLen: number;
+  latCrawl: boolean;
+  /** When it last changed lanes (s), and how much it takes to make it change (1 to 2: calmer drivers want more). */
+  laneAt: number;
+  calm: number;
+  /** Turn signal: 1 left, -1 right, 0 off. */
+  signal: number;
+  /** On or heading into a roundabout: the exit it picked (-1 none), and how far (m) it may still go round before taking any exit. */
+  ringExit: number;
+  ringLeft: number;
+  /** Wheelbase (m), where the rear axle is (map), and the front wheels' angle (radians, + left). */
+  wb: number;
+  /** The path's direction at the front axle (radians, map): the lane's, while the body turns a little to move over. */
+  path: number;
+  rx: number;
+  ry: number;
+  steer: number;
   /** Center, meters along the edge; speed (m/s), acceleration (m/s², negative: braking) and wanted speed. */
   s: number;
   v: number;
@@ -223,6 +275,7 @@ export class TrafficSim {
       if (!r) return [e.w / 2, e.w / 2];
       return e.forward ? [r[0], r[1]] : [r[1], r[0]];
     });
+    oncomingRoom(graph, this.room);
     // The roads traffic may use (lanes wide enough, past any parked cars), then only their biggest strongly connected part: every car always has a way on (no dead ends to pile up at).
     const wide = graph.edges.map((e, i) => e.main && (e.cls === 'major' || e.cls === 'minor') && laneWidth(e, this.room[i]) >= TRAFFIC.laneMin);
     const comp = stronglyConnected({ nodes: graph.nodes, edges: graph.edges, out: graph.out.map((list) => list.filter((i) => wide[i])) });
@@ -261,8 +314,13 @@ export class TrafficSim {
       const e = this.graph.edges[a.edge];
       const left = e.length - a.s;
       // Turning ahead: slow for it.
-      let v0 = a.v0;
-      if (a.next >= 0 && left < TRAFFIC.turnFrom && Math.abs(this.turnOf(a.edge, a.next)) > 0.5) v0 = Math.min(v0, TRAFFIC.turnSpeed + (left / TRAFFIC.turnFrom) * (v0 - TRAFFIC.turnSpeed));
+      let v0 = e.roundabout ? Math.min(a.v0, TRAFFIC.ringSpeed) : a.v0;
+      const turn = a.next >= 0 ? Math.abs(this.turnOf(a.edge, a.next)) : 0;
+      if (turn > 0.5 && left < TRAFFIC.turnFrom) {
+        const slow = turn > 2.5 ? TRAFFIC.uturnSpeed : TRAFFIC.turnSpeed;
+        v0 = Math.min(v0, slow + (left / TRAFFIC.turnFrom) * (v0 - slow));
+      }
+      if (e.roundabout) a.ringLeft -= a.v * dt;
       let gap = Infinity;
       let lead = 0;
       const ahead = this.leader(a, lanes);
@@ -304,9 +362,10 @@ export class TrafficSim {
       const maxShift = e.oneway ? here + this.room[a.edge][0] - a.width / 2 - 0.2 : here + TRAFFIC.passOver;
       for (const o of blocks) {
         const [dx, dy] = [o.p[0] - a.x, o.p[1] - a.y];
-        const along = dx * Math.cos(a.heading) + dy * Math.sin(a.heading);
+        // Measured along the lane (not the body, which turns a little while moving over).
+        const along = dx * Math.cos(a.path) + dy * Math.sin(a.path);
         // Left of the lane's center (+), counting how far this car has already moved over.
-        const across = -dx * Math.sin(a.heading) + dy * Math.cos(a.heading) + a.shift;
+        const across = -dx * Math.sin(a.path) + dy * Math.cos(a.path) + a.shift;
         const need = a.width / 2 + (o.side ?? 1.2) + TRAFFIC.passRoom;
         if (along < -(a.len / 2 + o.half + 1) || along > TRAFFIC.lookAhead || Math.abs(across) >= need) continue;
         const pass = across + need;
@@ -324,7 +383,11 @@ export class TrafficSim {
         if (g < gap) [gap, lead] = [Math.max(0.1, g), Math.max(0, o.speed * Math.cos(o.heading - a.heading))];
       }
       a.shiftTo = shiftTo;
-      a.shift += Math.max(-TRAFFIC.passRate * dt, Math.min(TRAFFIC.passRate * dt, a.shiftTo - a.shift));
+      // A new sideways move when the target grows, falls back to the lane, or shrinks a lot (small wobbles in it don't restart the curve).
+      if (a.shiftTo - a.latTo > 0.1 || a.latTo - a.shiftTo > 0.4 || (a.shiftTo === 0 && a.latTo !== 0)) this.moveOver(a, a.shiftTo);
+      else if (shiftTo === 0) this.changeLane(a, lanes, ahead ? ahead[0] : Infinity, ahead ? ahead[1] : 0, v0);
+      a.latP = Math.min(1, a.latP + Math.max((a.v * dt) / a.latLen, a.latCrawl ? dt / TRAFFIC.latTime : 0));
+      a.shift = a.latFrom + (a.latTo - a.latFrom) * smoother(a.latP);
       // Acceleration eases toward what the driver model wants (no jolts), except a hard stop, which comes at once.
       const want = idmAccel(a.v, v0, gap, lead);
       a.acc = want < -IDM.brake ? want : a.acc + Math.max(-TRAFFIC.jerk * dt, Math.min(TRAFFIC.jerk * dt, want - a.acc));
@@ -335,8 +398,87 @@ export class TrafficSim {
       this.advance(a);
       this.pickNextLane(a);
       this.place(a);
+      a.signal = this.signalOf(a);
     }
     this.release();
+  }
+
+  /** Starts a sideways move from where the car is now to `to` (shift, m), an S-curve over 12 to 20 m depending on speed. */
+  private moveOver(a: Agent, to: number, crawl = true) {
+    a.latCrawl = crawl;
+    a.latFrom = a.shift;
+    a.latTo = to;
+    a.latP = 0;
+    a.latLen = Math.max(TRAFFIC.latMin, Math.min(TRAFFIC.latMax, a.v * TRAFFIC.latPerSpeed));
+  }
+
+  /**
+   * A lane change, if it's worth it and safe (a light take on MOBIL): the car ahead in this
+   * lane holds it back (`gap`, `lead`) more than the next lane's would, and the car behind
+   * there has room. A two-lane roundabout ring: over to the outer lane before the exit.
+   */
+  private changeLane(a: Agent, lanes: Map<number, Agent[]>, gap: number, lead: number, v0: number) {
+    const e = this.graph.edges[a.edge];
+    if (e.lanes < 2 || a.latP < 1 || this.internal(e) || a.v < TRAFFIC.laneFrom || this.time - a.laneAt < TRAFFIC.laneEvery) return;
+    // On the clear part of the road, with room for the whole move before the junction ahead.
+    const room = Math.max(TRAFFIC.latMin, Math.min(TRAFFIC.latMax, a.v * TRAFFIC.latPerSpeed));
+    const stopAt = Math.max(TRAFFIC.stopBack, e.trimEnd + 1);
+    if (a.s < this.blendIn(a.edge) + a.len || a.s + a.wb / 2 + room + TRAFFIC.reserveAt + stopAt > e.length) return;
+    const exit = e.roundabout && a.next >= 0 && !this.graph.edges[a.next].roundabout;
+    const here = idmAccel(a.v, v0, gap, lead);
+    let best = -1;
+    let gain = exit ? -Infinity : TRAFFIC.laneGain * a.calm;
+    for (const lane of exit ? [e.lanes - 1] : [a.lane - 1, a.lane + 1]) {
+      if (lane < 0 || lane >= e.lanes || lane === a.lane) continue;
+      let [ahead, aheadV, behind, behindV, behindV0] = [Infinity, 0, Infinity, 0, 0];
+      let blocked = false;
+      for (const o of lanes.get(laneKey(a.edge, lane)) ?? NONE) {
+        const g = Math.abs(o.s - a.s) - (o.len + a.len) / 2;
+        if (g < 1.5) blocked = true;
+        else if (o.s > a.s && g < ahead) [ahead, aheadV] = [g, o.v];
+        else if (o.s < a.s && g < behind) [behind, behindV, behindV0] = [g, o.v, o.v0];
+      }
+      if (blocked || (Number.isFinite(behind) && idmAccel(behindV, behindV0, behind, a.v) < -TRAFFIC.laneSafe)) continue;
+      // The player's car or a knocked car alongside or just ahead in that lane: not now.
+      const side = this.offset(a.edge, a.lane) - a.shift - this.offset(a.edge, lane);
+      for (const o of this.blocks) {
+        const [dx, dy] = [o.p[0] - a.x, o.p[1] - a.y];
+        const along = dx * Math.cos(a.path) + dy * Math.sin(a.path);
+        const across = -dx * Math.sin(a.path) + dy * Math.cos(a.path);
+        if (Math.abs(across - side) < a.width / 2 + (o.side ?? 1.2) + 0.3 && along > -(a.len / 2 + o.half + 4) && along < a.len / 2 + o.half + 15) blocked = true;
+      }
+      if (blocked) continue;
+      const there = idmAccel(a.v, v0, ahead, aheadV) - here;
+      if (there > gain) [best, gain] = [lane, there];
+    }
+    if (best < 0) return;
+    // Same place on the road, new lane: the shift carries the difference, then eases back to nothing.
+    a.shift += this.offset(a.edge, best) - this.offset(a.edge, a.lane);
+    const from = lanes.get(laneKey(a.edge, a.lane));
+    if (from) from.splice(from.indexOf(a), 1);
+    const to = lanes.get(laneKey(a.edge, best));
+    if (to) to.push(a);
+    else lanes.set(laneKey(a.edge, best), [a]);
+    a.lane = best;
+    a.laneAt = this.time;
+    this.moveOver(a, 0);
+  }
+
+  /** Turn signal: on through a lane change, and before (and through) a turn or a roundabout exit. */
+  private signalOf(a: Agent): number {
+    if (a.knocked) return 0;
+    if (a.latP < 1 && Math.abs(a.latTo - a.latFrom) > 0.5) return a.latTo > a.latFrom ? 1 : -1;
+    const e = this.graph.edges[a.edge];
+    if (a.next >= 0 && e.length - a.s < TRAFFIC.signalFrom) {
+      const turn = this.turnOf(a.edge, a.next);
+      if (e.roundabout && !this.graph.edges[a.next].roundabout) return -1;
+      if (Math.abs(turn) > 0.5 && !(e.roundabout && this.graph.edges[a.next].roundabout)) return turn > 2.5 || turn < -2.5 ? 1 : Math.sign(turn);
+    }
+    if (a.prev >= 0 && a.s < this.blendIn(a.edge)) {
+      const turn = this.turnOf(a.prev, a.edge);
+      if (Math.abs(turn) > 0.5 && !(this.graph.edges[a.prev].roundabout && e.roundabout)) return turn > 2.5 || turn < -2.5 ? 1 : Math.sign(turn);
+    }
+    return 0;
   }
 
   /** The player hit this car: it leaves the flow (the physics moves it now). */
@@ -346,6 +488,62 @@ export class TrafficSim {
     a.knocked = true;
     a.v = 0;
     this.drop(a);
+  }
+
+  /**
+   * Back into the flow after a knock, once the physics has let a car come to rest: onto the
+   * lane it's sitting in, if it's facing along it (within 40 degrees), on the clear part of
+   * a road with nobody close. It starts where it is (the shift carries how far it is off
+   * the lane's center) and eases back onto the lane's center over the next 12 to 20 m.
+   * `v`: how fast it's rolling along (m/s). False if there's no lane like that here (it
+   * stays knocked).
+   */
+  rejoin(id: number, x: number, y: number, z: number, heading: number, v = 0): boolean {
+    const a = this.agents.find((k) => k.id === id);
+    if (!a || !a.knocked) return false;
+    if (this.agents.some((o) => o !== a && !o.knocked && Math.hypot(o.x - x, o.y - y) < 8)) return false;
+    // The front axle on the lane: where along it, and how far right of the center line.
+    const [fx, fy] = [x + (Math.cos(heading) * a.wb) / 2, y + (Math.sin(heading) * a.wb) / 2];
+    let best: { edge: number; s: number; right: number; lane: number; off: number } | null = null;
+    for (const { item } of this.graph.grid.query([fx - 6, fy - 6], [fx + 6, fy + 6])) {
+      const base = this.graph.edges[item.edge];
+      for (const ei of [item.edge, base.twin]) {
+        if (ei < 0 || !this.usable[ei]) continue;
+        const e = this.graph.edges[ei];
+        const i = ei === item.edge ? item.i : e.points.length - 2 - item.i;
+        const [p, q] = [e.points[i], e.points[i + 1]];
+        const [dx, dy] = [q[0] - p[0], q[1] - p[1]];
+        const len = Math.hypot(dx, dy) || 1;
+        if ((dx * Math.cos(heading) + dy * Math.sin(heading)) / len < Math.cos((40 * Math.PI) / 180)) continue;
+        const raw = ((fx - p[0]) * dx + (fy - p[1]) * dy) / len;
+        // Beside this piece of the road (another piece of it is closer otherwise).
+        if (raw < -0.5 || raw > len + 0.5) continue;
+        const t = Math.max(0, Math.min(1, raw / len));
+        const zHere = e.z[i] + (e.z[i + 1] - e.z[i]) * t;
+        if (Math.abs(zHere - z) > 1) continue;
+        // Right of the travel direction is (dy, -dx).
+        const right = ((fx - p[0]) * dy - (fy - p[1]) * dx) / len;
+        const sF = e.acc[i] + t * len;
+        for (let lane = 0; lane < e.lanes; lane++) {
+          const off = Math.abs(this.offset(ei, lane) - right);
+          if (off < 2.5 && (!best || off < best.off)) best = { edge: ei, s: sF - a.wb / 2, right, lane, off };
+        }
+      }
+    }
+    if (!best) return false;
+    const e = this.graph.edges[best.edge];
+    if (this.internal(e) || best.s < e.trimStart + 4 || best.s > e.length - e.trimEnd - TRAFFIC.reserveAt - 4) return false;
+    Object.assign(a, { knocked: false, edge: best.edge, s: best.s, lane: best.lane, prev: -1, prevLane: -1, nextLane: -1, v: Math.max(0, v), acc: 0, shiftTo: 0, ringExit: -1, waiting: -1 });
+    a.rx = x - (Math.cos(heading) * a.wb) / 2;
+    a.ry = y - (Math.sin(heading) * a.wb) / 2;
+    a.shift = this.offset(best.edge, best.lane) - best.right;
+    a.next = this.chooseNext(best.edge, a);
+    a.after = a.next >= 0 ? this.chooseNext(a.next, a) : -1;
+    // Only as it drives off: no sliding sideways on the spot.
+    this.moveOver(a, 0, false);
+    a.latLen = TRAFFIC.latMax;
+    this.place(a);
+    return true;
   }
 
   /** Where the physics has a knocked car (map position, heading). */
@@ -403,9 +601,51 @@ export class TrafficSim {
       const model = this.pick(this.opts.models.map((m) => m.weight));
       const [len, width] = this.opts.models[model].size;
       const v0 = (TRAFFIC.speed[e.cls] ?? 10) * (0.85 + 0.3 * this.rand());
-      const a: Agent = { id: this.nextId++, edge: ei, next: -1, after: -1, lane, nextLane: -1, prev: -1, prevLane: -1, s, v: v0 * 0.7, acc: 0, shift: 0, shiftTo: 0, v0, len, width, model, paint: this.pick(this.opts.paints), knocked: false, odo: 0, held: [], waiting: -1, waitSince: 0, ...at };
-      a.next = this.chooseNext(ei);
-      a.after = a.next >= 0 ? this.chooseNext(a.next) : -1;
+      const wb = len * TRAFFIC.wheelbase;
+      const a: Agent = {
+        id: this.nextId++,
+        edge: ei,
+        next: -1,
+        after: -1,
+        lane,
+        nextLane: -1,
+        prev: -1,
+        prevLane: -1,
+        s,
+        v: v0 * 0.7,
+        acc: 0,
+        shift: 0,
+        shiftTo: 0,
+        latFrom: 0,
+        latTo: 0,
+        latP: 1,
+        latLen: TRAFFIC.latMin,
+        latCrawl: true,
+        laneAt: this.time,
+        calm: 1 + this.rand(),
+        signal: 0,
+        ringExit: -1,
+        ringLeft: 0,
+        v0,
+        len,
+        width,
+        wb,
+        model,
+        paint: this.pick(this.opts.paints),
+        knocked: false,
+        odo: 0,
+        held: [],
+        waiting: -1,
+        waitSince: 0,
+        ...at,
+        rx: at.x - (Math.cos(at.heading) * wb) / 2,
+        ry: at.y - (Math.sin(at.heading) * wb) / 2,
+        steer: 0,
+        path: at.heading,
+      };
+      a.next = this.chooseNext(ei, a);
+      a.after = a.next >= 0 ? this.chooseNext(a.next, a) : -1;
+      this.place(a);
       this.agents.push(a);
     }
     if (this.agents.length >= this.count) this.filled = true;
@@ -436,12 +676,69 @@ export class TrafficSim {
     return wrap(Math.atan2(t[1] - r[1], t[0] - r[0]) - Math.atan2(q[1] - p[1], q[0] - p[0]));
   }
 
-  private chooseNext(edge: number): number {
+  /**
+   * Where a car goes at the end of `edge`: on a roundabout, round the ring to the exit it
+   * picked; otherwise straight on more often than turning, avenues over streets, no U-turn
+   * unless it's a dead end.
+   */
+  private chooseNext(edge: number, a?: Agent): number {
     const e = this.graph.edges[edge];
+    if (a && e.roundabout) {
+      const ring = this.ringOut(e.to);
+      if (a.ringExit < 0) this.planExit(a, edge);
+      const exits = this.graph.out[e.to].filter((n) => this.usable[n] && !this.graph.edges[n].roundabout && n !== e.twin);
+      const take = exits.includes(a.ringExit) ? a.ringExit : a.ringLeft < 0 && exits.length ? exits[0] : -1;
+      if (take >= 0 || ring < 0) {
+        a.ringExit = -1;
+        if (take >= 0) return take;
+      } else return ring;
+    }
     const options = this.graph.out[e.to].filter((n) => this.usable[n] && n !== e.twin);
     if (!options.length) return e.twin >= 0 && this.usable[e.twin] ? e.twin : -1;
     const weights = options.map((n) => (Math.abs(this.turnOf(edge, n)) < 0.5 ? 3 : 1) * (this.graph.edges[n].cls === 'major' ? 1.5 : 1));
     return options[this.pick(weights)];
+  }
+
+  /** The ring road on from a roundabout node (-1 none). */
+  private ringOut(node: number): number {
+    for (const n of this.graph.out[node]) if (this.usable[n] && this.graph.edges[n].roundabout) return n;
+    return -1;
+  }
+
+  /**
+   * Picks a car's exit from a roundabout as it gets onto the ring at `edge`: any road out
+   * of the ring (not back the way it came), the ones carrying on in its direction more
+   * often. It may go round `ringSlack` laps past that before it takes any exit.
+   */
+  private planExit(a: Agent, edge: number) {
+    const came = this.graph.edges[a.edge];
+    const heading = Math.atan2(came.points[came.points.length - 1][1] - came.points[came.points.length - 2][1], came.points[came.points.length - 1][0] - came.points[came.points.length - 2][0]);
+    const options: { exit: number; at: number; weight: number }[] = [];
+    let [cur, along, lap] = [edge, 0, 0];
+    for (let k = 0; k < 24; k++) {
+      const e = this.graph.edges[cur];
+      along += e.length;
+      for (const n of this.graph.out[e.to]) {
+        const x = this.graph.edges[n];
+        if (!this.usable[n] || x.roundabout || x.road === came.road) continue;
+        const d = Math.atan2(x.points[1][1] - x.points[0][1], x.points[1][0] - x.points[0][0]);
+        options.push({ exit: n, at: along, weight: 1 + 2 * Math.max(0, Math.cos(d - heading)) });
+      }
+      const next = this.ringOut(e.to);
+      if (next < 0 || next === edge) {
+        lap = along;
+        break;
+      }
+      cur = next;
+    }
+    if (!options.length) {
+      a.ringExit = -1;
+      a.ringLeft = 0;
+      return;
+    }
+    const o = options[this.pick(options.map((x) => x.weight))];
+    a.ringExit = o.exit;
+    a.ringLeft = o.at + TRAFFIC.ringSlack * (lap || o.at);
   }
 
   private advance(a: Agent) {
@@ -462,7 +759,7 @@ export class TrafficSim {
       a.lane = a.nextLane >= 0 ? a.nextLane : this.freeLane(a, e);
       a.nextLane = -1;
       a.next = a.after;
-      a.after = a.next >= 0 ? this.chooseNext(a.next) : -1;
+      a.after = a.next >= 0 ? this.chooseNext(a.next, a) : -1;
     }
     if (a.next < 0) a.s = Math.min(a.s, e.length);
   }
@@ -605,7 +902,8 @@ export class TrafficSim {
   private pickNextLane(a: Agent) {
     if (a.knocked || a.next < 0 || a.nextLane >= 0) return;
     const e = this.graph.edges[a.edge];
-    if (a.s < e.length - this.blendOut(a.edge)) return;
+    // Picked before the front axle gets to the curve (the front follows the path).
+    if (a.s + a.wb / 2 + 1 < e.length - this.blendOut(a.edge)) return;
     const next = this.graph.edges[a.next];
     const want = Math.min(a.lane, next.lanes - 1);
     const taken = (lane: number) =>
@@ -658,7 +956,9 @@ export class TrafficSim {
     const p0 = this.lanePose(from, this.graph.edges[from].length - this.blendOut(from), fromLane, shift, START);
     const p3 = this.lanePose(to, this.blendIn(to), toLane, shift, END);
     // Control points along each lane: about a circle's for a right angle, and enough to swing round on a U-turn.
-    const k = Math.max(1.5, Math.hypot(p3.x - p0.x, p3.y - p0.y) * 0.38);
+    const span = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+    // U-turns (the lanes face apart): a wide half loop, not a hairpin.
+    const k = Math.cos(p3.heading - p0.heading) < -0.7 ? span * 0.67 + TRAFFIC.uturnSwing : Math.max(1.5, span * 0.38);
     const [c1x, c1y] = [p0.x + Math.cos(p0.heading) * k, p0.y + Math.sin(p0.heading) * k];
     const [c2x, c2y] = [p3.x - Math.cos(p3.heading) * k, p3.y - Math.sin(p3.heading) * k];
     const bx = (t: number) => {
@@ -695,22 +995,50 @@ export class TrafficSim {
     return out;
   }
 
-  /** The car's pose from where it is: on a curve between edges, or on its lane. */
-  private place(a: Agent) {
+  /**
+   * The path `d` meters from the start of the car's edge (past its end: on into the next
+   * one): on a curve between edges, or on a lane. Into `out`.
+   */
+  private pathAt(a: Agent, d: number, out: Pose): Pose {
     const e = this.graph.edges[a.edge];
-    const s = Math.min(a.s, e.length);
-    const out = this.blendOut(a.edge);
-    if (a.next >= 0 && a.nextLane >= 0 && s > e.length - out) {
-      this.curvePose(a.edge, a.lane, a.next, a.nextLane, s - (e.length - out), out + this.blendIn(a.next), a.shift, a);
-      return;
+    const blend = this.blendOut(a.edge);
+    if (a.next >= 0 && d > e.length - blend) {
+      const lane = a.nextLane >= 0 ? a.nextLane : Math.min(a.lane, this.graph.edges[a.next].lanes - 1);
+      const into = this.blendIn(a.next);
+      const past = d - (e.length - blend);
+      if (past <= blend + into) return this.curvePose(a.edge, a.lane, a.next, lane, past, blend + into, a.shift, out);
+      return this.lanePose(a.next, Math.min(d - e.length, this.graph.edges[a.next].length), lane, a.shift, out);
     }
     const into = a.prev >= 0 ? this.blendIn(a.edge) : 0;
-    if (s < into) {
+    if (d < into) {
       const before = this.blendOut(a.prev);
-      this.curvePose(a.prev, a.prevLane, a.edge, a.lane, before + s, before + into, a.shift, a);
-      return;
+      return this.curvePose(a.prev, a.prevLane, a.edge, a.lane, before + d, before + into, a.shift, out);
     }
-    this.lanePose(a.edge, s, a.lane, a.shift, a);
+    return this.lanePose(a.edge, Math.min(d, e.length), a.lane, a.shift, out);
+  }
+
+  /**
+   * The car's pose, as a bicycle: the front axle on the path half a wheelbase ahead of the
+   * car's place on it, the rear axle dragged after it (a tractrix: it moves toward the
+   * front axle, keeping the wheelbase). The body points from rear to front, so it turns
+   * with the turning radius instead of spinning about its middle, and the front wheels'
+   * angle is the path's direction there against the body's.
+   */
+  private place(a: Agent) {
+    const f = this.pathAt(a, a.s + a.wb / 2, FRONT);
+    let [dx, dy] = [f.x - a.rx, f.y - a.ry];
+    const l = Math.hypot(dx, dy);
+    if (l < 1e-6) [dx, dy] = [Math.cos(f.heading), Math.sin(f.heading)];
+    else [dx, dy] = [dx / l, dy / l];
+    a.rx = f.x - dx * a.wb;
+    a.ry = f.y - dy * a.wb;
+    a.heading = Math.atan2(dy, dx);
+    a.x = f.x - (dx * a.wb) / 2;
+    a.y = f.y - (dy * a.wb) / 2;
+    a.pitch = f.pitch;
+    a.z = f.z - Math.sin(f.pitch) * (a.wb / 2);
+    a.steer = wrap(f.heading - a.heading);
+    a.path = f.heading;
   }
 }
 
@@ -723,11 +1051,57 @@ interface Center {
 
 /** Scratch space for the poses (no garbage each step). */
 const [AT, BEHIND, AHEAD]: Center[] = [0, 1, 2].map(() => ({ x: 0, y: 0, z: 0, i: 0 }));
-const [START, END]: Pose[] = [0, 1].map(() => ({ x: 0, y: 0, z: 0, heading: 0, pitch: 0 }));
+const [START, END, FRONT]: Pose[] = [0, 1, 2].map(() => ({ x: 0, y: 0, z: 0, heading: 0, pitch: 0 }));
+/** An S-curve from 0 to 1 that starts and ends with no sideways speed or acceleration. */
+const smoother = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const CURVE_LENGTHS = new Float64Array(13);
 const NONE: Agent[] = [];
 /** A key for an edge's lane (fewer than 16 lanes). */
 const laneKey = (edge: number, lane: number) => edge * 16 + lane;
+
+/**
+ * One-way carriageways mapped wider than the gap to the other carriageway beside them
+ * (a divided avenue whose halves overlap near a junction, 38th Street at 10th Avenue):
+ * the room on the side toward oncoming traffic is cut to this carriageway's share of the
+ * distance between the two center lines (by their widths), so cars going opposite ways
+ * don't drive through each other. Never below what keeps the lanes `laneMin` wide.
+ * Changes `room` (per edge, [left, right] in its direction of travel) in place.
+ */
+export function oncomingRoom(graph: RoadGraph, room: [number, number][]) {
+  graph.edges.forEach((e, i) => {
+    if (!e.oneway) return;
+    let left = room[i][0];
+    for (let k = 0; k + 1 < e.points.length; k++) {
+      const [a, b] = [e.points[k], e.points[k + 1]];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len < 0.01) continue;
+      const [ux, uy] = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+      for (let t = 0; t <= len; t += 4) {
+        const p: Point = [a[0] + ux * Math.min(t, len), a[1] + uy * Math.min(t, len)];
+        const reach = e.w / 2 + 12;
+        for (const { item } of graph.grid.query([p[0] - reach, p[1] - reach], [p[0] + reach, p[1] + reach])) {
+          const o = graph.edges[item.edge];
+          if (o.road === e.road || Math.abs(o.z[item.i] - e.z[k]) > 1) continue;
+          const [c, d] = [o.points[item.i], o.points[item.i + 1]];
+          const ol = Math.hypot(d[0] - c[0], d[1] - c[1]);
+          if (ol < 0.01) continue;
+          // Running the other way (this grid holds each road's forward edge; a two-way road runs both ways).
+          const dot = ((d[0] - c[0]) * ux + (d[1] - c[1]) * uy) / ol;
+          if (dot > -0.8 && (o.oneway || dot < 0.8)) continue;
+          const s = Math.max(0, Math.min(1, ((p[0] - c[0]) * (d[0] - c[0]) + (p[1] - c[1]) * (d[1] - c[1])) / (ol * ol)));
+          const [qx, qy] = [c[0] + (d[0] - c[0]) * s, c[1] + (d[1] - c[1]) * s];
+          // Left of the travel direction is (-uy, ux).
+          const across = (qx - p[0]) * -uy + (qy - p[1]) * ux;
+          // Only beside it (not off past an end of the segment), on the left, and overlapping.
+          if (s <= 0 || s >= 1 || across <= 0 || across >= (e.w + o.w) / 2) continue;
+          left = Math.min(left, (across * e.w) / (e.w + o.w));
+        }
+      }
+    }
+    const right = room[i][1];
+    room[i][0] = Math.max(left, Math.min(room[i][0], TRAFFIC.laneMin * e.lanes - right));
+  });
+}
 
 /**
  * How far each road is clear of parked cars either side of its center line (m, left and

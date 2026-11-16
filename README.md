@@ -26,21 +26,22 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 - Constrained placement search: pillars out of the lanes below, cars along the curbs, the nearest open road for a reset
 - A directed road graph with Tarjan's strongly connected components, and routes by an edge-based A* with ALT landmark bounds: about 180 states expanded per route against Dijkstra's 1,450 (`npm run bench`)
 - Deterministic headless simulation: golden replays of cargo runs driven by a pure-pursuit autopilot in the real physics, played back in CI (`npm run replay` records them)
-- Light traffic by the Intelligent Driver Model on the road graph, with junctions clustered by union-find and reserved one movement at a time, lanes fitted into the room parked cars leave, and cubic Bézier curves through every junction (arc-length paced): about 30 µs per step for 10 cars, measured overlap-free in tests
+- Traffic by the Intelligent Driver Model on the road graph, with junctions clustered by union-find and reserved one movement at a time, lanes fitted into the room parked cars leave, cubic Bézier curves through every junction (arc-length paced), a kinematic bicycle model on the path (the rear axle a tractrix of the front), lane changes in the spirit of MOBIL as quintic S-curves, and exits picked on entering a roundabout: about 60 µs per step for 24 cars, measured overlap-free in tests
 
 **Rendering, physics and automated QA**
 - Rasterization and flood fill: find unpaved holes in the road network, then pave them with the same detector
 - GLSL shader injection: lane markings, zebras, windows and the car's Fresnel reflections from per-vertex data, no textures
 - Ray-cast vehicle physics with slip-angle drift assists, and a collider-filtered ray that keeps the camera out of walls
 - LRU tile caching for the minimap and big map, and view frustum and distance culling for the instanced props and cars
-- Instanced traffic with wheels split off the merged models to spin and steer (bicycle model), lit lamps and brake lights, and per-frame shadows cast from the sun's direction for anything moving
+- Instanced traffic with wheels split off the merged models to spin and steer, bodies that lean on a spring, lit lamps, brake lights and turn signals, box cars past a distance by tier, and per-frame shadows cast from the sun's direction for anything moving
+- Bumps as two-car collisions: a kinematic car hit by the player turns dynamic and gets the impulse of the hit at the contact point, so it's shoved and spun, then rejoins its lane once it settles
 
 ## Results & Benchmarks
 
 | Metric | Value | Notes |
 | :--- | :--- | :--- |
 | **Build & Bundle** | | |
-| Main / Drive bundle | 406 KB / 868 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
+| Main / Drive bundle | 406 KB / 873 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
 | Map file (`bgc.json`) | 3.31 MB (775 KB gzipped) | Deterministic: CI rebuilds it from the raw data and fails if a byte differs |
 | Pipeline | 17 steps, a few seconds | Node + TypeScript, offline |
 | **World Data** | | |
@@ -54,7 +55,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
 | Frame rate (phones) | 60+ FPS on Low and Medium | On a low-mid range Android phone (30 to 50 on High); a newer mid-range one holds 62 on High |
 | Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
-| Automated tests | 733 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 747 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 33 automated checks | A CI gate: counts can only go down |
 
 ## How It Works
@@ -72,7 +73,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 
 ## The game
 
-Free-roam arcade driving on BGC's real streets, for once without the traffic (hence the name). Drift the corners, take the flyovers, send the roadblocks at the edge flying. Take cargo runs between curbside loading bays and landmarks for pesos: on time and without denting the cargo, with a GPS route on the minimap and the full map, and a delivery receipt at the end. A little traffic now drives the avenues and streets (light, as the name promises), and you can knock it around. Police chases are next. Runs in the browser on desktops and phones, nothing to install.
+Free-roam arcade driving on BGC's real streets, with less traffic than the real thing (hence the name, and the question mark). Drift the corners, take the flyovers, send the roadblocks at the edge flying. Take cargo runs between curbside loading bays and landmarks for pesos: on time and without denting the cargo, with a GPS route on the minimap and the full map, and a delivery receipt at the end. Traffic drives the avenues and streets, changing lanes and working its way round the circles, and you can bump it into a spin. Police chases are next. Runs in the browser on desktops and phones, nothing to install.
 
 **Controls:** W A S D or the arrow keys to drive, Space for the handbrake, R to reset the car, M for the map, Esc to pause, MODES / CARS at the top right. On a phone, hold it sideways and use the buttons on screen.
 
@@ -85,7 +86,7 @@ Free-roam arcade driving on BGC's real streets, for once without the traffic (he
 - Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, walled-off lots, street furniture you can knock over or smash through, parked cars and roadblocks you can push around
 - UI: a road sign menu, loading screens, a how-to-play card, a road sign HUD with a heading-up minimap and a full map, a pause menu, touch controls for phones
 - Modes: cargo runs (courier and vault) between curbside loading bays and landmarks, routed by A* with landmarks, with checkpoints, a cargo integrity rating, a delivery receipt and a peso wallet saved in the browser; a CARS tab with pictures drawn from the models
-- Light traffic on the avenues and streets: 10 to 18 cars around the player by quality tier, with spinning, steering wheels and working lights, easing round stopped cars, solid near the player and knocked loose when hit
+- Traffic on the avenues and streets: 24 to 40 cars around the player by quality tier, steering and leaning like cars, changing lanes with the signal on, finding their way off roundabouts, easing round stopped cars, and spinning off when you bump them before getting back in line
 
 ## Planned
 

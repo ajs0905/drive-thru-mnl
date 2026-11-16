@@ -1,6 +1,6 @@
 # 0025. Light traffic: IDM on the road graph, junctions as reserved clusters
 
-**Status:** Accepted, 2026-11-16 (revised the same day: streets with parking, curves through junctions, wheels and lights, more cars)
+**Status:** Accepted, 2026-11-16 (revised the same day: streets with parking, curves through junctions, wheels and lights, more cars). Poses, lane changes, roundabouts, bumps and the counts were changed by [ADR 0027](0027-traffic-that-drives-like-cars.md).
 
 ## Context
 

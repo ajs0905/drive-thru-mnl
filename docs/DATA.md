@@ -46,7 +46,7 @@ To change the drivable area, open `data/playable-area.geojson` at geojson.io, dr
 - Projects lat/long to local meters (see [Projection](#projection)), stretched 1.2x across the ground (`MAP_SCALE`, see below), rounded to centimeters.
 - Road widths from tags ([`roadWidth.ts`](../pipeline/roadWidth.ts)): `width`, else `lanes` x 3.2 m plus shoulders, else typical lanes for the road type (fewer if one-way). Driveways 3.5 m, alleys 3 m. BGC's avenues are mapped as two one-way carriageways, so each half is sized as half a road. Widths are stretched by the map scale too, so lanes keep their share of the street.
 - Building heights (see [Building heights](#building-heights)).
-- Reads `lanes`, `oneway` and `sidewalk` (`sidewalk:left/right/both`) for drivable roads, and flags `footway=crossing` / `cycleway=crossing` ways (turned into zebras in step 7).
+- Reads `lanes`, `oneway` and `sidewalk` (`sidewalk:left/right/both`) for drivable roads, marks roundabouts and traffic circles (`junction=roundabout` or `circular`: 49 road pieces on BGC, so traffic can pick its exit), and flags `footway=crossing` / `cycleway=crossing` ways (turned into zebras in step 7).
 - Keeps the street parking tags that rule parking out (`parking:<side>=no` and the older `parking:lane:<side>=no_parking` forms) as `noParking`.
 - Drops clutter the renderer covers in other ways: 452 separately mapped sidewalks (the road's own sidewalk tag draws a sidewalk band instead; footbridges and stairs are kept) and 80 parking aisles.
 - Drops what shouldn't be drawn outdoors: 29 indoor corridors and mall stairs, 5 underground walkways, 4 basement-level buildings. Canopies (`building=roof`: gas stations, covered walkways) float at 3.6 m as thin slabs.

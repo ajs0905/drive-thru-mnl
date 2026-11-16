@@ -122,7 +122,7 @@ export function ModesMenu({ game, view, touch, onClose }: { game: GameSession; v
                 const driving = game.save.car === c.id;
                 return (
                   <li key={c.id} className={driving ? 'car on' : c.ready ? 'car' : 'car soon'}>
-                    <CarPicture car={c} />
+                    <CarPicture car={c} locked={!owned && !c.ready} />
                     <b>{c.name}</b>
                     <small>{c.blurb}</small>
                     {driving ? (

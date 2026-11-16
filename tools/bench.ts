@@ -23,6 +23,7 @@ import { footprintsOverlap } from '../src/car/resetSpot';
 import { snap } from '../src/routing/graph';
 import { pointOnRoute, Router } from '../src/routing/route';
 import { parkingRoom, TrafficSim, type Agent } from '../src/traffic/sim';
+import { TRAFFIC_TIERS } from '../src/traffic/tiers';
 import type { Replay } from '../src/sim/replay';
 import { seeded } from '../src/map/hash';
 import type { MapData } from '../src/map/types';
@@ -108,7 +109,7 @@ const foot = (a: Agent): [number, number][] => {
   return [[a.x + c * hl - s * hw, a.y + s * hl + c * hw], [a.x - c * hl - s * hw, a.y - s * hl + c * hw], [a.x - c * hl + s * hw, a.y - s * hl - c * hw], [a.x + c * hl + s * hw, a.y + s * hl - c * hw]];
 };
 console.log(`\ntraffic, 5 minutes around a player driving ${(across.length / 1000).toFixed(1)} km across BGC at 12 m/s:`);
-console.log('cars   us per step   moving   overlapping footprints (samples)   touching a parked car (samples)');
+console.log('cars   us per step   moving   overlapping footprints (samples)   touching a parked car (samples)   lane changes   longest on a roundabout (m)');
 // Parked cars on a grid, to check traffic keeps clear of them.
 const parkedGrid = new Map<string, [number, number][][]>();
 for (const c of map.parked ?? []) {
@@ -118,9 +119,12 @@ for (const c of map.parked ?? []) {
   const k = `${Math.floor(c.p[0] / 20)},${Math.floor(c.p[1] / 20)}`;
   parkedGrid.set(k, [...(parkedGrid.get(k) ?? []), corners]);
 }
-for (const count of [6, 10, 14, 18]) {
+const counts = process.env.TRAFFIC_COUNTS ? process.env.TRAFFIC_COUNTS.split(',').map(Number) : Object.values(TRAFFIC_TIERS).map((t) => t.count);
+for (const count of counts) {
   const sim = new TrafficSim(graph, { count, models: PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]], weight: m.weight })), paints: PARKED_PAINTS.map((p) => p.weight), room });
-  let [moving, total, overlaps, time, parked] = [0, 0, 0, 0, 0];
+  let [moving, total, overlaps, time, parked, changes, ring] = [0, 0, 0, 0, 0, 0, 0];
+  const lanes = new Map<number, number>();
+  const onRing = new Map<number, number>();
   for (let i = 0; i < 60 * 300; i++) {
     const at = pointOnRoute(across, ((i / 60) * 12) % across.length);
     const t = performance.now();
@@ -129,6 +133,11 @@ for (const count of [6, 10, 14, 18]) {
     for (const a of sim.agents) {
       total++;
       if (a.v > 0.5) moving++;
+      if (lanes.get(a.id) !== undefined && lanes.get(a.id) !== a.laneAt) changes++;
+      lanes.set(a.id, a.laneAt);
+      const r = graph.edges[a.edge].roundabout ? (onRing.get(a.id) ?? 0) + a.v / 60 : 0;
+      onRing.set(a.id, r);
+      ring = Math.max(ring, r);
     }
     if (i % 30 === 0)
       for (let x = 0; x < sim.agents.length; x++)
@@ -145,5 +154,5 @@ for (const count of [6, 10, 14, 18]) {
         if (hit) parked++;
       }
   }
-  console.log(`${String(count).padStart(4)}   ${fixed((time / (60 * 300)) * 1000, 0)}       ${fixed((moving / total) * 100, 0)}%   ${overlaps} of ${60 * 10}                       ${parked} of ${count * 600}`);
+  console.log(`${String(count).padStart(4)}   ${fixed((time / (60 * 300)) * 1000, 0)}       ${fixed((moving / total) * 100, 0)}%   ${overlaps} of ${60 * 10}                       ${parked} of ${count * 600}                      ${String(changes).padStart(5)}          ${ring.toFixed(0)}`);
 }

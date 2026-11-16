@@ -41,16 +41,18 @@ export function leanFor(forward: number, left: number): { pitch: number; roll: n
 
 /** The body after `dt` seconds, springing toward the lean for these accelerations. */
 export function stepBody(b: BodyMotion, forward: number, left: number, dt: number): BodyMotion {
+  return stepBodyInto({ ...b }, forward, left, dt);
+}
+
+/** `stepBody` in place (no new object: traffic steps dozens of these a frame). Returns `b`. */
+export function stepBodyInto(b: BodyMotion, forward: number, left: number, dt: number): BodyMotion {
   const goal = leanFor(forward, left);
   const h = Math.min(dt, 1 / 30); // keep the spring stable through slow frames
-  const pitchVel = b.pitchVel + (BODY.stiffness * (goal.pitch - b.pitch) - BODY.damping * b.pitchVel) * h;
-  const rollVel = b.rollVel + (BODY.stiffness * (goal.roll - b.roll) - BODY.damping * b.rollVel) * h;
-  return {
-    pitch: clamp(b.pitch + pitchVel * h, -BODY.maxPitch * 1.5, BODY.maxPitch * 1.5),
-    pitchVel,
-    roll: clamp(b.roll + rollVel * h, -BODY.maxRoll * 1.5, BODY.maxRoll * 1.5),
-    rollVel,
-  };
+  b.pitchVel += (BODY.stiffness * (goal.pitch - b.pitch) - BODY.damping * b.pitchVel) * h;
+  b.rollVel += (BODY.stiffness * (goal.roll - b.roll) - BODY.damping * b.rollVel) * h;
+  b.pitch = clamp(b.pitch + b.pitchVel * h, -BODY.maxPitch * 1.5, BODY.maxPitch * 1.5);
+  b.roll = clamp(b.roll + b.rollVel * h, -BODY.maxRoll * 1.5, BODY.maxRoll * 1.5);
+  return b;
 }
 
 /** The body with an upshift's kick added. */

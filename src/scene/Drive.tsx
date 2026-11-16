@@ -54,6 +54,7 @@ export default function Drive({
   props,
   game,
   traffic = 0,
+  trafficNear = 90,
 }: {
   map: MapData;
   parked?: ParkedPoses;
@@ -68,8 +69,9 @@ export default function Drive({
   props?: { knock: Dressing[]; broke: Dressing[]; knockPoses: ParkedPoses; breakPoses: ParkedPoses; debris: DebrisStore };
   /** The modes (cargo runs): stepped every frame, and their markers drawn. */
   game?: GameSession;
-  /** Cars of light traffic to keep around the player (0: none). */
+  /** Cars of traffic to keep around the player (0: none), and how far (m) they're drawn as full models. */
   traffic?: number;
+  trafficNear?: number;
 }) {
   const get = useThree((s) => s.get);
   const speed = useRef(0);
@@ -128,7 +130,7 @@ export default function Drive({
       )}
       {game && session && <RunDriver game={game} session={session} paused={paused} />}
       {game && <RunMarkers game={game} />}
-      {game && session && traffic > 0 && <Traffic game={game} session={session} map={map} count={traffic} car={carBody} />}
+      {game && session && traffic > 0 && <Traffic game={game} map={map} count={traffic} near={trafficNear} car={carBody} />}
       {speedBlur && <SpeedBlur speed={speed} />}
     </Physics>
   );

@@ -15,8 +15,8 @@ export const IDM = {
   accel: 1.6,
   brake: 2.5,
   /** Standing gap (m) and time headway (s). */
-  s0: 2.5,
-  T: 1.4,
+  s0: 2.2,
+  T: 1.2,
   /** Never brake harder than this (m/s^2), whatever the model says (it can ask for more in an emergency). */
   maxBrake: 8,
 };

@@ -270,6 +270,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
       const drivable = cls !== 'path';
       const lanes = drivable ? parseLanes(t.lanes) : undefined;
       const oneway = drivable && isOneway(t);
+      const roundabout = drivable && (t.junction === 'roundabout' || t.junction === 'circular');
       const sidewalk = drivable ? sidewalkSides(t) : undefined;
       const noParking = drivable ? noParkingSides(t) : undefined;
       lines.forEach((line, j) => {
@@ -286,6 +287,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
           ...(tunnel && { tunnel: true as const }),
           ...(lanes !== undefined && { lanes }),
           ...(oneway && { oneway: true as const }),
+          ...(roundabout && { roundabout: true as const }),
           ...(sidewalk && { sidewalk }),
           ...(noParking && { noParking }),
           ...(crossing && { crossing: true as const }),
