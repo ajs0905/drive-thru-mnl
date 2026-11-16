@@ -62,6 +62,33 @@ describe('runQa', () => {
     expect(countByKind(runQa(m))).toEqual({ 'dressing-in-the-way': 2 });
   });
 
+  it('finds traffic lights facing the wrong way or clustered, poles by crossings or under decks, and furniture drawn into furniture', () => {
+    const r = road({});
+    const m: MapData = {
+      ...map([r, { ...r, id: 'deck', points: [[0, 30], [100, 30]], z: [6, 6] }]),
+      crossings: [{ c: [80, 0], dir: [1, 0], half: 3.5, w: 4, z: 0, cls: 'minor' }],
+      dressing: [
+        // Beside the road at y = 0, its heads facing along it (+x): fine. The same turned a quarter: wrong.
+        { k: 'signalpole', p: [20, 4.5], rot: -Math.PI / 2 },
+        { k: 'signalpole', p: [40, 4.5], rot: 0 },
+        // Two on one corner.
+        { k: 'signalpole', p: [60, -4.5], rot: Math.PI / 2 },
+        { k: 'signalpole', p: [62, -4.5], rot: Math.PI / 2 },
+        // A street light by the crossing, one under the deck, one in a kiosk's awning.
+        { k: 'streetlight', p: [80.5, 4.5], rot: -Math.PI / 2 },
+        { k: 'streetlight', p: [50, 30], rot: -Math.PI / 2 },
+        { k: 'kiosk', p: [10, 20], rot: 0 },
+        { k: 'streetlight', p: [10, 18.6], rot: 0 },
+      ],
+    };
+    const n = countByKind(runQa(m));
+    expect(n['signal-misaligned']).toBe(1);
+    expect(n['signal-cluster']).toBe(1);
+    expect(n['pole-by-crossing']).toBe(1);
+    expect(n['pole-under-structure']).toBe(1);
+    expect(n['dressing-overlap']).toBe(1);
+  });
+
   it('reports nothing for a clean map', () => {
     expect(runQa(map([road({})], [box(40, 20, 50, 30)]))).toEqual([]);
   });

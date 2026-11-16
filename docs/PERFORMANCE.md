@@ -161,6 +161,6 @@ To fill in (see below for how).
 | Filler city past the map (33k to 82k triangles) | Merge far blocks into a few big ones, or a skyline card per direction | Tiles, streaming, tiers |
 | Window shader on every wall pixel | Plain walls or the average color on Low | Tiles, streaming, tiers |
 
-## Lessons from Slow Roads
+## Techniques still to use
 
-[Slow Roads](https://slowroads.io) is a three.js driving game that runs smoothly on low-mid range phones. Its developer's [case study on web.dev](https://web.dev/case-studies/slow-roads) lists techniques worth copying: full detail only near the road, lower detail far away; heavy work spread across frames; geometry recycled instead of reallocated; per-frame memory pre-allocated to avoid garbage collection pauses; simple custom physics; adjustable view distance; FPS telemetry to suggest settings.
+What keeps a three.js driving scene smooth on low-mid range phones, beyond what's done above: full detail only near the road, lower detail far away; heavy work spread across frames; geometry recycled instead of reallocated; per-frame memory pre-allocated to avoid garbage collection pauses; simple custom physics; adjustable view distance; FPS telemetry to suggest settings.

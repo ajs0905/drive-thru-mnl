@@ -175,10 +175,11 @@ OSM barely maps street parking in BGC: 25 ways carry parking tags, all "no parki
 
 Poles with an arm reaching out over the road, as dressing (so they're drawn, solid and checked like the rest of the street furniture). Real sizes next to the 1.71 m sedan: street lights 8 m with a 2.6 m arm, traffic lights on a 6.2 m mast with a 4.5 m arm, a 3.6 m pole on narrow streets, signal heads 1 m tall, park lamps 4.5 m.
 
-- **Traffic lights** from the 132 mapped signal nodes. A node at or within 15 m of a junction signalizes the junction: every road arriving there (one-way roads only where they flow in) gets a light at its stop line, 1.2 m back from the junction polygon, on the right-hand curb, its arm over the lanes and its heads facing the traffic coming in. Roads 9 m and wider get a mast arm, narrower ones a light on a short pole. A pole that would stand in another road, on a footpath, in a building or against a wall slides back up the road up to 6 m. A node away from any junction (a mid-block crossing) gets one light per direction.
-- **Street lights** by rule, every 32 m on avenues (both curbs, staggered; one-way carriageways only their outer, right-hand curb) and every 40 m on one side of minor streets at least 7 m wide, arm over the road. Skipped near junctions, crossings, driveways, trees and pillars, on bends and footpaths, in other roads and buildings, against walls and outside the playable area.
+- **Traffic lights** from the 132 mapped signal nodes. A node at or within 15 m of a junction signalizes the junction: every road arriving there (one-way roads only where they flow in) gets a light at its stop line, 1.2 m back from the junction polygon or 1 m before a zebra crossing on that approach, on the right-hand curb, its arm over the approach lanes and its heads facing the traffic coming in. Roads 9 m and wider get a mast arm, narrower ones a light on a short pole. Widest roads first, and at most one light within 9 m, so no corner gets two. A pole that would stand in another road, on a footpath, beside a crossing's band, in a building, against a wall or under a flyover deck slides back up the road up to 6 m. A node away from any junction (and more than 30 m from a signalized one) is a mid-block crossing: one light per direction.
+- **Room around poles.** Every pole keeps 0.5 m from what's drawn of the furniture already there (a shed's roof and a kiosk's awning reach past their footprints: `DRAWN` in `src/geometry/dressing.ts`) and from parked cars, 1 m along the road from a zebra crossing's band, and stays out from under flyover decks and raised buildings its pole or arm would reach into.
+- **Street lights** by rule, every 32 m on avenues (both curbs, staggered; one-way carriageways only their outer, right-hand curb) and every 40 m on one side of minor streets at least 7 m wide, arm over the road. A light that can't stand at its spot tries up to 3 m either way along the curb, then is skipped: near junctions, crossings, driveways, trees and pillars, on bends and footpaths, in other roads and buildings, against walls, under decks and outside the playable area.
 - Placed before the sidewalk furniture, which then keeps clear of the poles.
-- Result: 165 traffic lights on mast arms and 29 on poles at 56 junctions, 1,106 street lights (skipped: outside the playable area 122, crossing 82, another road 76 plus 48 traffic lights with no room, junction 48, building 33, and a few for footpaths, pillars, trees, driveways, walls and bends).
+- Result: 140 traffic lights on mast arms and 27 on poles at 56 junctions, 1,195 street lights (95 of them nudged along the curb; skipped: outside the playable area 115, another road 73 plus 51 traffic lights with no room, crossing 40 plus 2, building 30, a second light on a corner 2, junction 18, and a few for pillars, footpaths, flyover decks, driveways, walls and bends).
 
 ### 17. Sidewalk furniture (`pipeline/sidewalks.ts`)
 
@@ -186,7 +187,7 @@ Solid street furniture, so the sidewalks read as the edge of the street rather t
 
 - Waiting sheds along the avenues (about every 260 m, against the back of the sidewalk, facing the road), planters along the avenues' curbs (every 34 m), bins (90 m) and fire hydrants (160 m) on every street with a sidewalk, and a few snack kiosks by the open parks. Each spacing is varied by a seeded amount per street side, so the streets don't line up.
 - A piece is skipped near a junction, a crossing, a driveway (gate, boom or bollard), a tree trunk or a pillar, on a sharp bend, on a footpath, in another road or a building, across a wall, outside the playable area, and where it would crowd another piece (1 m kept between them).
-- Result: 844 bins, 580 planters, 484 hydrants, 70 waiting sheds and 4 kiosks (skipped: another road 347, outside the playable area 343, crowded 245 (mostly by the street lights), building 119, crossing 88, junction 41, bend 17, pillar 14, footpath 14, wall 8, tree 3, fixture 3).
+- Result: 841 bins, 577 planters, 481 hydrants, 69 waiting sheds and 4 kiosks (skipped: another road 347, outside the playable area 343, crowded 255 (mostly by the street lights; pieces keep their room from what's drawn, roofs and awnings included), building 119, crossing 88, junction 41, bend 17, pillar 14, footpath 14, wall 8, tree 3, fixture 3).
 ## Projection
 
 Equirectangular around a fixed origin (14.5509 N, 121.0503 E):
@@ -240,6 +241,11 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Buildings hidden inside another, or a construction outline around a finished one | (new) 6 | 0 |
 | Lot walls across a road or path (beyond their gates) | (new) 30 | 0 |
 | Solid street furniture in a road, on a path or in a building | (new) | 0 |
+| Traffic lights not facing along a road beside them, or with the mast arm not over it | (new) | 0 |
+| Two traffic lights within 4 m | 3 | 0 |
+| Poles beside a zebra crossing's band | 85 | 0 |
+| Poles or their arms reaching into a flyover deck or a raised building | 4 | 0 |
+| Solid furniture drawn into other solid furniture (a pole through a roof or awning) | (new) | 0 |
 
 The remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs) and access roads hugging a mall or tower, which are left as mapped. The one street case is a road mapped straight through a building.
 

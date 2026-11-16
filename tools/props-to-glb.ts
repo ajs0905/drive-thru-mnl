@@ -119,15 +119,16 @@ function lampPost(h: number, arm: number, r: number, head: [number, number, numb
 }
 
 /**
- * Turns a Kenney signal so its lamps face -z. Kenney's face +z (checked against the
- * renders); half a turn about the vertical.
+ * Turns a Kenney signal head so its lamps face -z (the traffic it controls, as
+ * pipeline/lights.ts turns it). Kenney's lenses face -x (their normals, checked in the
+ * model): a quarter turn, (x, z) to (-z, x).
  */
 function facingNegZ(b: Baked): Baked {
   const pos = b.position.slice();
   const nor = b.normal.slice();
   for (let i = 0; i < pos.length; i += 3) {
-    [pos[i], pos[i + 2]] = [-pos[i], -pos[i + 2]];
-    [nor[i], nor[i + 2]] = [-nor[i], -nor[i + 2]];
+    [pos[i], pos[i + 2]] = [-pos[i + 2], pos[i]];
+    [nor[i], nor[i + 2]] = [-nor[i + 2], nor[i]];
   }
   return { position: pos, normal: nor, color: b.color };
 }

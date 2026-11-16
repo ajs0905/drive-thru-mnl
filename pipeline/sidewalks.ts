@@ -12,7 +12,7 @@
  * cars, pipeline/parking.ts), and where it would crowd a piece already placed. Seeded by
  * the road's id, so the same map always gets the same street.
  */
-import { DRESSING, dressingCorners } from '../src/geometry/dressing';
+import { DRESSING, drawnCorners, dressingCorners } from '../src/geometry/dressing';
 import { distanceToSegment, ringBounds } from '../src/geometry/polygon';
 import { SegmentGrid } from '../src/geometry/spatialGrid';
 import { seeded } from '../src/map/hash';
@@ -100,7 +100,7 @@ export function placeSidewalkDressing(map: MapData): { dressing: Dressing[]; sta
   }
   const taken = new SegmentGrid<Point[]>(30);
   for (const d of map.dressing ?? []) {
-    const foot = dressingCorners(d.k, d.p, d.rot);
+    const foot = drawnCorners(d.k, d.p, d.rot);
     const b = ringBounds(foot);
     taken.insert([b.minX, b.minY], [b.maxX, b.maxY], foot);
   }
@@ -155,12 +155,15 @@ export function placeSidewalkDressing(map: MapData): { dressing: Dressing[]; sta
             skip('footpath');
             continue;
           }
-          const grown = dressingCorners(spec.k, p, rot, SIDEWALKS.room);
+          // What's drawn (a shed's roof, a kiosk's awning) keeps its room from what's there.
+          const drawn = drawnCorners(spec.k, p, rot);
+          const grown = drawnCorners(spec.k, p, rot, SIDEWALKS.room);
           if (taken.query(lo, hi).some((e) => overlaps(grown, e.item))) {
             skip('crowded');
             continue;
           }
-          taken.insert([b.minX, b.minY], [b.maxX, b.maxY], foot);
+          const db = ringBounds(drawn);
+          taken.insert([db.minX, db.minY], [db.maxX, db.maxY], drawn);
           out.push({ k: spec.k, p: [Math.round(p[0] * 100) / 100, Math.round(p[1] * 100) / 100], rot: Math.round(rot * 1000) / 1000 });
           stats.placed[spec.k] = (stats.placed[spec.k] ?? 0) + 1;
           if (spec.k === 'kiosk') kiosks++;

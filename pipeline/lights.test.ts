@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { distanceToSegment } from '../src/geometry/polygon';
-import type { Junction, MapData, Point, Road } from '../src/map/types';
+import type { Crossing, Junction, MapData, Point, Road } from '../src/map/types';
 import { LIGHTS, placeLights } from './lights';
 
 const map = (roads: Road[], extra: Partial<MapData> = {}): MapData => ({
@@ -78,6 +78,36 @@ describe('placeLights', () => {
     expect(oneway.every((l) => l.p[1] < 0)).toBe(true);
     const none = [road('n', [[-300, 0], [300, 0]], { cls: 'minor', w: 5 }), road('p', [[-300, 20], [300, 20]], { cls: 'path', w: 3 }), road('f', [[-300, 40], [300, 40]], { z: [7, 7] })];
     expect(placeLights(map(none), []).dressing).toHaveLength(0);
+  });
+
+  it('puts the stop line before a zebra crossing, so the pole stands clear of it', () => {
+    const { roads, junctions } = crossroads();
+    // A crossing on the east arm, 12 m out from the junction's middle, 4 m wide.
+    const zebra: Crossing = { c: [12, 0], dir: [1, 0], half: 6, w: 4, z: 0, cls: 'major' };
+    const { dressing } = placeLights(map(roads, { junctions, crossings: [zebra] }), [[0, 0]]);
+    const east = dressing.find((d) => d.k === 'signal' && d.p[0] > 6)!;
+    expect(east.p[0]).toBeGreaterThanOrEqual(12 + 2 + LIGHTS.beforeCrossing - 1e-6);
+  });
+
+  it('keeps one traffic light per corner, and none for a signal node just past a signalized junction', () => {
+    const { roads, junctions } = crossroads();
+    const { dressing } = placeLights(map(roads, { junctions }), [[0, 0], [25, 0]]);
+    const signals = dressing.filter((d) => d.k === 'signal');
+    expect(signals).toHaveLength(4);
+    for (let i = 0; i < signals.length; i++) for (let j = i + 1; j < signals.length; j++) expect(Math.hypot(signals[i].p[0] - signals[j].p[0], signals[i].p[1] - signals[j].p[1])).toBeGreaterThan(LIGHTS.cluster);
+  });
+
+  it('keeps street lights clear of what is drawn (a kiosk awning), nudging along the curb, and out from under flyovers', () => {
+    const ave = road('ave', [[-300, 0], [300, 0]], { oneway: true });
+    const lights = placeLights(map([ave]), []).dressing;
+    const first = lights[0];
+    // A kiosk whose awning reaches over that light's spot.
+    const kiosk = { k: 'kiosk' as const, p: [first.p[0], first.p[1] - 2] as Point, rot: Math.PI };
+    const moved = placeLights(map([ave], { dressing: [kiosk] }), []).dressing;
+    for (const l of moved.filter((d) => d.k === 'streetlight')) expect(Math.abs(l.p[0] - kiosk.p[0]) > 1.25 + LIGHTS.room || Math.abs(l.p[1] - kiosk.p[1]) > 1.7 + LIGHTS.room).toBe(true);
+    // A flyover deck 6 m up along the avenue: no 8 m light under it.
+    const deck = road('deck', [[-300, -7], [300, -7]], { z: [6, 6], w: 10 });
+    expect(placeLights(map([ave, deck]), []).dressing.filter((d) => d.k === 'streetlight')).toHaveLength(0);
   });
 
   it('is the same every time', () => {

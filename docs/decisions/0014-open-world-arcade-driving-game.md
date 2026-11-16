@@ -6,11 +6,11 @@
 
 Up to the drivable car milestone the project was "a driving game" without a genre, and the choice decides a lot: how real the handling should be, what crashes look like, what the map is for, and what comes after free driving. Three directions fit what the pipeline builds:
 
-| Type | Like | Physics | Fit |
-| --- | --- | --- | --- |
-| Open-world cruiser | Slow Roads, Midtown Madness free roam | Arcade | Good, but little to do once you've seen the map |
-| Arcade racer | Need for Speed: Most Wanted, Burnout | Arcade, with showy crashes | Good, needs routes and events |
-| Driving simulator | BeamNG, City Car Driving | Realistic, soft-body or detailed tires | Too heavy for phones, and not what a real-map city is best at |
+| Type | Physics | Fit |
+| --- | --- | --- |
+| Open-world cruiser: free driving, no goals | Arcade | Good, but little to do once you've seen the map |
+| Arcade racer: races and chases through a city | Arcade, with showy crashes | Good, needs routes and events |
+| Driving simulator | Realistic, soft-body or detailed tires | Too heavy for phones, and not what a real-map city is best at |
 
 ## Decision
 

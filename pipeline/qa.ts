@@ -7,11 +7,11 @@
  *   npm run qa -- --json                            counts per kind, as JSON
  *   npm run qa -- --check data/qa-baseline.json     exit 1 if any count is above the baseline (CI)
  */
-import { DRESSING, dressingCorners } from '../src/geometry/dressing';
+import { ARMS, DRESSING, drawnCorners, dressingCorners } from '../src/geometry/dressing';
 import { readFileSync } from 'node:fs';
 import { distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../src/geometry/polygon';
 import { SegmentGrid } from '../src/geometry/spatialGrid';
-import type { Building, MapData, Point, Road } from '../src/map/types';
+import type { Building, Dressing, MapData, Point, Road } from '../src/map/types';
 import { roadIssues } from './qaRoads';
 import { nestedBuildings } from './overlaps';
 import { structureIssues } from './qaStructures';
@@ -140,7 +140,97 @@ export function runQa(map: MapData): Issue[] {
   issues.push(...roadIssues(map));
   issues.push(...extrasIssues(map, ground, inside));
   issues.push(...structureIssues(map));
+  issues.push(...lightIssues(map, ground));
   return issues;
+}
+
+/**
+ * 7. Street and traffic lights where they don't belong: a traffic light whose heads don't
+ * face along a road beside it or whose mast arm doesn't reach over it (`signal-misaligned`),
+ * two traffic lights on one corner (`signal-cluster`), a pole beside a zebra crossing's band
+ * (`pole-by-crossing`), a pole or its arm reaching into a flyover deck or a raised
+ * building above it (`pole-under-structure`), and solid furniture drawn into other solid
+ * furniture, a pole through a shed's roof say (`dressing-overlap`).
+ */
+function lightIssues(map: MapData, ground: SegmentGrid<Road>): Issue[] {
+  const issues: Issue[] = [];
+  const pieces = (map.dressing ?? []).filter((d) => DRESSING[d.k].solid);
+  const isPole = (d: Dressing) => d.k === 'streetlight' || d.k === 'signal' || d.k === 'signalpole';
+  for (const d of pieces) {
+    if (d.k !== 'signal' && d.k !== 'signalpole') continue;
+    // The roads it stands beside: ground roads whose curb is within 3 m (a corner pole has two).
+    const beside = ground.query(d.p, d.p, 15).filter((e) => distanceToSegment(d.p, e.a, e.b) < e.item.w / 2 + 3);
+    if (!beside.length) {
+      issues.push({ kind: 'signal-misaligned', at: d.p, detail: `${d.k} with no road beside it`, severity: 1 });
+      continue;
+    }
+    // Heads face the model's -z, (-sin, cos) of rot: along one of those roads.
+    const facing = Math.max(
+      ...beside.map((e) => {
+        const l = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) || 1;
+        return Math.abs((-Math.sin(d.rot) * (e.b[0] - e.a[0]) + Math.cos(d.rot) * (e.b[1] - e.a[1])) / l);
+      }),
+    );
+    if (facing < Math.cos(Math.PI / 6)) {
+      issues.push({ kind: 'signal-misaligned', at: d.p, detail: `${d.k} heads ${((Math.acos(Math.min(1, facing)) * 180) / Math.PI).toFixed(0)} degrees off the road`, severity: 1 - facing });
+      continue;
+    }
+    if (d.k === 'signal') {
+      const reach = ARMS.signal - 0.45;
+      const head: Point = [d.p[0] + Math.cos(d.rot) * reach, d.p[1] + Math.sin(d.rot) * reach];
+      if (!ground.query(head, head, 15).some((e) => distanceToSegment(head, e.a, e.b) < e.item.w / 2)) issues.push({ kind: 'signal-misaligned', at: d.p, detail: 'mast arm not over the road', severity: 1 });
+    }
+  }
+  const signals = pieces.filter((d) => d.k === 'signal' || d.k === 'signalpole');
+  for (let i = 0; i < signals.length; i++)
+    for (let j = i + 1; j < signals.length; j++)
+      if (Math.hypot(signals[i].p[0] - signals[j].p[0], signals[i].p[1] - signals[j].p[1]) < 4) issues.push({ kind: 'signal-cluster', at: signals[i].p, detail: 'two traffic lights within 4 m', severity: 1 });
+  for (const d of pieces) {
+    if (!isPole(d)) continue;
+    for (const c of map.crossings) {
+      if (c.z > 1) continue;
+      const [dx, dy] = [d.p[0] - c.c[0], d.p[1] - c.c[1]];
+      const along = Math.abs(dx * c.dir[0] + dy * c.dir[1]);
+      const across = Math.abs(-dx * c.dir[1] + dy * c.dir[0]);
+      if (along < c.w / 2 + 0.5 && across < c.half + 3) {
+        issues.push({ kind: 'pole-by-crossing', at: d.p, detail: `${d.k} ${along.toFixed(1)} m from a zebra's middle`, severity: 1 });
+        break;
+      }
+    }
+  }
+  // Poles (or their arms) reaching into a flyover deck or a raised building above them.
+  for (const d of pieces) {
+    if (!isPole(d)) continue;
+    const h = DRESSING[d.k].size[2];
+    const arm = ARMS[d.k as keyof typeof ARMS] ?? 0;
+    const pts: Point[] = [d.p, [d.p[0] + Math.cos(d.rot) * arm, d.p[1] + Math.sin(d.rot) * arm]];
+    const deck = map.roads.some((r) => r.z && r.points.some((_, i) => i + 1 < r.points.length && Math.min(r.z![i], r.z![i + 1]) > 1.5 && Math.min(r.z![i], r.z![i + 1]) - 1.2 < h && pts.some((q) => distanceToSegment(q, r.points[i], r.points[i + 1]) < r.w / 2)));
+    const above = !deck && map.buildings.some((b) => (b.minH ?? 0) > 2.5 && (b.minH ?? 0) < h && pts.some((q) => pointInRing(q, b.rings[0])));
+    if (deck || above) issues.push({ kind: 'pole-under-structure', at: d.p, detail: `${d.k} into ${deck ? 'a flyover deck' : 'a raised building'}`, severity: 1 });
+  }
+  const grid = new SegmentGrid<{ d: Dressing; foot: Point[] }>(30);
+  for (const d of pieces) {
+    const foot = drawnCorners(d.k, d.p, d.rot);
+    const b = ringBounds(foot);
+    for (const e of grid.query([b.minX, b.minY], [b.maxX, b.maxY])) {
+      if (overlapsConvex(foot, e.item.foot)) issues.push({ kind: 'dressing-overlap', at: d.p, detail: `${d.k} drawn into ${e.item.d.k}`, severity: 1 });
+    }
+    grid.insert([b.minX, b.minY], [b.maxX, b.maxY], { d, foot });
+  }
+  return issues;
+}
+
+/** Do two convex polygons overlap (separating axis test)? Touching doesn't count. */
+function overlapsConvex(a: Point[], b: Point[]): boolean {
+  for (const ring of [a, b])
+    for (let i = 0; i < ring.length; i++) {
+      const [p, q] = [ring[i], ring[(i + 1) % ring.length]];
+      const n: Point = [q[1] - p[1], p[0] - q[0]];
+      const span = (r: Point[]) => r.map((v) => v[0] * n[0] + v[1] * n[1]);
+      const [sa, sb] = [span(a), span(b)];
+      if (Math.max(...sa) <= Math.min(...sb) + 1e-6 || Math.max(...sb) <= Math.min(...sa) + 1e-6) return false;
+    }
+  return true;
 }
 
 /**

@@ -75,6 +75,30 @@ export function dressingCorners(k: DressingKind, p: Point, rot: number, margin =
 }
 
 /**
+ * Where a model reaches past its `size` on the ground plane (local x from, to, z from, to;
+ * +z is the right of rot): the shed's roof, the kiosk's awning. Checked against
+ * props.glb in tools/props.test.ts. Poles aren't here: their arms are overhead, so on the
+ * ground only the pole counts.
+ */
+export const DRAWN: Partial<Record<DressingKind, [number, number, number, number]>> = {
+  shed: [-2, 2, -1, 0.8],
+  kiosk: [-1.25, 1.25, -1, 1.7],
+  booth: [-1.1, 1.1, -1.1, 1.1],
+  pavilion: [-3.5, 3.5, -3.5, 3.5],
+};
+
+/** The ground footprint of what's drawn (the roof or awning included), grown by `margin` (m): for keeping pieces out of each other. */
+export function drawnCorners(k: DressingKind, p: Point, rot: number, margin = 0): Point[] {
+  const box = DRAWN[k];
+  if (!box) return dressingCorners(k, p, rot, margin);
+  const [x0, x1, z0, z1] = [box[0] - margin, box[1] + margin, box[2] - margin, box[3] + margin];
+  const [c, s] = [Math.cos(rot), Math.sin(rot)];
+  // Local (x, z) to the map: x along rot, z to its right (sin, -cos).
+  const at = (x: number, z: number): Point => [p[0] + c * x + s * z, p[1] + s * x - c * z];
+  return [at(x1, z0), at(x1, z1), at(x0, z1), at(x0, z0)];
+}
+
+/**
  * How solid pieces react when the car hits them (Drive mode, scene/PropPhysics.tsx). They
  * aren't in the static collision mesh: near the player they're pooled physics bodies.
  *

@@ -4,7 +4,7 @@
 
 ## Context
 
-BGC has a lot of empty land inside the drivable area: construction sites, vacant blocks, mapped grass, small gardens. In the game they were flat ground the car could cut straight across, so the streets didn't hold you: a block corner was a short cut, and the city read as roads painted on a field. Street racers set in real cities (Need for Speed: Most Wanted is the usual reference) keep the player on the streets with walls, fences and street furniture, and leave a few open spaces on purpose as places to play. Constraints:
+BGC has a lot of empty land inside the drivable area: construction sites, vacant blocks, mapped grass, small gardens. In the game they were flat ground the car could cut straight across, so the streets didn't hold you: a block corner was a short cut, and the city read as roads painted on a field. Arcade street racing games keep the player on the streets with walls, fences and street furniture, and leave a few open spaces on purpose as places to play. Constraints:
 
 - OSM's land use outlines often run to the middle of the street and under buildings, so walling them as mapped would put walls on roads.
 - Footpaths and driveways run into the lots; a wall across them reads as a mistake.
