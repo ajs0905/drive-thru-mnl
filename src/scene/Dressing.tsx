@@ -7,8 +7,8 @@
  * kind in view, at most 18 (a first version with a mesh per kind per grid cell added 20 to
  * 50). Each mesh holds only the pieces within reach of where the camera looks, refilled
  * when that point moves `DRESS.step` m: landmarks (cranes, containers, mounds, the
- * pavilion) out to `far`, the rest out to `near`, which is 0 on Low (street clutter left
- * out). Container bodies are painted per instance; everything else keeps its baked colors.
+ * pavilion) out to `far`, street and traffic lights out to `mid`, the rest out to `near`,
+ * which is 0 on Low (street clutter left out). Container bodies are painted per instance; everything else keeps its baked colors.
  */
 import { useFrame, useLoader, useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
@@ -23,14 +23,14 @@ const DRESS = { step: 20, base: 0.1 };
 /** One kind: its mesh, and every piece of it as a position, a world matrix and a color. */
 interface Kind {
   mesh: InstancedMesh;
-  reach: 'near' | 'far';
+  reach: 'near' | 'mid' | 'far';
   xs: Float32Array;
   zs: Float32Array;
   matrices: Matrix4[];
   colors: Color[];
 }
 
-export function Dressing({ pieces, near, far, shadows }: { pieces: Piece[]; near: number; far: number; shadows: boolean }) {
+export function Dressing({ pieces, near, mid, far, shadows }: { pieces: Piece[]; near: number; mid: number; far: number; shadows: boolean }) {
   const gltf = useLoader(GLTFLoader, `${import.meta.env.BASE_URL}models/props.glb`);
   const controls = useThree((s) => s.controls) as unknown as { target?: Vector3 } | null;
 
@@ -81,13 +81,13 @@ export function Dressing({ pieces, near, far, shadows }: { pieces: Piece[]; near
   // Landmarks cast shadows; everything takes them.
   useEffect(() => setShadows(built.kinds, shadows), [built, shadows]);
 
-  const state = useMemo(() => ({ at: new Vector3(Infinity, 0, 0), near: -1, far: -1, kinds: null as Kind[] | null }), []);
+  const state = useMemo(() => ({ at: new Vector3(Infinity, 0, 0), near: -1, mid: -1, far: -1, kinds: null as Kind[] | null }), []);
   useFrame(({ camera, invalidate }) => {
     const focus = controls?.target ?? camera.position;
-    if (state.kinds === built.kinds && state.near === near && state.far === far && Math.hypot(focus.x - state.at.x, focus.z - state.at.z) < DRESS.step) return;
-    Object.assign(state, { near, far, kinds: built.kinds });
+    if (state.kinds === built.kinds && state.near === near && state.mid === mid && state.far === far && Math.hypot(focus.x - state.at.x, focus.z - state.at.z) < DRESS.step) return;
+    Object.assign(state, { near, mid, far, kinds: built.kinds });
     state.at.copy(focus);
-    fill(built.kinds, focus, near, far);
+    fill(built.kinds, focus, { near, mid, far });
     invalidate();
   });
 
@@ -102,9 +102,9 @@ function setShadows(kinds: Kind[], on: boolean) {
 }
 
 /** Puts the pieces within reach of the focus (plus a step, so nothing pops in at the edge between refills) into each kind's mesh. */
-function fill(kinds: Kind[], focus: Vector3, near: number, far: number) {
+function fill(kinds: Kind[], focus: Vector3, reaches: Record<Kind['reach'], number>) {
   for (const k of kinds) {
-    const reach = k.reach === 'far' ? far : near;
+    const reach = reaches[k.reach];
     const r2 = reach > 0 ? (reach + DRESS.step) ** 2 : -1;
     let n = 0;
     for (let i = 0; i < k.matrices.length; i++) {

@@ -50,6 +50,8 @@ export interface RawExtras {
   barriers: Barrier[];
   trees: Tree[];
   fixtures: { kind: FixtureKind; p: Point }[];
+  /** Traffic signal nodes (`highway=traffic_signals`), for pipeline/lights.ts. */
+  signals: Point[];
   skipped: Record<string, number>;
 }
 
@@ -98,6 +100,7 @@ export function extractExtras(fc: FeatureCollection, origin: LatLon, scale = 1):
   const trees: Tree[] = [];
   const rowTrees: Tree[] = [];
   const fixtures: RawExtras['fixtures'] = [];
+  const signals: Point[] = [];
   const skipped: Record<string, number> = {};
   const skip = (reason: string) => {
     skipped[reason] = (skipped[reason] ?? 0) + 1;
@@ -109,6 +112,11 @@ export function extractExtras(fc: FeatureCollection, origin: LatLon, scale = 1):
     const t = getTags(f);
     const id = getId(f, i);
 
+    if (t.highway === 'traffic_signals' && g.type === 'Point') {
+      const p = projectPositions([g.coordinates], proj)?.[0];
+      if (p) signals.push(roundPoint(p));
+      return;
+    }
     if (t.natural === 'tree' && g.type === 'Point') {
       const p = projectPositions([g.coordinates], proj)?.[0];
       if (!p) return skip('degenerate-point');
@@ -156,7 +164,7 @@ export function extractExtras(fc: FeatureCollection, origin: LatLon, scale = 1):
   });
 
   // Single trees first, so a row sample right next to a mapped tree is the one dropped.
-  return { barriers, trees: [...trees, ...rowTrees], fixtures, skipped };
+  return { barriers, trees: [...trees, ...rowTrees], fixtures, signals, skipped };
 }
 
 export interface ExtrasStats {

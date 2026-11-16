@@ -36,24 +36,24 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | :--- | :--- | :--- |
 | **Build & Bundle** | | |
 | Main / Drive bundle | 384 KB / 860 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
-| Map file (`bgc.json`) | 3.25 MB (766 KB gzipped) | Deterministic: CI rebuilds it from the raw data and fails if a byte differs |
-| Pipeline | 16 steps, a few seconds | Node + TypeScript, offline |
+| Map file (`bgc.json`) | 3.31 MB (779 KB gzipped) | Deterministic: CI rebuilds it from the raw data and fails if a byte differs |
+| Pipeline | 17 steps, a few seconds | Node + TypeScript, offline |
 | **World Data** | | |
 | Input | 25,930 OpenStreetMap features | A 19 MB GeoJSON export, plus 1,634 more for walls, trees and street fixtures |
-| Output | 11,685 buildings, 3,536 roads, 1,384 junctions | Plus 511 zebras, 70 raised flyover and footbridge pieces on 279 pillars, 938 trees, 51 walled-off lots, 2,876 pieces of street furniture, 1,106 parked cars |
+| Output | 11,685 buildings, 3,536 roads, 1,384 junctions | Plus 511 zebras, 70 raised flyover and footbridge pieces on 279 pillars, 194 traffic lights at 56 junctions, 1,106 street lights, 938 trees, 51 walled-off lots, 2,740 pieces of street and lot furniture, 1,106 parked cars |
 | Filled in by rules | 97% of building heights | OSM also has no bridge heights or ramps, no street parking and only outlines for empty lots |
 | **Physics & Collision** | | |
-| Collision meshes | 116k triangles, about 0.2 s to build | Walls and drivable decks built from the same data the renderer draws |
+| Collision meshes | 125k triangles, about 0.2 s to build | Walls and drivable decks built from the same data the renderer draws |
 | Fixed-step physics | 60 Hz | The same step function runs in the game and in headless tests |
 | **Performance & Quality** | | |
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
 | Draw calls | About 55 to 105 per view | The whole city, built in the browser in about 300 to 400 ms; an idle view costs nothing |
-| Automated tests | 636 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 642 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 25 automated checks | A CI gate: counts can only go down |
 
 ## How It Works
 
-1. **Offline map pipeline** (`pipeline/`): turns raw OpenStreetMap GeoJSON into one deterministic, versioned map file. It works out building heights, flyover heights and ramps, junction polygons, zebras, walls, lots, parked cars and street furniture, then runs 25 map QA checks before the file ships.
+1. **Offline map pipeline** (`pipeline/`): turns raw OpenStreetMap GeoJSON into one deterministic, versioned map file. It works out building heights, flyover heights and ramps, junction polygons, zebras, walls, lots, traffic lights, street lights, parked cars and street furniture, then runs 25 map QA checks before the file ships.
 2. **Procedural 3D city** (`src/geometry/`, `src/scene/`): the browser builds road ribbons, flyover decks, extruded buildings, trees and barriers from the map file, merged into 1.2 km grid cells, with GPU instancing for repeated props and GLSL shaders for markings, windows and car paint.
 3. **Physics and vehicle** (`src/car/`): Rapier at a fixed 60 Hz, with arcade assists (slip-angle drift control, anti-spin, a hysteresis gearbox) and camera ray clipping. The car code doesn't touch React or three.js, so the same step function runs in headless Vitest suites.
 4. **Render on demand, adaptive quality**: frames are drawn only when something changes, shadows re-render on a throttle, the pixel ratio follows the frame rate, and the 2D maps paste cached tiles. Low, Medium and High tiers aim at desktops and low-mid range Android phones (phone numbers still to be measured).
@@ -72,7 +72,7 @@ Free-roam arcade driving on BGC's real streets, for once without the traffic (he
 
 ## What's built
 
-- Map pipeline: OSM export to one compact, deterministic map file, with heights, flyovers, junctions, crossings, trees, walls, walled-off lots, street furniture and parked cars worked out by rule
+- Map pipeline: OSM export to one compact, deterministic map file, with heights, flyovers, junctions, crossings, trees, walls, walled-off lots, traffic lights, street lights, street furniture and parked cars worked out by rule
 - Map QA: 25 checks run in CI, each with a baseline that can only go down
 - 3D city: buildings with windows and roof details, painted roads with clean intersections, a physically based sky, shadows, and filler city and real skylines past the edge
 - Performance: three quality tiers, adaptive resolution, grid culling, render on demand, reversed depth
@@ -81,7 +81,7 @@ Free-roam arcade driving on BGC's real streets, for once without the traffic (he
 
 ## Planned
 
-- Measure it on a phone, then street lights and traffic lights, better buildings and utility poles
+- Measure it on a phone, then better buildings and utility poles
 - Later: engine, tire and crash sounds, ambience and music
 - First deploy on Vercel
 - Game modes: sprint from A to B, ride-hailing, light traffic, a police chase
@@ -137,5 +137,5 @@ The BGC map data is already in the repo, so that's all you need.
 - Polygon triangulation: [earcut](https://github.com/mapbox/earcut)
 - Cars: the Sedan you drive and six parked models from the [Free Low Poly Vehicles Pack](https://rgsdev.itch.io/free-low-poly-vehicles-pack) by Rgsdev (CC0), converted with `tools/car-to-glb.ts` and `tools/parked-cars-to-glb.ts`
 - Traffic cone and concrete barrier: [City Kit Roads](https://kenney.nl/assets/city-kit-roads) by Kenney (CC0), baked with `tools/kenney-to-ts.ts`
-- Street lamp, dumpster, work light, planter and kiosk awning: [City Kit Roads](https://kenney.nl/assets/city-kit-roads), [City Kit Suburban](https://kenney.nl/assets/city-kit-suburban) and [City Kit Commercial](https://kenney.nl/assets/city-kit-commercial) by Kenney (CC0), merged with the props built in code into `public/models/props.glb` by `tools/props-to-glb.ts`
+- Dumpster, work light, traffic light heads, planter and kiosk awning: [City Kit Roads](https://kenney.nl/assets/city-kit-roads), [City Kit Suburban](https://kenney.nl/assets/city-kit-suburban) and [City Kit Commercial](https://kenney.nl/assets/city-kit-commercial) by Kenney (CC0), merged with the props built in code into `public/models/props.glb` by `tools/props-to-glb.ts`
 - Font: [Overpass](https://github.com/RedHatOfficial/Overpass) by The Overpass Project Authors (SIL Open Font License 1.1), bundled through [Fontsource](https://fontsource.org/fonts/overpass)

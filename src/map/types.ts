@@ -181,7 +181,8 @@ export type DressingKind =
   | 'container' | 'crane' | 'mound' | 'pipes' | 'crates' | 'dumpster' | 'worklight'
   | 'lamp' | 'bench' | 'pavilion'
   | 'booth' | 'stall' | 'wheelstop'
-  | 'shed' | 'kiosk' | 'planter' | 'hydrant' | 'bin';
+  | 'shed' | 'kiosk' | 'planter' | 'hydrant' | 'bin'
+  | 'streetlight' | 'signal' | 'signalpole';
 
 export interface Dressing {
   k: DressingKind;
@@ -223,6 +224,7 @@ export interface MapStats {
   parking?: { roads: number; slots: number; cars: number };
   lots?: LotStats;
   sidewalks?: { placed: Record<string, number>; skipped: Record<string, number> };
+  lights?: { signalNodes: number; junctions: number; signals: number; signalPoles: number; streetlights: number; skipped: Record<string, number> };
 }
 
 /** What pipeline/lots.ts did with the empty land inside the drivable area. */

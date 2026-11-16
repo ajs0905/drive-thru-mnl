@@ -36,7 +36,7 @@ const map = (roads: Road[], buildings: Building[] = []): MapData => ({
 });
 /** A 10 m wide road along the x axis. */
 const road: Road = { id: 'r', highway: 'primary', cls: 'major', w: 10, points: [[-100, 0], [100, 0]] };
-const raw = (extra: Partial<RawExtras>): RawExtras => ({ barriers: [], trees: [], fixtures: [], skipped: {}, ...extra });
+const raw = (extra: Partial<RawExtras>): RawExtras => ({ barriers: [], trees: [], fixtures: [], signals: [], skipped: {}, ...extra });
 const wall = (points: Point[], kind: Barrier['kind'] = 'wall'): Barrier => ({ id: 'w', kind, h: 2.4, points });
 const len = (pts: Point[]) => pts.slice(1).reduce((d, p, i) => d + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0);
 

@@ -16,6 +16,7 @@ import { smoothRaisedCurves } from './smoothRaised';
 import { placeLots } from './lots';
 import { placeParkedCars } from './parking';
 import { placeSidewalkDressing } from './sidewalks';
+import { placeLights } from './lights';
 import { placeStructures } from './structures';
 import { dropBuildingsOnRoads, fitRoadWidths, trimBuildingsOffRoads } from './fitWidths';
 import { dropNestedBuildings } from './overlaps';
@@ -118,8 +119,11 @@ const paved = patchHoles(map);
 map = { ...map, junctions: paved.junctions };
 const extrasPath = noExtras ? undefined : (extrasArg ?? (existsSync('data/raw/bgc-barriers.geojson') ? 'data/raw/bgc-barriers.geojson' : undefined));
 let extras: ExtrasStats | undefined;
+let signals: Point[] = [];
 if (extrasPath) {
-  const placed = placeExtras(extractExtras(readJson<FeatureCollection>(resolve(extrasPath)), map.origin, map.scale), map, margin);
+  const raw = extractExtras(readJson<FeatureCollection>(resolve(extrasPath)), map.origin, map.scale);
+  signals = raw.signals;
+  const placed = placeExtras(raw, map, margin);
   extras = placed.stats;
   map = { ...map, barriers: placed.barriers, trees: placed.trees, fixtures: placed.fixtures, stats: { ...map.stats, extras } };
 }
@@ -141,6 +145,8 @@ map = {
   parked: [...parking.parked, ...lots.parked],
   stats: { ...map.stats, parking: { roads: parking.stats.roads, slots: parking.stats.slots, cars: parking.stats.cars } },
 };
+const lights = placeLights(map, signals);
+map = { ...map, dressing: [...(map.dressing ?? []), ...lights.dressing], stats: { ...map.stats, lights: lights.stats } };
 const sidewalks = placeSidewalkDressing(map);
 map = { ...map, dressing: [...(map.dressing ?? []), ...sidewalks.dressing], stats: { ...map.stats, sidewalks: sidewalks.stats } };
 if (map.stats.clip) {
@@ -225,6 +231,11 @@ if (extras) {
   const dressed = Object.entries(lots.dressing.reduce<Record<string, number>>((m, d) => ({ ...m, [d.k]: (m[d.k] ?? 0) + 1 }), {})).map(([k, v]) => `${k} ${v}`).join(', ');
   console.log(`  lots: ${kinds}; ${walls} (${l.openings ?? 0} footpath openings with bollards, ${l.gates ?? 0} gates across roads); ${(l.openArea / 1e4).toFixed(1)} ha open, ${(l.closedArea / 1e4).toFixed(1)} ha closed off`);
   console.log(`    parking yard: ${l.stalls} stalls, ${lots.parked.length} cars; ${lots.trees.length} park trees; dressing: ${dressed}`);
+}
+{
+  const l = lights.stats;
+  const why = Object.entries(l.skipped).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
+  console.log(`  lights: ${l.signals} traffic lights on mast arms and ${l.signalPoles} on poles at ${l.junctions} junctions (from ${l.signalNodes} signal nodes), ${l.streetlights} street lights (skipped: ${why})`);
 }
 {
   const w = sidewalks.stats;

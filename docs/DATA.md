@@ -17,10 +17,10 @@ ODbL lets us use and adapt the data, including in a public project, as long as i
 | --- | --- |
 | [`data/bgc.overpassql`](../data/bgc.overpassql) | The Overpass query: roads, buildings, land use, parks and water in the box 14.5370, 121.0370 to 14.5650, 121.0640 |
 | `data/raw/bgc.geojson` | The raw export (19 MB, about 25,900 features) |
-| [`data/barriers.overpassql`](../data/barriers.overpassql) | Second query, same box: walls, fences, hedges, guard rails, gates, booms, bollards, trees, plus traffic lights and street lamps for later |
+| [`data/barriers.overpassql`](../data/barriers.overpassql) | Second query, same box: walls, fences, hedges, guard rails, gates, booms, bollards, trees, and traffic signals |
 | `data/raw/bgc-barriers.geojson` | Its raw export (550 KB, 1,634 features). Optional: without it the map has no walls or trees. |
 | [`data/playable-area.geojson`](../data/playable-area.geojson) | 15-point polygon around BGC, 3.51 km². Where the car can drive. |
-| `public/data/bgc.json` | The processed map the game loads (3.2 MB, 766 KB gzipped). Generated: don't edit by hand. |
+| `public/data/bgc.json` | The processed map the game loads (3.3 MB, 779 KB gzipped). Generated: don't edit by hand. |
 | `public/data/sample.json` | Tiny map built from the test fixture, used when `bgc.json` is missing |
 | `data/qa-baseline.json` | Accepted map QA counts; CI fails if a count goes above it |
 
@@ -140,7 +140,7 @@ From the second export. Kept as a separate step and file so refreshing it never 
 - **Walls, fences, hedges, guard rails** (`barrier=*` ways; closed ones like the Manila Golf Club wall come as polygons and are walked as outlines). Heights from `height` tags, else 2.4 m walls, 1.2 m retaining walls, 1.8 m fences, 1.3 m hedges, 0.8 m rails. Clipped like roads.
 - Walls, fences and hedges are **cut open wherever they stand on a road or path** (sampled every 25 cm against the road surface plus 40 cm), so a mapped wall never blocks a street. Guard rails and jersey barriers line roads on purpose and stay whole. A gate in a wall with no road through it opens a 4 m gap.
 - **Trees** from `natural=tree` nodes and `natural=tree_row` lines (one every 8 m). Palms from `leaf_cycle=palm` or the species (royal palms, coconuts and others); broadleaf for other tagged species; untagged ones are 25% palms, seeded per tree. Size from a `height` tag or seeded. Trees up to 2 m into a road are street trees mapped a little off and are moved to the curb; deeper ones, and trees in buildings, in water or on top of another tree, are dropped. A tree whose crown would reach into a flyover or footbridge (or its barrier) is moved away by up to 4 m, or dropped; small trees that fit under a high deck stay.
-- **Fixtures**: gates and parking booms are turned across the road they sit on and sized to it; bollards and concrete blocks stay where mapped. Lowered-curb points are ignored; traffic lights and street lamps are kept in the raw export for the polish milestone.
+- **Fixtures**: gates and parking booms are turned across the road they sit on and sized to it; bollards and concrete blocks stay where mapped. Lowered-curb points are ignored. Traffic signal nodes are passed on to step 16; the 6 mapped street lamps are ignored (step 16 places them by rule).
 - Result: 44 barrier pieces (6.5 km, 25 openings), 922 trees (241 palms; 185 moved to the curb, 8 moved away from a flyover, 9 dropped beside one), 137 gates, 70 booms, 52 bollards, 12 blocks.
 
 ### 13. Pillars and posts (`pipeline/structures.ts`)
@@ -171,13 +171,22 @@ OSM barely maps street parking in BGC: 25 ways carry parking tags, all "no parki
 - Model (sedan, hatchback, SUV, pickup, van, taxi) and paint (mostly white, silver, grey and black, some reds and blues) are picked by weight from the same seed, so the same map always gets the same cars.
 - Result: 981 cars on 448 streets out of 4,341 curb slots (skipped: crossing 119, another road joining 60, outside the playable area 50, bend 12, fixture 10, wall 3).
 
-### 16. Sidewalk furniture (`pipeline/sidewalks.ts`)
+### 16. Street and traffic lights (`pipeline/lights.ts`)
+
+Poles with an arm reaching out over the road, as dressing (so they're drawn, solid and checked like the rest of the street furniture). Real sizes next to the 1.71 m sedan: street lights 8 m with a 2.6 m arm, traffic lights on a 6.2 m mast with a 4.5 m arm, a 3.6 m pole on narrow streets, signal heads 1 m tall, park lamps 4.5 m.
+
+- **Traffic lights** from the 132 mapped signal nodes. A node at or within 15 m of a junction signalizes the junction: every road arriving there (one-way roads only where they flow in) gets a light at its stop line, 1.2 m back from the junction polygon, on the right-hand curb, its arm over the lanes and its heads facing the traffic coming in. Roads 9 m and wider get a mast arm, narrower ones a light on a short pole. A pole that would stand in another road, on a footpath, in a building or against a wall slides back up the road up to 6 m. A node away from any junction (a mid-block crossing) gets one light per direction.
+- **Street lights** by rule, every 32 m on avenues (both curbs, staggered; one-way carriageways only their outer, right-hand curb) and every 40 m on one side of minor streets at least 7 m wide, arm over the road. Skipped near junctions, crossings, driveways, trees and pillars, on bends and footpaths, in other roads and buildings, against walls and outside the playable area.
+- Placed before the sidewalk furniture, which then keeps clear of the poles.
+- Result: 165 traffic lights on mast arms and 29 on poles at 56 junctions, 1,106 street lights (skipped: outside the playable area 122, crossing 82, another road 76 plus 48 traffic lights with no room, junction 48, building 33, and a few for footpaths, pillars, trees, driveways, walls and bends).
+
+### 17. Sidewalk furniture (`pipeline/sidewalks.ts`)
 
 Solid street furniture, so the sidewalks read as the edge of the street rather than an extra lane.
 
 - Waiting sheds along the avenues (about every 260 m, against the back of the sidewalk, facing the road), planters along the avenues' curbs (every 34 m), bins (90 m) and fire hydrants (160 m) on every street with a sidewalk, and a few snack kiosks by the open parks. Each spacing is varied by a seeded amount per street side, so the streets don't line up.
 - A piece is skipped near a junction, a crossing, a driveway (gate, boom or bollard), a tree trunk or a pillar, on a sharp bend, on a footpath, in another road or a building, across a wall, outside the playable area, and where it would crowd another piece (1 m kept between them).
-- Result: 883 bins, 654 planters, 498 hydrants, 79 waiting sheds and 4 kiosks (skipped: another road 347, outside the playable area 343, building 119, crowded 109, crossing 88, junction 41, bend 17, pillar 14, footpath 14, wall 8, tree 3, fixture 3).
+- Result: 844 bins, 580 planters, 484 hydrants, 70 waiting sheds and 4 kiosks (skipped: another road 347, outside the playable area 343, crowded 245 (mostly by the street lights), building 119, crossing 88, junction 41, bend 17, pillar 14, footpath 14, wall 8, tree 3, fixture 3).
 ## Projection
 
 Equirectangular around a fixed origin (14.5509 N, 121.0503 E):

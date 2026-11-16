@@ -5,14 +5,16 @@
  *     "<City Kit Commercial>/Models/GLB format" public/models/props.glb
  *
  * - One mesh per dressing kind, named after it, sized to DRESSING[kind].size: length along
- *   +X, width along Z, height up, origin on the ground under the middle. Vertex colors, flat
- *   shaded, no textures.
+ *   +X, width along Z, height up, origin on the ground under the middle (poles: under the
+ *   pole, the arm out along +X). Vertex colors, flat shaded, no textures.
  * - From Kenney's City Kits (CC0, www.kenney.nl), with the palette texture baked into vertex
- *   colors as in tools/kenney-to-ts.ts: the dumpster, work light and street lamp (Roads),
- *   the planter (Suburban), the awning on the kiosk (Commercial).
+ *   colors as in tools/kenney-to-ts.ts: the dumpster, work light and traffic light heads
+ *   (Roads), the planter (Suburban), the awning on the kiosk (Commercial).
  * - Built here from boxes, cylinders and pyramids: everything the kits don't have
  *   (containers, the tower crane, dirt mounds, pipes, crates, benches, the pavilion, the
- *   guard booth, stall lines, wheel stops, the waiting shed, the kiosk, hydrants, bins).
+ *   guard booth, stall lines, wheel stops, the waiting shed, the kiosk, hydrants, bins),
+ *   and the lamp posts and traffic light poles (the kit's, scaled to real heights, came out
+ *   far too thick).
  *   Container bodies are near white: the game paints each one with its instance color.
  *
  * Runs once by hand when a model changes; the raw packs aren't in the repo.
@@ -22,7 +24,7 @@ import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { BufferAttribute, BufferGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
-import { DRESSING } from '../src/geometry/dressing';
+import { ARMS, DRESSING } from '../src/geometry/dressing';
 import type { DressingKind } from '../src/map/types';
 import { polyfillFileReader } from './car-to-glb';
 import { fit, readGlb, srgbToLinear, type Baked } from './kenney-to-ts';
@@ -105,7 +107,36 @@ class Shape implements Baked {
   }
 }
 
+/** A lamp post: a pole `r` thick and `h` tall at the origin, an arm `arm` m out along +x, and a lamp head (length, height, width) under its end. */
+function lampPost(h: number, arm: number, r: number, head: [number, number, number]): Shape {
+  const s = new Shape();
+  s.cylinder(0, 0, 0, r * 1.6, 0.6, C.signal, 8); // base
+  s.cylinder(0, 0.6, 0, r, h - 0.6, C.lampPole, 8);
+  s.box(arm / 2, h - 0.12, 0, arm, 0.12, 0.12, C.lampPole);
+  s.box(arm - head[0] / 2 + 0.05, h - 0.12 - head[1], 0, head[0], head[1], head[2], C.lampHead);
+  s.box(arm - head[0] / 2 + 0.05, h - 0.13 - head[1], 0, head[0] * 0.8, 0.02, head[2] * 0.8, C.lampGlass);
+  return s;
+}
+
+/**
+ * Turns a Kenney signal so its lamps face -z. Kenney's face +z (checked against the
+ * renders); half a turn about the vertical.
+ */
+function facingNegZ(b: Baked): Baked {
+  const pos = b.position.slice();
+  const nor = b.normal.slice();
+  for (let i = 0; i < pos.length; i += 3) {
+    [pos[i], pos[i + 2]] = [-pos[i], -pos[i + 2]];
+    [nor[i], nor[i + 2]] = [-nor[i], -nor[i + 2]];
+  }
+  return { position: pos, normal: nor, color: b.color };
+}
+
 const C = {
+  signal: hex('#3a3f44'),
+  lampPole: hex('#7d858c'),
+  lampHead: hex('#5c636a'),
+  lampGlass: hex('#f4efd8'),
   white: hex('#e8e8e4'),
   doors: hex('#9a9a96'),
   yellow: hex('#e9b324'),
@@ -205,8 +236,34 @@ function build(roads: string, suburban: string, commercial: string): Record<Dres
   }
   shapes.dumpster = kenney(roads, 'dumpster.glb', [size('dumpster')[0], size('dumpster')[2], size('dumpster')[1]], false);
   shapes.worklight = kenney(roads, 'construction-light.glb', [size('worklight')[0], size('worklight')[2], size('worklight')[1]], false);
-  // Street lamp: Kenney's curved lamp, scaled evenly to the lamp's height (its arm reaches out along x).
-  shapes.lamp = kenneyToHeight(roads, 'light-curved.glb', size('lamp')[2], true);
+  // Lamps built in code: Kenney's, scaled up evenly to a real lamp's height, came out with
+  // poles 0.4 to 0.8 m thick (toy-like next to the car). Real proportions instead: a slim
+  // pole at the origin, the arm out along +x, the lamp head under its end.
+  shapes.lamp = lampPost(size('lamp')[2], ARMS.lamp, 0.07, [0.45, 0.22, 0.3]);
+  shapes.streetlight = lampPost(size('streetlight')[2], ARMS.streetlight, 0.12, [0.8, 0.18, 0.38]);
+  {
+    // Traffic light on a mast arm: a dark pole, an arm out over the road along +x, a signal
+    // head (Kenney's) hanging near its end and a second one on the pole, facing -z: the
+    // traffic coming toward it (pipeline/lights.ts turns the arm over the lanes).
+    const h = size('signal')[2];
+    const arm = ARMS.signal;
+    const s = new Shape();
+    s.cylinder(0, 0, 0, 0.16, h, C.signal, 8);
+    s.box(arm / 2, h - 0.55, 0, arm, 0.18, 0.18, C.signal);
+    s.box(arm * 0.28, h - 1.3, 0, 0.08, 0.8, 0.08, C.signal); // brace
+    const head = kenneyToHeight(roads, 'traffic-light-object-vertical.glb', 1.0, false);
+    s.add(facingNegZ(head), arm - 0.45, h - 1.55, 0);
+    s.add(facingNegZ(head), 0, 2.4, -0.22);
+    shapes.signal = s;
+  }
+  {
+    // Pole-mounted traffic light for narrower streets: a 3.6 m pole with a head on top.
+    const h = size('signalpole')[2];
+    const s = new Shape();
+    s.cylinder(0, 0, 0, 0.1, h - 0.9, C.signal, 8);
+    s.add(facingNegZ(kenneyToHeight(roads, 'traffic-light-object-vertical.glb', 1.0, false)), 0, h - 1.0, -0.12);
+    shapes.signalpole = s;
+  }
   {
     const [l, w] = size('bench');
     const s = new Shape();

@@ -49,7 +49,7 @@ export interface SidewalkStats {
 }
 
 /** Position and heading at arc length s along a polyline. */
-function along(pts: Point[], acc: number[], s: number): { p: Point; dir: number } {
+export function along(pts: Point[], acc: number[], s: number): { p: Point; dir: number } {
   let i = 0;
   while (i < pts.length - 2 && acc[i + 1] < s) i++;
   const seg = acc[i + 1] - acc[i] || 1;
@@ -59,7 +59,7 @@ function along(pts: Point[], acc: number[], s: number): { p: Point; dir: number 
 }
 
 /** Do two convex polygons overlap (separating axis test)? */
-function overlaps(a: Point[], b: Point[]): boolean {
+export function overlaps(a: Point[], b: Point[]): boolean {
   for (const ring of [a, b]) {
     for (let i = 0; i < ring.length; i++) {
       const [p, q] = [ring[i], ring[(i + 1) % ring.length]];

@@ -369,7 +369,7 @@ export default function App() {
           {roadblocks && built && <Roadblocks props={roadblocks.props} loose={roadblocks.loose} poses={blockPoses} far={settings.parkedFar} shadows={settings.shadowMap > 0} />}
           {map?.dressing && built && (
             <Suspense fallback={null}>
-              <Dressing pieces={map.dressing} near={settings.dressingNear} far={settings.dressingFar} shadows={settings.shadowMap > 0} />
+              <Dressing pieces={map.dressing} near={settings.dressingNear} mid={settings.dressingMid} far={settings.dressingFar} shadows={settings.shadowMap > 0} />
             </Suspense>
           )}
           {map?.parked && built && (
