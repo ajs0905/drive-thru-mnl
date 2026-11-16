@@ -92,7 +92,7 @@ export function AboutPanel({ map, onClose }: { map: MapData | null; onClose: () 
   );
 }
 
-export function PauseMenu({ onResume, onReset, onSettings, onQuit }: { onResume: () => void; onReset: () => void; onSettings: () => void; onQuit: () => void }) {
+export function PauseMenu({ onResume, onReset, onHelp, onSettings, onQuit }: { onResume: () => void; onReset: () => void; onHelp: () => void; onSettings: () => void; onQuit: () => void }) {
   return (
     <Panel title="PAUSED" color="green">
       <div className="actions">
@@ -101,6 +101,9 @@ export function PauseMenu({ onResume, onReset, onSettings, onQuit }: { onResume:
         </button>
         <button type="button" className="chip" onClick={onReset}>
           Reset car
+        </button>
+        <button type="button" className="chip" onClick={onHelp}>
+          How to play
         </button>
         <button type="button" className="chip" onClick={onSettings}>
           Settings

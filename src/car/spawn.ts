@@ -69,11 +69,15 @@ export const START_NEAR = 'High Street';
  * the playable area. Null if the map has no drivable road.
  */
 export function startSpot(map: Pick<MapData, 'roads' | 'bounds' | 'playable'>, near = START_NEAR): Spawn | null {
+  return spawnOnRoad(map, startPoint(map, near));
+}
+
+/** The middle of the roads named after `near`, else of the playable area (else the map). */
+export function startPoint(map: Pick<MapData, 'roads' | 'bounds' | 'playable'>, near = START_NEAR): Point {
   const named = map.roads.filter((r) => r.name?.includes(near)).flatMap((r) => r.points);
   const ring = map.playable ?? [];
   const pts = named.length ? named : ring;
-  const center: Point = pts.length
+  return pts.length
     ? [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length]
     : [(map.bounds.minX + map.bounds.maxX) / 2, (map.bounds.minY + map.bounds.maxY) / 2];
-  return spawnOnRoad(map, center);
 }

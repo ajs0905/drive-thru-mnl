@@ -1,7 +1,8 @@
 import { MapControls } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { startSpot } from './car/spawn';
+import { curbStart } from './car/curbSpot';
+import { loadSave, writeSave, type Save } from './game/save';
 import { mapViewData, streetNameLookup } from './geometry/mapView';
 import { loadMap, type MapSource } from './map/loadMap';
 import { BACKDROP, backdropReady } from './ui/backdrop';
@@ -40,6 +41,7 @@ import { Menu, type LoadStatus } from './ui/Menu';
 import { AboutPanel, PauseMenu, SettingsPanel } from './ui/Panels';
 import { useSideways } from './ui/sideways';
 import { TouchControls } from './ui/TouchControls';
+import { Welcome } from './ui/Welcome';
 import './ui/ui.css';
 
 // Drive mode and the physics engine load only when the player starts driving.
@@ -243,11 +245,23 @@ export default function App() {
   const [drive, setDrive] = useState({ step: STEP.engine as number, mounted: false, waiting: false, loaderShown: false, count: 0 });
   const [paused, setPaused] = useState(false);
   const [bigMap, setBigMap] = useState(false);
+  // Progress kept between visits (game/save.ts), and "How to play" opened from the pause menu.
+  const [save, setSave] = useState<Save>(loadSave);
+  const updateSave = useCallback((change: (s: Save) => Save) => {
+    setSave((s) => {
+      const next = change(s);
+      writeSave(next);
+      return next;
+    });
+  }, []);
+  const [help, setHelp] = useState(false);
   const driving = screen === 'drive';
   const loading = driving && drive.step < STEP.done;
-  const holdPhysics = loading || drive.waiting || paused || bigMap || panel !== null;
+  // The very first drive ends its loading on the welcome card instead of "press any key".
+  const firstWelcome = driving && drive.waiting && !save.seenWelcome;
+  const holdPhysics = loading || drive.waiting || paused || bigMap || panel !== null || help;
 
-  const start = useMemo(() => (map ? startSpot(map) : null), [map]);
+  const start = useMemo(() => (map ? curbStart(map) : null), [map]);
   const viewData = useMemo(() => (map ? mapViewData(map) : null), [map]);
   const streetAt = useMemo(() => (map ? streetNameLookup(map) : null), [map]);
   const roadblocks = useMemo(() => (map ? roadblocksFor(map, ROAD_Y) : null), [map]);
@@ -277,6 +291,7 @@ export default function App() {
 
   const leaveDriving = useCallback(() => {
     session.releaseTouch();
+    setHelp(false);
     setPaused(false);
     setBigMap(false);
     setPanel(null);
@@ -302,7 +317,8 @@ export default function App() {
 
   const startPlaying = useCallback(() => {
     setDrive((d) => ({ ...d, waiting: false, loaderShown: false }));
-  }, []);
+    if (!save.seenWelcome) updateSave((s) => ({ ...s, seenWelcome: true }));
+  }, [save.seenWelcome, updateSave]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -312,8 +328,14 @@ export default function App() {
         return;
       }
       if (drive.waiting) {
+        // The welcome card waits for its button (Enter or Esc too), not just any key.
+        if (firstWelcome && e.code !== 'Enter' && e.code !== 'Escape') return;
         e.preventDefault();
         return startPlaying();
+      }
+      if (help) {
+        if (e.code === 'Escape') setHelp(false);
+        return;
       }
       if (loading) return;
       if (e.code === 'Escape') {
@@ -324,7 +346,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screen, driving, loading, drive.waiting, bigMap, panel, paused, cityReady, startDriving, startPlaying]);
+  }, [screen, driving, loading, drive.waiting, firstWelcome, help, bigMap, panel, paused, cityReady, startDriving, startPlaying]);
 
   // Phones held upright: the drive is drawn turned a quarter, the menu stays upright.
   const sideways = useSideways(driving && TOUCH);
@@ -461,7 +483,7 @@ export default function App() {
         </Hud>
       )}
 
-      {driving && drive.loaderShown && (
+      {driving && drive.loaderShown && !firstWelcome && (
         <div onPointerDown={drive.waiting ? startPlaying : undefined}>
           <DriveLoading step={drive.step} waiting={drive.waiting} hidden={false} touch={TOUCH} background={BACKDROP} place="High Street" tip={tipFor(TOUCH, drive.count - 1)} />
         </div>
@@ -469,17 +491,20 @@ export default function App() {
 
       {driving && bigMap && viewData && <BigMap view={viewData} session={session} touch={TOUCH} onClose={() => setBigMap(false)} />}
 
-      {driving && paused && !panel && (
+      {driving && paused && !panel && !help && (
         <PauseMenu
           onResume={() => setPaused(false)}
           onReset={() => {
             session.requestReset();
             setPaused(false);
           }}
+          onHelp={() => setHelp(true)}
           onSettings={() => setPanel('settings')}
           onQuit={leaveDriving}
         />
       )}
+
+      {(firstWelcome || (driving && help)) && <Welcome touch={TOUCH} first={firstWelcome} onClose={firstWelcome ? startPlaying : () => setHelp(false)} />}
 
       {panel === 'settings' && <SettingsPanel quality={quality} onQuality={pickQuality} onClose={() => setPanel(null)} />}
       {panel === 'about' && <AboutPanel map={map} onClose={() => setPanel(null)} />}

@@ -71,7 +71,7 @@ export function DriveLoading({
   );
 }
 
-function Keys() {
+export function Keys() {
   return (
     <div className="keys">
       <span className="caps">
@@ -101,7 +101,7 @@ function Keys() {
   );
 }
 
-function TouchPicture() {
+export function TouchPicture() {
   return (
     <>
       <div className="touch-picture" aria-label="Steer with the buttons on the left, handbrake, brake and gas on the right, reset and pause at the top right" role="img">

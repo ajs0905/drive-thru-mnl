@@ -67,7 +67,8 @@ src/
               shared road rules (lanes, sidewalks)
   car/        car spec and tuning, arcade controls, drift         pure TS, no three.js, no React
               assist, gearbox, body lean, chase camera math,      (Rapier objects passed in)
-              spawn point, Rapier vehicle setup and step
+              spawn and curb spots, Rapier vehicle setup and step
+  game/       saved progress (validated), and later the modes    pure TS, no three.js, no React
   scene/      three.js / React Three Fiber components            the only place that knows about rendering
   ui/         menu, loading screens, HUD, maps, pause menu       DOM and 2D canvas, no three.js
   App.tsx     screens, drive mode, wiring
@@ -86,6 +87,7 @@ docs/         this folder
 | `src/geo`, `src/map` (except the loader) | nothing app-specific | three.js, React, `src/scene`, `pipeline` |
 | `src/geometry` | `src/map/types`, other geometry files | three.js, React, `src/scene`, `pipeline` |
 | `src/car` | `src/map/types`, Rapier (types; the engine is passed in) | three.js, React, `src/scene`, `pipeline` |
+| `src/game` | `src/map`, `src/geometry`, `src/car` | three.js, React, `src/scene`, `pipeline` |
 | `src/scene` | `src/geometry`, `src/map`, three.js, React | `pipeline` |
 | `src/ui` | `src/geometry`, `src/map`, `src/car`, React, the drive session in `src/scene` | `pipeline` |
 | `pipeline` | `src/geo`, `src/geometry`, `src/map` | `src/scene`, three.js, React |
@@ -205,7 +207,7 @@ sequenceDiagram
 
 **Screens** (`src/ui`, wired in `App.tsx`): the menu shows at once over a still image (`public/menu.jpg`, or `menu-portrait.jpg` on screens narrower than 2:3; preloaded by `index.html`, and the city build waits until it's decoded so it never shows on black, see `ui/backdrop.ts`) while the map downloads (with real progress, `loadMap`'s `onProgress`) and the city builds behind it; the Play sign shows the steps and turns into Play when the city is built. There is no separate loading screen. Settings (the quality tier) and How it's built are panels over the menu.
 
-**Drive mode** (in now): Play shows the drive loading screen (the steps below, the controls, a tip), loads `scene/Drive.tsx` and the physics engine as a separate chunk, builds the collisions, and puts the car on the road nearest the middle of High Street (`startSpot` in `car/spawn.ts`). The canvas switches from on-demand to continuous rendering. Once everything is ready, the loading screen waits for a key or a tap (every drive: it's the one place the controls are shown), then fades out. Esc pauses (Resume, Reset car, Settings, Back to menu); the physics is paused while loading, paused or on the big map.
+**Drive mode** (in now): Play shows the drive loading screen (the steps below, the controls, a tip), loads `scene/Drive.tsx` and the physics engine as a separate chunk, builds the collisions, and parks the car at the right-hand curb nearest the middle of High Street, parallel to the road and facing the way that lane goes (`car/curbSpot.ts`: on a ground street at least 6 m wide, clear of parked cars, solid furniture, driveways and zebras, 8 m from junctions, off bends; it slides along the curb to the nearest clear spot). The canvas switches from on-demand to continuous rendering. Once everything is ready, the loading screen waits for a key or a tap, then fades out; on the very first drive it ends on a welcome card instead (`ui/Welcome.tsx`: what there is to do and the controls for keys or touch, closed with its button; remembered in the save, `game/save.ts`, and opened again from the pause menu's How to play). Esc pauses (Resume, Reset car, How to play, Settings, Back to menu); the physics is paused while loading, paused, on the big map or on the welcome card. The save is one localStorage key read through a parser that keeps only valid fields and fills in defaults, so a hand-edited, old or cut-short save can't break the game.
 
 **Drive session** (`scene/driveSession.ts`): one plain object the car writes every frame (map position, height, heading, speed) and the DOM HUD reads in its own animation loop, plus touch buttons and reset requests going the other way. Nothing goes through React state per frame. The HUD (`ui/Hud.tsx`) writes the speed straight into its element, looks up the street 4 times a second (`streetNameLookup` in `geometry/mapView.ts`, a segment grid that prefers roads at the car's level and, at a junction, the one the car is driving along; `ui/streetSign.ts` only changes the sign once the car has stayed on a street for a second, and doesn't show it again for a street it just showed) and redraws the heading-up minimap about 20 times a second; the minimap and the big map (`ui/BigMap.tsx`) draw the same `mapViewData` (roads by class, low buildings, the drivable edge, one label per street; everything is clipped to the edge, with a soft shadow along its inside) on a 2D canvas (`ui/mapCanvas.ts`). Neither draws the map shapes every frame: both paste cached 256 px tiles (`ui/mapTiles.ts`), each drawn once per zoom level (levels double from 0.25 to 16 px per meter; a view uses the first one at least as detailed, so tiles only shrink), least recently used dropped. Street names are drawn on top each frame, their widths cached. The minimap only redraws when the car has moved or turned enough to see.
 

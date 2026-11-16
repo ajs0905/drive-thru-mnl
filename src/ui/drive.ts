@@ -27,3 +27,8 @@ export function tipFor(touch: boolean, n: number): string {
   const list = touch ? TIPS.touch : TIPS.keys;
   return list[((n % list.length) + list.length) % list.length];
 }
+
+/** What the welcome card lists (ui/Welcome.tsx): free roam always, the modes and cars once they're in. */
+export const WELCOME_ROWS: { title: string; text: string }[] = [
+  { title: 'FREE ROAM', text: "Drive BGC's real streets. Try the handling, take the flyovers, find your own shortcuts." },
+];

@@ -63,8 +63,8 @@ export function carCorners(p: Point, heading: number, margin = 0): Point[] {
   ];
 }
 
-/** Do two convex polygons overlap (separating axis test)? */
-function overlaps(a: Point[], b: Point[]): boolean {
+/** Do two convex polygons overlap (separating axis test)? Touching doesn't count. */
+export function footprintsOverlap(a: Point[], b: Point[]): boolean {
   for (const ring of [a, b])
     for (let i = 0; i < ring.length; i++) {
       const [p, q] = [ring[i], ring[(i + 1) % ring.length]];
@@ -160,7 +160,7 @@ export function resetSpotFinder(
       if (edge.length >= 3 && !pointInRing(p, edge)) return false;
       if (hard.query(lo, hi).some((e) => segmentDistanceToRing(e.a, e.b, foot) < R.clearance)) return false;
       if (rings.query(p, p).some((e) => pointInRing(p, e.item))) return false;
-      if (soft.query(lo, hi).some((e) => overlaps(foot, e.item))) return false;
+      if (soft.query(lo, hi).some((e) => footprintsOverlap(foot, e.item))) return false;
     }
     return true;
   };

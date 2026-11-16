@@ -49,7 +49,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | **Performance & Quality** | | |
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
 | Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
-| Automated tests | 667 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 675 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 31 automated checks | A CI gate: counts can only go down |
 
 ## How It Works
