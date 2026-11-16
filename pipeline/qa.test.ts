@@ -49,6 +49,11 @@ describe('runQa', () => {
     expect(kinds).toEqual({ 'tree-on-road': 1, 'tree-in-building': 1, 'barrier-on-road': 1 });
   });
 
+  it('finds bollards and blocks in the lanes of a road they leave open', () => {
+    const m: MapData = { ...map([road({})]), fixtures: [{ kind: 'block', p: [30, 0], rot: 0 }, { kind: 'bollard', p: [60, 5.2], rot: 0 }] };
+    expect(countByKind(runQa(m))).toEqual({ 'fixture-in-lanes': 1 });
+  });
+
   it('finds solid street furniture in a road or a building, but not flat stall lines', () => {
     const m: MapData = {
       ...map([road({})], [box(40, 20, 50, 30)]),

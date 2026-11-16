@@ -22,7 +22,7 @@ import { PARKED_MODELS, PARKED_PAINTS } from '../src/car/parked';
 import { footprintsOverlap } from '../src/car/resetSpot';
 import { snap } from '../src/routing/graph';
 import { pointOnRoute, Router } from '../src/routing/route';
-import { roadsWithParking, TrafficSim, type Agent } from '../src/traffic/sim';
+import { parkingRoom, TrafficSim, type Agent } from '../src/traffic/sim';
 import type { Replay } from '../src/sim/replay';
 import { seeded } from '../src/map/hash';
 import type { MapData } from '../src/map/types';
@@ -102,16 +102,25 @@ for (const f of readdirSync('tests/replays').filter((x) => x.endsWith('.json')))
 
 // --- Traffic.
 const across = new Router(graph, 4).route(snap(graph, [-500, -600])!, snap(graph, [800, 1200])!)!;
-const avoid = roadsWithParking(map.roads, map.parked ?? []);
+const room = parkingRoom(map.roads, map.parked ?? []);
 const foot = (a: Agent): [number, number][] => {
   const [c, s, hl, hw] = [Math.cos(a.heading), Math.sin(a.heading), a.len / 2, a.width / 2];
   return [[a.x + c * hl - s * hw, a.y + s * hl + c * hw], [a.x - c * hl - s * hw, a.y - s * hl + c * hw], [a.x - c * hl + s * hw, a.y - s * hl - c * hw], [a.x + c * hl + s * hw, a.y + s * hl - c * hw]];
 };
 console.log(`\ntraffic, 5 minutes around a player driving ${(across.length / 1000).toFixed(1)} km across BGC at 12 m/s:`);
-console.log('cars   us per step   moving   overlapping footprints (samples)');
-for (const count of [6, 8, 10]) {
-  const sim = new TrafficSim(graph, { count, models: PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]], weight: m.weight })), paints: PARKED_PAINTS.map((p) => p.weight), avoid });
-  let [moving, total, overlaps, time] = [0, 0, 0, 0];
+console.log('cars   us per step   moving   overlapping footprints (samples)   touching a parked car (samples)');
+// Parked cars on a grid, to check traffic keeps clear of them.
+const parkedGrid = new Map<string, [number, number][][]>();
+for (const c of map.parked ?? []) {
+  const [l, w] = PARKED_MODELS[c.v].size;
+  const [co, si] = [Math.cos(c.rot), Math.sin(c.rot)];
+  const corners: [number, number][] = [[l / 2, w / 2], [-l / 2, w / 2], [-l / 2, -w / 2], [l / 2, -w / 2]].map(([x, y]) => [c.p[0] + co * x - si * y, c.p[1] + si * x + co * y]);
+  const k = `${Math.floor(c.p[0] / 20)},${Math.floor(c.p[1] / 20)}`;
+  parkedGrid.set(k, [...(parkedGrid.get(k) ?? []), corners]);
+}
+for (const count of [6, 10, 14, 18]) {
+  const sim = new TrafficSim(graph, { count, models: PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]], weight: m.weight })), paints: PARKED_PAINTS.map((p) => p.weight), room });
+  let [moving, total, overlaps, time, parked] = [0, 0, 0, 0, 0];
   for (let i = 0; i < 60 * 300; i++) {
     const at = pointOnRoute(across, ((i / 60) * 12) % across.length);
     const t = performance.now();
@@ -127,6 +136,14 @@ for (const count of [6, 8, 10]) {
           const [a, b] = [sim.agents[x], sim.agents[y]];
           if (Math.abs(a.z - b.z) < 1.5 && Math.hypot(a.x - b.x, a.y - b.y) < 6 && footprintsOverlap(foot(a), foot(b))) overlaps++;
         }
+    if (i % 30 === 0)
+      for (const a of sim.agents) {
+        const [gx, gy] = [Math.floor(a.x / 20), Math.floor(a.y / 20)];
+        const mine = foot(a);
+        let hit = false;
+        for (let x = gx - 1; x <= gx + 1 && !hit; x++) for (let y = gy - 1; y <= gy + 1 && !hit; y++) for (const c of parkedGrid.get(`${x},${y}`) ?? []) if (a.z < 1 && footprintsOverlap(mine, c)) hit = true;
+        if (hit) parked++;
+      }
   }
-  console.log(`${String(count).padStart(4)}   ${fixed((time / (60 * 300)) * 1000, 0)}       ${fixed((moving / total) * 100, 0)}%   ${overlaps} of ${60 * 10}`);
+  console.log(`${String(count).padStart(4)}   ${fixed((time / (60 * 300)) * 1000, 0)}       ${fixed((moving / total) * 100, 0)}%   ${overlaps} of ${60 * 10}                       ${parked} of ${count * 600}`);
 }

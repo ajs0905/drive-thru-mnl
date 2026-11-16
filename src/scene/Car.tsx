@@ -22,7 +22,7 @@ import { inputFromKeys, KEY_BINDINGS, NO_KEYS, type DriveInput } from '../car/co
 import { headingOfDirection, yawForHeading } from '../car/spawn';
 import { restLift, wheelHardPoint, type CarSpec } from '../car/spec';
 import { chassisCollider, newDriveState, resetOnGround, RESET, setupWheels, stepVehicle, type DriveState, type ResetPose, type VehicleController } from '../car/vehicle';
-import { blinkAfterReset, blobShadow, placeShadow, poseBody, prepareCarModel, setBrakeLights, setReverseLights, updateHalos } from './carModel';
+import { blinkAfterReset, blobShadow, placeShadow, placeSunShadow, poseBody, prepareCarModel, setBrakeLights, setReverseLights, sunShadowMesh, updateHalos } from './carModel';
 import { mergeKeys, type DriveSession } from './driveSession';
 
 /** Seconds upside down (or fallen off the world) before the car puts itself back on its wheels. */
@@ -62,13 +62,16 @@ export function Car({
   const gltf = useLoader(GLTFLoader, `${import.meta.env.BASE_URL}${spec.model}`);
   const model = useMemo(() => prepareCarModel(gltf.scene), [gltf]);
   const shadow = useMemo(() => blobShadow(spec), [spec]);
+  const sunShadow = useMemo(() => sunShadowMesh(), []);
   useEffect(
     () => () => {
       model.dispose();
       shadow.geometry.dispose();
       shadow.material.dispose();
+      sunShadow.geometry.dispose();
+      sunShadow.material.dispose();
     },
-    [model, shadow],
+    [model, shadow, sunShadow],
   );
 
   const own = useRef<RapierRigidBody>(null);
@@ -254,6 +257,8 @@ export function Car({
       n++;
     }
     placeShadow(shadow, v.pos.x, n > 0 ? y / n : null, v.pos.z, Math.atan2(v.fwd.x, v.fwd.z));
+    // And its shadow from the sun, beside it (not in the sun's shadow map, which lags behind a moving car).
+    placeSunShadow(sunShadow, v.pos.x, n > 0 ? y / n : null, v.pos.z, Math.atan2(v.fwd.x, v.fwd.z), spec.halfExtents[0] * 2, spec.halfExtents[2] * 2);
     // Backing up: reverse lights on, and no brake lights (the brake key is also reverse).
     const reversing = speed < -0.3;
     const braking = drive.braking && !reversing;
@@ -281,6 +286,7 @@ export function Car({
         <primitive object={model.root} />
       </RigidBody>
       <primitive object={shadow} />
+      <primitive object={sunShadow} />
     </>
   );
 }

@@ -20,7 +20,7 @@ ODbL lets us use and adapt the data, including in a public project, as long as i
 | [`data/barriers.overpassql`](../data/barriers.overpassql) | Second query, same box: walls, fences, hedges, guard rails, gates, booms, bollards, trees, and traffic signals |
 | `data/raw/bgc-barriers.geojson` | Its raw export (550 KB, 1,634 features). Optional: without it the map has no walls or trees. |
 | [`data/playable-area.geojson`](../data/playable-area.geojson) | 15-point polygon around BGC, 3.51 km². Where the car can drive. |
-| `public/data/bgc.json` | The processed map the game loads (3.3 MB, 779 KB gzipped). Generated: don't edit by hand. |
+| `public/data/bgc.json` | The processed map the game loads (3.3 MB, 775 KB gzipped). Generated: don't edit by hand. |
 | `public/data/sample.json` | Tiny map built from the test fixture, used when `bgc.json` is missing |
 | `data/qa-baseline.json` | Accepted map QA counts; CI fails if a count goes above it |
 
@@ -140,8 +140,8 @@ From the second export. Kept as a separate step and file so refreshing it never 
 - **Walls, fences, hedges, guard rails** (`barrier=*` ways; closed ones like the Manila Golf Club wall come as polygons and are walked as outlines). Heights from `height` tags, else 2.4 m walls, 1.2 m retaining walls, 1.8 m fences, 1.3 m hedges, 0.8 m rails. Clipped like roads.
 - Walls, fences and hedges are **cut open wherever they stand on a road or path** (sampled every 25 cm against the road surface plus 40 cm), so a mapped wall never blocks a street. Guard rails and jersey barriers line roads on purpose and stay whole. A gate in a wall with no road through it opens a 4 m gap.
 - **Trees** from `natural=tree` nodes and `natural=tree_row` lines (one every 8 m). Palms from `leaf_cycle=palm` or the species (royal palms, coconuts and others); broadleaf for other tagged species; untagged ones are 25% palms, seeded per tree. Size from a `height` tag or seeded. Trees up to 2 m into a road are street trees mapped a little off and are moved to the curb; deeper ones, and trees in buildings, in water or on top of another tree, are dropped. A tree whose crown would reach into a flyover or footbridge (or its barrier) is moved away by up to 4 m, or dropped; small trees that fit under a high deck stay.
-- **Fixtures**: gates and parking booms are turned across the road they sit on and sized to it; bollards and concrete blocks stay where mapped. Lowered-curb points are ignored. Traffic signal nodes are passed on to step 16; the 6 mapped street lamps are ignored (step 16 places them by rule).
-- Result: 44 barrier pieces (6.5 km, 25 openings), 922 trees (241 palms; 185 moved to the curb, 8 moved away from a flyover, 9 dropped beside one), 137 gates, 70 booms, 52 bollards, 12 blocks.
+- **Fixtures**: gates and parking booms are turned across the road they sit on and sized to it; bollards and concrete blocks stay where mapped, except in the lanes of a road they don't close: OSM puts them on the road's line, and a block in the middle of an open lane is a placement error. Once the lots (step 14) have added theirs, those are moved to just past the curb on their side (or the right, from the centerline), or dropped if that's in a building or on another road (`pipeline/fixtureLanes.ts`). Ones that close a road, alone or in a row, stay. Lowered-curb points are ignored. Traffic signal nodes are passed on to step 16; the 6 mapped street lamps are ignored (step 16 places them by rule).
+- Result: 44 barrier pieces (6.5 km, 25 openings), 922 trees (241 palms; 185 moved to the curb, 8 moved away from a flyover, 9 dropped beside one), 137 gates, 70 booms, 52 bollards, 12 blocks. Out of open lanes: 4 bollards and blocks moved to the curb, 3 dropped.
 
 ### 13. Pillars and posts (`pipeline/structures.ts`)
 
@@ -247,6 +247,7 @@ Estimates get a fixed ±20% variation from a hash of the building id: rows of si
 | Poles beside a zebra crossing's band | 85 | 0 |
 | Poles or their arms reaching into a flyover deck or a raised building | 4 | 0 |
 | Solid furniture drawn into other solid furniture (a pole through a roof or awning) | (new) | 0 |
+| Bollards and concrete blocks in the lanes of a road they don't close | (new) 8 | 0 |
 | Drivable roads in a piece of the road network that joins no other road (away from the playable edge) | (new) 24 | 18 (crossings drawn without a shared node; roads poking past the edge and roads closed by bollards no longer count as joining) |
 
 The remaining service-road cases are driveways that really go into a building (parking entrances, drop-offs) and access roads hugging a mall or tower, which are left as mapped. The one street case is a road mapped straight through a building.

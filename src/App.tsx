@@ -1,5 +1,5 @@
 import { MapControls } from '@react-three/drei';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
 import { curbStart } from './car/curbSpot';
 import { GameSession } from './game/session';
@@ -58,6 +58,9 @@ const PARAMS = new URLSearchParams(window.location.search);
 const MAP_VIEW = PARAMS.has('cam') || PARAMS.get('view') === 'map';
 /** Frame rate, draw calls and triangles in a corner: `?debug` (and always in the map view). */
 const DEBUG = MAP_VIEW || PARAMS.has('debug');
+/** Seconds of driving physics before the first welcome card opens: the car has landed and the camera has settled. */
+const WELCOME_AFTER = 0.9;
+
 /** A phone or tablet: touch controls, and the touch version of the help. */
 const TOUCH = window.matchMedia?.('(pointer: coarse)').matches ?? false;
 
@@ -112,13 +115,18 @@ function FrameProbe({ onFrame }: { onFrame: (calls: number, triangles: number) =
  * nudges the performance factor (see nextFactor). Gaps between frames (idle, on-demand
  * rendering) are skipped, so not drawing doesn't look like being slow.
  */
-function AdaptiveResolution({ factor, onChange }: { factor: number; onChange: (f: number) => void }) {
-  const run = useRef({ frames: 0, time: 0 });
+function AdaptiveResolution({ factor, onChange, active }: { factor: number; onChange: (f: number) => void; active: boolean }) {
+  const run = useRef({ frames: 0, time: 0, warm: 0 });
   useFrame((_, delta) => {
     const r = run.current;
-    if (delta > 0.1) {
-      r.frames = 0;
-      r.time = 0;
+    // Only while frames run back to back (not the odd frame drawn while paused), and not the
+    // first few after starting again (shaders, the shadow map and tiles catching up).
+    if (!active || delta > 0.1) {
+      Object.assign(r, { frames: 0, time: 0, warm: RESUME_WARMUP });
+      return;
+    }
+    if (r.warm > 0) {
+      r.warm--;
       return;
     }
     r.frames++;
@@ -130,6 +138,23 @@ function AdaptiveResolution({ factor, onChange }: { factor: number; onChange: (f
       if (next !== factor) onChange(next);
     }
   });
+  return null;
+}
+
+/** Frames skipped by the resolution's frame rate count after driving resumes. */
+const RESUME_WARMUP = 20;
+
+/**
+ * When the drive starts again after a pause (the pause menu, the big map, a menu), the
+ * clock forgets the paused time: the next frame's step would otherwise span the whole
+ * pause, and the physics would run up to half a second of steps in one frame to catch up
+ * (a hitch, and the car and traffic jumping forward).
+ */
+function ResumeClock({ running }: { running: boolean }) {
+  const clock = useThree((s) => s.clock);
+  useEffect(() => {
+    if (running) clock.getDelta();
+  }, [running, clock]);
   return null;
 }
 
@@ -251,17 +276,16 @@ export default function App() {
   // pause menu, and the modes and cars menu. The game is read through small snapshots, so
   // the run's clock ticking doesn't re-render the whole app.
   const [game] = useState(() => new GameSession());
-  const save = useSyncExternalStore(game.subscribe, () => game.save);
   const runPhase = useSyncExternalStore(game.subscribe, () => game.run?.phase ?? null);
-  const [help, setHelp] = useState(false);
+  // "How to play": 'first' on the very first drive (once the car has landed), 'menu' from the pause menu.
+  const [help, setHelp] = useState<'first' | 'menu' | null>(null);
+  const [welcomeDue, setWelcomeDue] = useState(false);
   const [modes, setModes] = useState(false);
   const driving = screen === 'drive';
   const loading = driving && drive.step < STEP.done;
-  // The very first drive ends its loading on the welcome card instead of "press any key".
-  const firstWelcome = driving && drive.waiting && !save.seenWelcome;
   // The intro holds the car (game.holding) but keeps the physics running, so the teleport to the pickup shows behind it.
   const runCard = runPhase === 'intro' || runPhase === 'done' || runPhase === 'failed';
-  const holdPhysics = loading || drive.waiting || paused || bigMap || panel !== null || help || modes || (runCard && runPhase !== 'intro');
+  const holdPhysics = loading || drive.waiting || paused || bigMap || panel !== null || help !== null || modes || (runCard && runPhase !== 'intro');
 
   const start = useMemo(() => (map ? curbStart(map) : null), [map]);
   useEffect(() => {
@@ -299,7 +323,8 @@ export default function App() {
     session.releaseTouch();
     game.abandon();
     setModes(false);
-    setHelp(false);
+    setHelp(null);
+    setWelcomeDue(false);
     setPaused(false);
     setBigMap(false);
     setPanel(null);
@@ -308,23 +333,50 @@ export default function App() {
   }, [session, game]);
 
   // The car is placed once its first frame has run: then the loading screen waits for a
-  // key or a tap (so there's time to read the controls) before it fades out.
+  // key or a tap (so there's time to read the controls) before it fades out. The very first
+  // drive goes straight in instead, and the welcome card opens once the car has landed.
   useEffect(() => {
     if (!driving || drive.step !== STEP.solid || !drive.mounted) return;
     let frame = 0;
     const watch = () => {
       if (session.car.placed) {
-        setDrive((d) => ({ ...d, step: STEP.done, waiting: true, loaderShown: true }));
+        const first = !game.save.seenWelcome;
+        setDrive((d) => ({ ...d, step: STEP.done, waiting: !first, loaderShown: !first }));
+        if (first) setWelcomeDue(true);
         return;
       }
       frame = requestAnimationFrame(watch);
     };
     frame = requestAnimationFrame(watch);
     return () => cancelAnimationFrame(frame);
-  }, [driving, drive.step, drive.mounted, session]);
+  }, [driving, drive.step, drive.mounted, session, game]);
+
+  // The first welcome: after the car has had WELCOME_AFTER of running physics to land and settle.
+  useEffect(() => {
+    if (!welcomeDue || !driving || loading) return;
+    let frame = 0;
+    let ran = 0;
+    let last = performance.now();
+    const watch = (now: number) => {
+      ran += Math.min(0.1, (now - last) / 1000);
+      last = now;
+      if (ran >= WELCOME_AFTER) {
+        setWelcomeDue(false);
+        setHelp('first');
+        return;
+      }
+      frame = requestAnimationFrame(watch);
+    };
+    frame = requestAnimationFrame(watch);
+    return () => cancelAnimationFrame(frame);
+  }, [welcomeDue, driving, loading]);
 
   const startPlaying = useCallback(() => {
     setDrive((d) => ({ ...d, waiting: false, loaderShown: false }));
+  }, []);
+
+  const closeHelp = useCallback(() => {
+    setHelp(null);
     if (!game.save.seenWelcome) game.updateSave((s) => ({ ...s, seenWelcome: true }));
   }, [game]);
 
@@ -336,13 +388,12 @@ export default function App() {
         return;
       }
       if (drive.waiting) {
-        // The welcome card waits for its button (Enter or Esc too), not just any key.
-        if (firstWelcome && e.code !== 'Enter' && e.code !== 'Escape') return;
         e.preventDefault();
         return startPlaying();
       }
+      // The welcome card waits for its button (Enter on it, or Esc), not just any key.
       if (help) {
-        if (e.code === 'Escape') setHelp(false);
+        if (e.code === 'Escape') closeHelp();
         return;
       }
       // The modes menu and a run's cards handle their own keys.
@@ -356,7 +407,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screen, driving, loading, drive.waiting, firstWelcome, help, modes, runCard, bigMap, panel, paused, cityReady, startDriving, startPlaying]);
+  }, [screen, driving, loading, drive.waiting, help, closeHelp, modes, runCard, bigMap, panel, paused, cityReady, startDriving, startPlaying]);
 
   // Phones held upright: the drive is drawn turned a quarter, the menu stays upright.
   const sideways = useSideways(driving && TOUCH);
@@ -387,7 +438,8 @@ export default function App() {
           <color attach="background" args={[SKY.horizon]} />
           <fog attach="fog" args={[SKY.horizon, 1800, 5500]} />
           {/* Lower the resolution when the frame rate drops, raise it again with headroom. */}
-          <AdaptiveResolution factor={factor} onChange={setFactor} />
+          <AdaptiveResolution factor={factor} onChange={setFactor} active={ALWAYS_RENDER || (driving && !holdPhysics)} />
+          <ResumeClock running={driving && !holdPhysics} />
           <Sky clouds={settings.clouds} />
           <Sun shadowMap={settings.shadowMap} shadowEvery={settings.shadowEvery} />
           {/*
@@ -432,7 +484,6 @@ export default function App() {
                 paused={holdPhysics}
                 game={game}
                 traffic={MAP_VIEW ? 0 : settings.traffic}
-                shadows={settings.shadowMap > 0}
               />
             )}
           </Suspense>
@@ -496,19 +547,19 @@ export default function App() {
         </Hud>
       )}
 
-      {driving && drive.loaderShown && !firstWelcome && (
+      {driving && drive.loaderShown && (
         <div onPointerDown={drive.waiting ? startPlaying : undefined}>
           <DriveLoading step={drive.step} waiting={drive.waiting} hidden={false} touch={TOUCH} background={BACKDROP} place="High Street" tip={tipFor(TOUCH, drive.count - 1)} />
         </div>
       )}
 
-      {driving && bigMap && viewData && <BigMap view={viewData} session={session} touch={TOUCH} onClose={() => setBigMap(false)} />}
+      {driving && bigMap && viewData && <BigMap view={viewData} session={session} game={game} touch={TOUCH} onClose={() => setBigMap(false)} />}
 
       {driving && modes && viewData && <ModesMenu game={game} view={viewData} touch={TOUCH} onClose={() => setModes(false)} />}
       {driving && runPhase === 'intro' && <RunIntro game={game} touch={TOUCH} />}
       {driving && (runPhase === 'done' || runPhase === 'failed') && <RunResult game={game} touch={TOUCH} />}
 
-      {driving && paused && !panel && !help && !modes && (
+      {driving && paused && !panel && help === null && !modes && (
         <PauseMenu
           run={runPhase}
           onResume={() => setPaused(false)}
@@ -528,13 +579,13 @@ export default function App() {
             setPaused(false);
             setModes(true);
           }}
-          onHelp={() => setHelp(true)}
+          onHelp={() => setHelp('menu')}
           onSettings={() => setPanel('settings')}
           onQuit={leaveDriving}
         />
       )}
 
-      {(firstWelcome || (driving && help)) && <Welcome touch={TOUCH} first={firstWelcome} onClose={firstWelcome ? startPlaying : () => setHelp(false)} />}
+      {driving && help && <Welcome touch={TOUCH} first={help === 'first'} onClose={closeHelp} />}
 
       {panel === 'settings' && <SettingsPanel quality={quality} onQuality={pickQuality} onClose={() => setPanel(null)} />}
       {panel === 'about' && <AboutPanel map={map} onClose={() => setPanel(null)} />}

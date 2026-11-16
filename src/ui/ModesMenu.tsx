@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { receipt } from '../game/cargo';
 import { CARS } from '../game/cars';
+import { CarPicture } from './CarPicture';
 import type { GameSession } from '../game/session';
 import type { MapViewData } from '../geometry/mapView';
 import type { Point } from '../map/types';
@@ -120,7 +121,8 @@ export function ModesMenu({ game, view, touch, onClose }: { game: GameSession; v
                 const owned = game.save.cars.includes(c.id);
                 const driving = game.save.car === c.id;
                 return (
-                  <li key={c.id} className={driving ? 'car on' : 'car'}>
+                  <li key={c.id} className={driving ? 'car on' : c.ready ? 'car' : 'car soon'}>
+                    <CarPicture car={c} />
                     <b>{c.name}</b>
                     <small>{c.blurb}</small>
                     {driving ? (
@@ -150,10 +152,8 @@ export function ModesMenu({ game, view, touch, onClose }: { game: GameSession; v
 /** The run on the map: north up, fitted around the route, the pickup, the drop-off and the car. */
 function RoutePreview({ view, route, toPickup, pickup, dropoff, car }: { view: MapViewData; route: Route | null; toPickup: Route | null; pickup?: Point; dropoff?: Point; car: Point | null }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const tiles = useMemo(() => {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    return new MapTiles(view, (level) => ({ buildings: level > 0.6 * dpr, minRoadPx: 1.5 * dpr }), 64);
-  }, [view]);
+  // Shared between openings of the menu, so its tiles are drawn once, not every time it opens.
+  const tiles = useMemo(() => previewTiles(view, Math.min(2, window.devicePixelRatio || 1)), [view]);
   useEffect(() => {
     const el = canvas.current;
     if (!el) return;
@@ -199,4 +199,14 @@ function RoutePreview({ view, route, toPickup, pickup, dropoff, car }: { view: M
     };
   }, [tiles, route, toPickup, pickup, dropoff, car]);
   return <canvas ref={canvas} className="route-preview" aria-label="The run on the map" />;
+}
+
+/** The preview's tiles, one cache per map (and screen density), kept while the map stays loaded. */
+const previewCaches = new WeakMap<MapViewData, { dpr: number; tiles: MapTiles }>();
+function previewTiles(view: MapViewData, dpr: number): MapTiles {
+  const cached = previewCaches.get(view);
+  if (cached?.dpr === dpr) return cached.tiles;
+  const tiles = new MapTiles(view, (level) => ({ buildings: level > 0.6 * dpr, minRoadPx: 1.5 * dpr }), 64);
+  previewCaches.set(view, { dpr, tiles });
+  return tiles;
 }

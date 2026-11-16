@@ -60,7 +60,7 @@ describe('golden replays', () => {
     game.setMap(map);
     const def = game.runs.find((r) => r.id === 'morning-parcels')!;
     const plan = game.plan(def.id)!;
-    let run: RunState = newRun(def, { pickup: game.place(def.from)!.p, dropoff: game.place(def.to)!.p, meters: plan.route.length, target: plan.target, checkpoints: [], atPickup: true });
+    let run: RunState = newRun(def, { pickup: game.place(def.from)!.p, dropoff: game.place(def.to)!.p, pickupHeading: game.place(def.from)!.heading, dropoffHeading: game.place(def.to)!.heading, meters: plan.route.length, target: plan.target, checkpoints: [], atPickup: true });
     run = startCountdown(run, { impacts: 0 });
     run = stepRun(run, { p: game.place(def.from)!.p, speed: 0, accel: 0, drifting: false, impacts: 0, impact: 0, crashing: false }, 3.1).state;
     expect(run.phase).toBe('running');

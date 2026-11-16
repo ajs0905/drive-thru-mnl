@@ -8,6 +8,7 @@
  *   npm run qa -- --check data/qa-baseline.json     exit 1 if any count is above the baseline (CI)
  */
 import { ARMS, DRESSING, drawnCorners, dressingCorners } from '../src/geometry/dressing';
+import { fixturesInLanes } from './fixtureLanes';
 import { readFileSync } from 'node:fs';
 import { distanceToRing, distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../src/geometry/polygon';
 import { SegmentGrid } from '../src/geometry/spatialGrid';
@@ -273,8 +274,9 @@ function overlapsConvex(a: Point[], b: Point[]): boolean {
 
 /**
  * 6. Trees standing on a road or inside a building, walls, fences or hedges across a road or
- * path (guard rails and jersey barriers line roads on purpose, so they're left out), and
- * solid street furniture in a road, on a path or in a building.
+ * path (guard rails and jersey barriers line roads on purpose, so they're left out), bollards
+ * and blocks in the lanes of a road they don't close, and solid street furniture in a road,
+ * on a path or in a building.
  */
 function extrasIssues(map: MapData, ground: SegmentGrid<Road>, inside: (p: Point) => number | undefined): Issue[] {
   const issues: Issue[] = [];
@@ -306,6 +308,8 @@ function extrasIssues(map: MapData, ground: SegmentGrid<Road>, inside: (p: Point
     }
     if (worst > 0) issues.push({ kind: 'barrier-on-road', at, detail: `${b.id} ${b.kind} ${worst.toFixed(1)} m in`, severity: worst });
   }
+  // Bollards and concrete blocks in the lanes of a road they don't close (pipeline/fixtureLanes.ts).
+  for (const { fixture, road } of fixturesInLanes(map.roads, map.fixtures ?? [])) issues.push({ kind: 'fixture-in-lanes', at: fixture.p, detail: `${fixture.kind} in the lanes of ${road.id}`, severity: 1 });
   // Solid street and park furniture (pipeline/lots.ts, pipeline/sidewalks.ts) in a road, on a footpath or in a building.
   for (const d of map.dressing ?? []) {
     if (!DRESSING[d.k].solid) continue;

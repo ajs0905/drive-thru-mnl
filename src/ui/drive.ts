@@ -32,7 +32,7 @@ export function tipFor(touch: boolean, n: number): string {
 
 /** What the welcome card lists (ui/Welcome.tsx): free roam always, the modes and cars once they're in. */
 export const WELCOME_ROWS: { title: string; text: string }[] = [
-  { title: 'FREE ROAM', text: "Drive BGC's real streets. Try the handling, take the flyovers, find your own shortcuts." },
+  { title: 'FREE ROAM', text: 'BGC is the first playable district in Metro Manila. Explore it, test the handling and find your own shortcuts.' },
   { title: 'MODES', text: 'Cargo runs pay pesos: deliver on time with the cargo in one piece. Kamote Mode chases are on the way.' },
   { title: 'CARS', text: 'Save up your pesos for faster cars.' },
   { title: 'WHERE', text: 'MODES / CARS is at the top right, and in the pause menu.' },

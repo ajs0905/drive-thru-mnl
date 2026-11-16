@@ -1,7 +1,8 @@
 /**
  * The welcome card: what there is to do and the controls (keys, or the touch layout on
- * phones), on road signs. It opens by itself on the very first drive (instead of the
- * loading screen's "press any key"), and from the pause menu's "How to play" any time.
+ * phones), on road signs. It opens by itself on the very first drive, once the car has
+ * landed (instead of the loading screen's "press any key"), and from the pause menu's
+ * "How to play" any time.
  */
 import { WELCOME_ROWS } from './drive';
 import { Keys, TouchPicture } from './DriveLoading';
@@ -12,8 +13,7 @@ export function Welcome({ touch, first, onClose }: { touch: boolean; first: bool
       <div className="welcome">
         <div className="sign welcome-head">
           <div className="face">
-            <small>{first ? 'WELCOME TO' : 'HOW TO PLAY'}</small>
-            <b>BGC, TAGUIG</b>
+            <b>HOW TO PLAY</b>
           </div>
         </div>
         <div className="welcome-body">

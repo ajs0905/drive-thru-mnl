@@ -1,25 +1,27 @@
 /**
  * The big map, over the paused game: the whole drivable area north-up with street names,
- * the car as an arrow, drag to move, scroll or pinch to zoom. Opened with M or by tapping
+ * the car as an arrow, and on a run (or on the way to one) the GPS route and the stop, to
+ * plan a way there; drag to move, scroll or pinch to zoom. Opened with M or by tapping
  * the minimap; M, Esc, the close button or (on the menu side) Resume closes it.
  */
 import { useEffect, useRef } from 'react';
+import type { GameSession } from '../game/session';
 import type { MapViewData } from '../geometry/mapView';
 import type { Point } from '../map/types';
 import type { DriveSession } from '../scene/driveSession';
 import { CarArrow, Close } from './icons';
-import { drawMapLabels, MAP_COLORS, toCanvas, toMap, type MapViewport } from './mapCanvas';
+import { drawMapLabels, drawRoute, drawStop, MAP_COLORS, ROUTE_COLORS, toCanvas, toMap, type MapViewport } from './mapCanvas';
 import { MapTiles } from './mapTiles';
 
-export function BigMap({ view, session, touch, onClose }: { view: MapViewData; session: DriveSession; touch: boolean; onClose: () => void }) {
+export function BigMap({ view, session, game, touch, onClose }: { view: MapViewData; session: DriveSession; game: GameSession; touch: boolean; onClose: () => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const me = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = canvas.current;
     if (!el) return;
-    return startBigMap(el, me.current, view, session);
-  }, [view, session]);
+    return startBigMap(el, me.current, view, session, game);
+  }, [view, session, game]);
 
   return (
     <div className="bigmap" role="dialog" aria-modal="true" aria-label="Map">
@@ -38,7 +40,7 @@ export function BigMap({ view, session, touch, onClose }: { view: MapViewData; s
 }
 
 /** Sets up drawing and the pan and zoom gestures; returns the cleanup. */
-function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapViewData, session: DriveSession): () => void {
+function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapViewData, session: DriveSession, game: GameSession): () => void {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const b = data.bounds;
   const car = session.car;
@@ -66,7 +68,12 @@ function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapVie
     if (!ctx) return;
     // Missing tiles are drawn a few per frame: keep going until they're all there.
     if (!tiles.draw(ctx, view, MAP_COLORS.outside, 8)) redraw();
+    // The GPS route from where the car is on it, under the street names; the stop on top.
+    const gps = game.gps;
+    if (gps) drawRoute(ctx, gps.route.points, gps.route.acc, gps.s, view, 5 * dpr);
     drawMapLabels(ctx, data, view);
+    if (gps) drawStop(ctx, gps.target, view, 8 * dpr, gps.kind === 'pickup' ? ROUTE_COLORS.pickup : ROUTE_COLORS.dropoff, 12 * dpr);
+    else if (game.run?.phase === 'intro' || game.run?.phase === 'countdown') drawStop(ctx, game.run.pickup, view, 8 * dpr, ROUTE_COLORS.pickup, 12 * dpr);
     if (me) {
       const [x, y] = toCanvas([car.x, car.y], view, el.width, el.height);
       me.style.left = `${x / dpr}px`;

@@ -2,32 +2,33 @@
  * Cargo runs: how the cargo's condition (integrity, 100 to 0) suffers from the driving,
  * how long a run should take, and the delivery receipt the run pays out.
  *
- * Integrity drops for crashes (by the crash's speed change; scrapes under 2 m/s are
- * free), for hard braking from speed (keyboard brakes are all or nothing, so only a
- * hard stop from above about 54 km/h counts), and for drifting. Vault runs (cash,
- * paintings) count all of it 1.8 times and pay more. Measured on the Sedan in the
- * physics tests: a full stop pulls about 8 to 9.5 m/s^2, so 6.5 m/s^2 is "hard".
+ * Integrity drops mostly for crashes (by the crash's speed change; scrapes and bumps under
+ * 3 m/s are free). Hard braking and drifting cost a little, and only at speed: keyboard
+ * brakes are all or nothing, so only a full stop from above about 65 km/h counts, and only
+ * a drift above about 43 km/h. Normal cornering, light drifts and firm braking are free.
+ * Vault runs (cash, paintings) count all of it 1.5 times and pay more. Measured on the
+ * Sedan in the physics tests: a full stop pulls about 8 to 9.5 m/s^2.
  */
 import type { RunKind } from './events';
 
 export const CARE = {
   /** Crash: integrity lost per m/s of speed change above `crashFree`, at most `crashMax` per crash. */
-  crashFree: 2,
-  crashPerMs: 4,
-  crashMax: 40,
+  crashFree: 3,
+  crashPerMs: 3.2,
+  crashMax: 32,
   /** Hard braking: deceleration (m/s^2) above this, while faster than `brakeFrom` (m/s), loses `brakeRate` per second. */
-  brakeDecel: 6.5,
-  brakeFrom: 15,
-  brakeRate: 4,
+  brakeDecel: 7.5,
+  brakeFrom: 18,
+  brakeRate: 1.5,
   /** Drifting faster than `driftFrom` (m/s) loses `driftRate` per second. */
-  driftFrom: 8,
-  driftRate: 6,
+  driftFrom: 12,
+  driftRate: 2,
 };
 
 /** Per kind: base fee and per km (PHP), the integrity bonus at 100% (a share of the fee), and how much more the cargo minds. */
 export const PAY: Record<RunKind, { base: number; perKm: number; bonus: number; care: number }> = {
   courier: { base: 250, perKm: 180, bonus: 0.4, care: 1 },
-  vault: { base: 600, perKm: 320, bonus: 0.6, care: 1.8 },
+  vault: { base: 600, perKm: 320, bonus: 0.6, care: 1.5 },
 };
 
 /** Taxes on the receipt (parody, but the rates are the real Philippine VAT and a common withholding rate). */
@@ -82,7 +83,8 @@ const cents = (n: number) => Math.round(n * 100) / 100;
 /**
  * The delivery receipt: gross fee (base plus distance), less a late delivery cut (half
  * the fee at most), plus the integrity bonus (squared, so a dented cargo earns much
- * less), less VAT and withholding.
+ * less), less VAT and withholding. Damage only shows in a smaller bonus: there's no
+ * separate damage charge.
  */
 export function receipt(kind: RunKind, meters: number, time: number, target: number, integrity: number): Receipt {
   const p = PAY[kind];
@@ -96,6 +98,6 @@ export function receipt(kind: RunKind, meters: number, time: number, target: num
   if (late) lines.push({ label: 'Less late delivery', amount: -late });
   lines.push({ label: 'Cargo integrity bonus', amount: bonus });
   lines.push({ label: 'Less 12% VAT', amount: -vat });
-  lines.push({ label: 'Less 5% withholding tax / express fee', amount: -withholding });
+  lines.push({ label: 'Less 5% withholding tax', amount: -withholding });
   return { lines, net: cents(taxable - vat - withholding) };
 }

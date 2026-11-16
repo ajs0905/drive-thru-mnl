@@ -18,7 +18,7 @@ import { createSim, startAt, stepSim } from '../src/sim/headless';
 import { mapId, Recorder } from '../src/sim/replay';
 
 /** The runs recorded: short ones the autopilot drives clean (it doesn't steer around things). */
-const GOLDEN_RUNS = ['morning-parcels', 'gallery-pieces'];
+const GOLDEN_RUNS = ['morning-parcels', 'fresh-produce', 'gallery-pieces'];
 
 await RAPIER.init();
 const map = JSON.parse(readFileSync('public/data/bgc.json', 'utf8')) as MapData;
@@ -33,7 +33,8 @@ for (const id of GOLDEN_RUNS) {
   const start = startAt(from.p, from.heading);
   const car = createSim(RAPIER, map, start);
   const rec = new Recorder(mapId(map), start);
-  const pilot = newPilot(plan.route);
+  const to = game.place(def.to)!;
+  const pilot = newPilot(plan.route, to);
   const keys = { ...NO_KEYS };
   // Up to three times the target, then a few seconds standing still at the end.
   for (let i = 0; i < plan.target * 3 * 60 && !pilot.done; i++) {

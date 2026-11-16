@@ -61,7 +61,7 @@ export function RunIntro({ game, touch }: { game: GameSession; touch: boolean })
             )}
           </dl>
           <p>
-            Follow the blue line, stop in the green circle. Crashes, hard braking from speed and drifting damage the cargo{run.def.kind === 'vault' ? ', and this cargo minds it more' : ''}.
+            Follow the blue line and park in the green bay at the curb. Crashes hurt the cargo; slamming the brakes or drifting at speed only scuffs it.{run.def.kind === 'vault' ? ' This one is fragile, so it all counts a bit more.' : ''}
           </p>
           <div className="row">
             <button type="button" className="chip on" onClick={start} autoFocus>

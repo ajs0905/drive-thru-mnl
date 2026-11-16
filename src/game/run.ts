@@ -15,8 +15,13 @@ import type { RunDef } from './events';
 export type RunPhase = 'to-pickup' | 'intro' | 'countdown' | 'running' | 'done' | 'failed';
 
 export const ARRIVE = {
-  /** Within this far (m) of a stop, below this speed (m/s), for this long (s). */
-  radius: 9,
+  /**
+   * The bay at a stop (m): a curbside rectangle along the curb, a car's length and a bit
+   * (drawn by scene/RunMarkers.tsx). Arrived: the car's center inside it, with `slack`
+   * meters to spare each way, below `speed` (m/s), for `hold` seconds.
+   */
+  bay: { length: 7, width: 3 },
+  slack: 0.9,
   speed: 1.5,
   hold: 0.8,
   /** Seconds of countdown. */
@@ -33,9 +38,11 @@ export interface Checkpoint {
 export interface RunState {
   def: RunDef;
   phase: RunPhase;
-  /** Where the run picks up and drops off (curb spots, map space). */
+  /** Where the run picks up and drops off (curb spots, map space), and the way each bay faces. */
   pickup: Point;
   dropoff: Point;
+  pickupHeading: number;
+  dropoffHeading: number;
   /** The planned route's length (m) and the target time (s). */
   meters: number;
   target: number;
@@ -66,12 +73,14 @@ export interface CarSignals {
   crashing: boolean;
 }
 
-export function newRun(def: RunDef, opts: { pickup: Point; dropoff: Point; meters: number; target: number; checkpoints: Checkpoint[]; atPickup: boolean }): RunState {
+export function newRun(def: RunDef, opts: { pickup: Point; dropoff: Point; pickupHeading: number; dropoffHeading: number; meters: number; target: number; checkpoints: Checkpoint[]; atPickup: boolean }): RunState {
   return {
     def,
     phase: opts.atPickup ? 'intro' : 'to-pickup',
     pickup: opts.pickup,
     dropoff: opts.dropoff,
+    pickupHeading: opts.pickupHeading,
+    dropoffHeading: opts.dropoffHeading,
     meters: opts.meters,
     target: opts.target,
     time: 0,
@@ -95,13 +104,21 @@ export type RunEvent = 'arrived' | 'go' | 'checkpoint' | 'done' | 'failed';
 
 const near = (a: Point, b: Point, r: number) => Math.hypot(a[0] - b[0], a[1] - b[1]) < r;
 
+/** Is `p` inside the bay at `at` facing `heading` (with `ARRIVE.slack` to spare)? */
+export function inBay(p: Point, at: Point, heading: number): boolean {
+  const [dx, dy] = [p[0] - at[0], p[1] - at[1]];
+  const along = dx * Math.cos(heading) + dy * Math.sin(heading);
+  const across = -dx * Math.sin(heading) + dy * Math.cos(heading);
+  return Math.abs(along) <= ARRIVE.bay.length / 2 + ARRIVE.slack && Math.abs(across) <= ARRIVE.bay.width / 2 + ARRIVE.slack;
+}
+
 /** One frame. Returns the new state and what happened (for the HUD's banners). */
 export function stepRun(s: RunState, car: CarSignals, dt: number): { state: RunState; events: RunEvent[] } {
   const events: RunEvent[] = [];
-  const slowAt = (p: Point) => near(car.p, p, ARRIVE.radius) && Math.abs(car.speed) < ARRIVE.speed;
+  const slowAt = (p: Point, heading: number) => inBay(car.p, p, heading) && Math.abs(car.speed) < ARRIVE.speed;
   switch (s.phase) {
     case 'to-pickup': {
-      const held = slowAt(s.pickup) ? s.held + dt : 0;
+      const held = slowAt(s.pickup, s.pickupHeading) ? s.held + dt : 0;
       if (held >= ARRIVE.hold) {
         events.push('arrived');
         return { state: { ...s, phase: 'intro', held: 0 }, events };
@@ -151,7 +168,7 @@ export function stepRun(s: RunState, car: CarSignals, dt: number): { state: RunS
         events.push('failed');
         return { state: { ...base, phase: 'failed', result: { reason: 'late' } }, events };
       }
-      const held = slowAt(s.dropoff) ? s.held + dt : 0;
+      const held = slowAt(s.dropoff, s.dropoffHeading) ? s.held + dt : 0;
       if (held >= ARRIVE.hold) {
         events.push('done');
         return { state: { ...base, held, phase: 'done', result: { receipt: receipt(kind, s.meters, time, s.target, integrity) } }, events };

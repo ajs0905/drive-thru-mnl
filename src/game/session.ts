@@ -174,7 +174,7 @@ export class GameSession {
     if (!def || !plan || !a || !b) return false;
     const checkpoints: Checkpoint[] = [];
     for (let s = GPS.checkpointEvery; s < plan.route.length - GPS.checkpointEnd; s += GPS.checkpointEvery) checkpoints.push(pointOnRoute(plan.route, s));
-    this.run = newRun(def, { pickup: a.p, dropoff: b.p, meters: plan.route.length, target: plan.target, checkpoints, atPickup });
+    this.run = newRun(def, { pickup: a.p, dropoff: b.p, pickupHeading: a.heading, dropoffHeading: b.heading, meters: plan.route.length, target: plan.target, checkpoints, atPickup });
     return true;
   }
 

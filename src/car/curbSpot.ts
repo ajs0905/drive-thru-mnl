@@ -4,7 +4,9 @@
  * the cargo runs' loading bays and drop-offs use the same spots.
  *
  * A spot keeps the car's footprint clear of parked cars, solid street furniture, fixtures
- * (gates, booms, bollards: likely driveways), pillars, walls and zebra crossings, stays out
+ * (gates, booms, bollards: likely driveways), pillars, walls and zebra crossings, with room
+ * to pull out ahead and to pull in from behind clear of parked cars and furniture too (no
+ * car boxed in at the start of a drive or a run, none in the way of a drop-off), stays out
  * from beside or under a ramp or deck too low to drive under (its side walls reach the
  * ground), away from junctions and bends, and is on the ground (no flyovers). If the asked-for spot isn't clear it slides
  * along the curb, nearest first, up to `CURB.search` meters either way.
@@ -15,7 +17,7 @@ import { pillarCorners } from '../geometry/road';
 import { SegmentGrid } from '../geometry/spatialGrid';
 import type { MapData, Point, Road } from '../map/types';
 import { PARKED_MODELS } from './parked';
-import { carCorners, footprintsOverlap } from './resetSpot';
+import { carCorners, footprintsOverlap, RESET_SPOT } from './resetSpot';
 import { startPoint, startSpot, type Spawn } from './spawn';
 
 export const CURB = {
@@ -30,6 +32,9 @@ export const CURB = {
   step: 2,
   /** Room (m) kept around the car's footprint from parked cars and furniture. */
   room: 0.4,
+  /** Clear lane (m) ahead of the car to pull out into, and behind it to pull in from. */
+  ahead: 7,
+  behind: 8,
   /** No spot where the road turns more than this (degrees) over 8 m. */
   maxBend: 12,
   /** Room (m) along the road kept from a zebra crossing's band. */
@@ -43,14 +48,20 @@ export const CURB = {
 export const curbRoad = (r: Road) =>
   (r.cls === 'major' || r.cls === 'minor') && !r.scenery && !r.bridge && !r.tunnel && !(r.z && r.z.some((h) => h > 0.5)) && r.w >= CURB.minWidth;
 
-export interface CurbFinder {
-  /** The curb spot nearest `p`; on two-way roads facing the way closest to `facing` (map heading), if given. */
-  near(p: Point, facing?: number): Spawn | null;
-  /** The curb spot on `road` at `s` meters along it, on the right of traffic going `forward` along its points (or against them). */
-  along(road: Road, s: number, forward: boolean): Spawn | null;
+/** A curb spot, and the class of its road (for the road surface's height). */
+export interface CurbSpot extends Spawn {
+  cls: Road['cls'];
 }
 
-export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, 'parked' | 'dressing' | 'fixtures' | 'crossings' | 'pillars' | 'barriers'>>): CurbFinder {
+export interface CurbFinder {
+  /** The curb spot nearest `p`; on two-way roads facing the way closest to `facing` (map heading), if given. */
+  near(p: Point, facing?: number): CurbSpot | null;
+  /** The curb spot on `road` at `s` meters along it, on the right of traffic going `forward` along its points (or against them). */
+  along(road: Road, s: number, forward: boolean): CurbSpot | null;
+}
+
+/** `loose`: pieces that can be knocked about (the roadblocks' cones and barricades), kept clear too. */
+export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, 'parked' | 'dressing' | 'fixtures' | 'crossings' | 'pillars' | 'barriers'>>, loose: Point[] = []): CurbFinder {
   const roads = map.roads.filter(curbRoad);
   const segments = new SegmentGrid<{ road: Road; i: number }>(40);
   for (const road of roads) for (let i = 0; i + 1 < road.points.length; i++) segments.insert(road.points[i], road.points[i + 1], { road, i });
@@ -78,6 +89,7 @@ export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, '
     block([[f.p[0] - r, f.p[1] - r], [f.p[0] + r, f.p[1] - r], [f.p[0] + r, f.p[1] + r], [f.p[0] - r, f.p[1] + r]]);
   }
   for (const q of map.pillars ?? []) block(pillarCorners(q));
+  for (const q of loose) block([[q[0] - 1, q[1] - 1], [q[0] + 1, q[1] - 1], [q[0] + 1, q[1] + 1], [q[0] - 1, q[1] + 1]]);
   // Walls, and ramps and decks too low to drive under (their sides reach the ground): kept `wallRoom` away.
   const walls = new SegmentGrid<true>(30);
   for (const w of map.barriers ?? []) if (!w.scenery) for (let i = 0; i + 1 < w.points.length; i++) walls.insert(w.points[i], w.points[i + 1], true);
@@ -110,7 +122,7 @@ export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, '
     return { p: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], dir: Math.atan2(b[1] - a[1], b[0] - a[0]) };
   };
 
-  const spotAt = (road: Road, acc: number[], s: number, forward: boolean): Spawn | null => {
+  const spotAt = (road: Road, acc: number[], s: number, forward: boolean): CurbSpot | null => {
     const { p: c, dir } = at(road, acc, s);
     const turn = Math.abs(at(road, acc, s + 4).dir - at(road, acc, s - 4).dir);
     if (Math.min(turn, 2 * Math.PI - turn) > (CURB.maxBend * Math.PI) / 180) return null;
@@ -123,13 +135,24 @@ export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, '
     }
     const foot = carCorners(p, h, CURB.room);
     const [lo, hi]: Point[] = [[p[0] - 6, p[1] - 6], [p[0] + 6, p[1] + 6]];
-    if (blockers.query(lo, hi).some((e) => footprintsOverlap(foot, e.item))) return null;
+    // The car's footprint, stretched along the curb lane by the room to pull out and in.
+    const hw = RESET_SPOT.size[1] / 2 + CURB.room;
+    const [front, back] = [RESET_SPOT.size[0] / 2 + CURB.ahead, RESET_SPOT.size[0] / 2 + CURB.behind];
+    const [cs, sn] = [Math.cos(h), Math.sin(h)];
+    const lane: Point[] = [
+      [p[0] + cs * front - sn * hw, p[1] + sn * front + cs * hw],
+      [p[0] - cs * back - sn * hw, p[1] - sn * back + cs * hw],
+      [p[0] - cs * back + sn * hw, p[1] - sn * back - cs * hw],
+      [p[0] + cs * front + sn * hw, p[1] + sn * front - cs * hw],
+    ];
+    const reach = Math.max(front, back) + 2;
+    if (blockers.query([p[0] - reach, p[1] - reach], [p[0] + reach, p[1] + reach]).some((e) => footprintsOverlap(lane, e.item))) return null;
     if (walls.query(lo, hi).some((e) => segmentDistanceToRing(e.a, e.b, foot) < CURB.wallRoom)) return null;
     if (decks.query(lo, hi, 15).some((e) => foot.some((c) => distanceToSegment(c, e.a, e.b) < e.item + CURB.wallRoom))) return null;
-    return { p, heading: Math.atan2(Math.sin(h), Math.cos(h)) };
+    return { p, heading: Math.atan2(Math.sin(h), Math.cos(h)), cls: road.cls };
   };
 
-  const along = (road: Road, s0: number, forward: boolean): Spawn | null => {
+  const along = (road: Road, s0: number, forward: boolean): CurbSpot | null => {
     const acc = accOf(road);
     const total = acc[acc.length - 1];
     const lo = Math.max(0, road.trim?.[0] ?? -1) + CURB.fromJunction;
@@ -146,7 +169,7 @@ export function curbFinder(map: Pick<MapData, 'roads'> & Partial<Pick<MapData, '
     return null;
   };
 
-  const near = (p: Point, facing?: number): Spawn | null => {
+  const near = (p: Point, facing?: number): CurbSpot | null => {
     // The nearest roads first (by distance to their nearest segment), so a blocked one falls back to the next.
     const found = new Map<Road, { d: number; s: number; dir: number }>();
     for (let r = 60; r <= 480 && found.size < 3; r *= 2) {

@@ -43,6 +43,8 @@ import {
   type Object3D,
 } from 'three';
 import type { CarSpec, WheelName } from '../car/spec';
+import { sunShadowPose, type SunShadowPose } from '../car/sunShadow';
+import { SKY } from './skyConfig';
 import { withCarShine } from './carShine';
 
 export interface CarModel {
@@ -324,7 +326,10 @@ export function blobShadowGeometry(width: number, length: number, darkness = 0.4
 }
 
 export function blobShadow(spec: CarSpec): Mesh<BufferGeometry, MeshBasicMaterial> {
-  const geometry = blobShadowGeometry(spec.halfExtents[0] * 2, spec.halfExtents[2] * 2);
+  return shadowPatch(blobShadowGeometry(spec.halfExtents[0] * 2, spec.halfExtents[2] * 2));
+}
+
+function shadowPatch(geometry: BufferGeometry): Mesh<BufferGeometry, MeshBasicMaterial> {
   const material = new MeshBasicMaterial({
     vertexColors: true,
     transparent: true,
@@ -345,6 +350,26 @@ export function placeShadow(shadow: Mesh, x: number, groundY: number | null, z: 
   if (groundY === null) return;
   shadow.position.set(x, groundY + 0.04, z);
   shadow.rotation.set(0, yaw, 0);
+}
+
+/** How dark the sun-cast shadow of a moving car is (car/sunShadow.ts), next to the darker contact blob. */
+export const SUN_SHADOW_DARKNESS = 0.3;
+
+/** The car's shadow from the sun, drawn every frame (a unit patch, scaled by `placeSunShadow`). */
+export function sunShadowMesh(): Mesh<BufferGeometry, MeshBasicMaterial> {
+  return shadowPatch(blobShadowGeometry(1, 1, SUN_SHADOW_DARKNESS));
+}
+
+const sunPose: SunShadowPose = { dx: 0, dz: 0, width: 0, length: 0 };
+
+/** Puts the sun-cast shadow beside the car, away from the sun; hidden with the blob (off the ground). */
+export function placeSunShadow(shadow: Mesh, x: number, groundY: number | null, z: number, yaw: number, width: number, length: number) {
+  shadow.visible = groundY !== null;
+  if (groundY === null) return;
+  sunShadowPose(SKY.sunDir, yaw, width, length, sunPose);
+  shadow.position.set(x + sunPose.dx, groundY + 0.035, z + sunPose.dz);
+  shadow.rotation.set(0, yaw, 0);
+  shadow.scale.set(sunPose.width, 1, sunPose.length);
 }
 
 /** After a reset the car blinks for `duration` seconds, `rate` times a second, so it's clear it moved (it no longer drops into place). */

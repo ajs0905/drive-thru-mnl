@@ -11,13 +11,15 @@ export interface CarDef {
   blurb: string;
   /** Its model and tuning are in the game. */
   ready: boolean;
+  /** Its picture for the CARS tab, drawn from the model by tools/car-thumbs.ts (under public/). */
+  picture?: string;
 }
 
 export const CARS: CarDef[] = [
-  { id: 'sedan', name: 'Sedan', price: 0, blurb: 'Balanced and forgiving. Drifts when you ask it to.', ready: true },
-  { id: 'van', name: 'Cargo Van', price: 6000, blurb: 'Slow off the line, steady with fragile cargo.', ready: false },
-  { id: 'muscle', name: 'Muscle Car', price: 15000, blurb: 'Big power, loose rear end.', ready: false },
-  { id: 'coupe', name: 'Sports Coupe', price: 30000, blurb: 'Fastest and sharpest. Punishes mistakes.', ready: false },
+  { id: 'sedan', name: 'Sedan', price: 0, blurb: 'Easy to drive and easy to slide. Good for learning the streets.', ready: true, picture: 'models/cars/sedan.png' },
+  { id: 'van', name: 'Cargo Van', price: 6000, blurb: 'Heavy and slow to get going, but it rides soft, so the cargo stays put.', ready: false, picture: 'models/cars/van.png' },
+  { id: 'muscle', name: 'Muscle Car', price: 15000, blurb: 'Lots of power at the back. Go easy on the gas out of corners.', ready: false },
+  { id: 'coupe', name: 'Sports Coupe', price: 30000, blurb: "Light, quick and sharp to steer. It won't forgive a lazy line.", ready: false },
 ];
 
 export const CAR_IDS = new Set(CARS.map((c) => c.id));

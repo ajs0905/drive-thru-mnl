@@ -27,6 +27,8 @@ import { patchHoles } from './paving';
 import { settleRaised } from './settleRaised';
 import { extractMap } from './extract';
 import { extractExtras, placeExtras, type ExtrasStats } from './barriers';
+import { moveOutOfLanes } from './fixtureLanes';
+import { pointInRing } from '../src/geometry/polygon';
 
 const args = process.argv.slice(2);
 const flag = (name: string) => {
@@ -139,6 +141,11 @@ map = {
   dressing: lots.dressing,
   stats: { ...map.stats, lots: lots.stats },
 };
+// Bollards and blocks OSM left in the lanes of roads that stay open around them go to the curb (pipeline/fixtureLanes.ts).
+const lanes = moveOutOfLanes(map.roads, map.fixtures ?? [], (q) =>
+  map.buildings.some((b) => (b.minH ?? 0) < 2.5 && pointInRing(q, b.rings[0]) && !b.rings.slice(1).some((h) => pointInRing(q, h))),
+);
+map = { ...map, fixtures: lanes.fixtures };
 const parking = placeParkedCars(map);
 map = {
   ...map,
@@ -212,6 +219,7 @@ if (extras) {
   );
   if (dropped) console.log(`    dropped: ${dropped}`);
 }
+console.log(`  fixtures in open lanes: ${lanes.moved} bollards and blocks moved to the curb, ${lanes.dropped} dropped (no room there)`);
 {
   const st = structures.stats;
   console.log(

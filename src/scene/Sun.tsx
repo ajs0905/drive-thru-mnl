@@ -11,7 +11,7 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
 import { DirectionalLight, Vector3, type Camera } from 'three';
-import { shadowHalfSize, snapToTexel } from './shadowFrame';
+import { normalBiasFor, shadowHalfSize, snapToTexel } from './shadowFrame';
 import { SKY } from './skyConfig';
 
 const SUN_DISTANCE = 2500;
@@ -25,7 +25,7 @@ function useSun(shadowMap: number, shadowEvery: number) {
       light.shadow.camera.near = 1;
       light.shadow.camera.far = SUN_DISTANCE * 2;
       light.shadow.bias = -0.0004;
-      light.shadow.normalBias = 0.5;
+      light.shadow.normalBias = normalBiasFor(shadowHalfSize(0), shadowMap);
       light.shadow.autoUpdate = false;
       light.shadow.needsUpdate = true;
     }
@@ -44,6 +44,8 @@ function useSun(shadowMap: number, shadowEvery: number) {
         cam.top = half;
         cam.bottom = -half;
         cam.updateProjectionMatrix();
+        // About a texel and a half: enough against acne, small enough that things stay on their shadows (a fixed 0.5 m lifted car bodies off theirs up close).
+        light.shadow.normalBias = normalBiasFor(half, shadowMap);
       }
     };
     /**

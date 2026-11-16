@@ -99,7 +99,11 @@ Closing off empty lots and the sidewalk furniture ([ADR 0018](decisions/0018-wor
 
 ### Light traffic
 
-6, 8 or 10 cars by tier (ADR 0025). The simulation costs about 8 to 14 µs per 60 Hz step at those counts (headless, `npm run bench`). Drawn with the parked cars' models: one instanced mesh per model plus one for the blob shadows, so at most 7 more draw calls and about 16k triangles at 10 cars (the models are 1,400 to 1,750 triangles). Cars within 70 m of the player are kinematic physics bodies (a box each). Not yet measured on a phone.
+10, 14 or 18 cars by tier (ADR 0025). The simulation costs about 25 to 50 µs per 60 Hz step from 6 to 18 cars (headless, `npm run bench`), with no garbage made per step (lane lists, obstacles and poses reuse their objects). Drawn with the parked cars' models: one instanced mesh per model, one for all the wheels, one for the lamp halos, and two for the contact and sun shadows, so up to 10 more draw calls and about 34k triangles at 18 cars (bodies 1,000 to 1,400 triangles, wheels 92 each). Traffic doesn't cast into the shadow map (ADR 0026), so it adds nothing to the shadow pass. Cars within 70 m of the player are kinematic physics bodies (a box each). Not yet measured on a phone.
+
+### Pausing, the full map and the menus
+
+The physics and the canvas stop while any of them is open (drawing on demand). Three costs on the way back were fixed: the first frame after a pause stepped the physics through the whole pause (clamped to half a second: 30 steps of physics and traffic in one frame, and a visible jump), now skipped (`ResumeClock`); the resolution's frame-rate count could drop the resolution from the odd frame drawn while paused, and now ignores those and the first 20 frames after resuming; and the MODES / CARS menu's map preview built its tiles again every time it opened, now kept like the full map's. Opening or closing one costs one React render of about 3 to 6 ms (the menu about 20 ms the first time), measured in a headless browser on the development container.
 
 ### Street and traffic lights
 

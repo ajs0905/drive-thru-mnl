@@ -17,6 +17,7 @@
     "qa:check": "tsx pipeline/qa.ts --check data/qa-baseline.json",
     "bench": "tsx tools/bench.ts",
     "replay": "tsx tools/replay.ts",
+    "thumbs": "tsx tools/car-thumbs.ts",
     "data:check": "tsx pipeline/build.ts && git diff --exit-code -- public/data/bgc.json",
     "check": "npm run typecheck && npm run lint && npm test && npm run data:check && npm run qa:check"
   },

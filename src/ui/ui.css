@@ -45,9 +45,17 @@ button.sign:hover {
 button.sign:active {
   transform: scale(0.98);
 }
+/* No focus rings (the buttons opened by a key were showing them); keyboard focus brightens the button instead. */
+button,
+[role='tab'] {
+  -webkit-tap-highlight-color: transparent;
+}
+button:focus,
+[role='tab']:focus {
+  outline: none;
+}
 button.sign:focus-visible {
-  outline: 3px solid #fff;
-  outline-offset: 3px;
+  filter: brightness(1.12);
 }
 button.sign:disabled {
   cursor: progress;
@@ -318,8 +326,7 @@ button.sign:disabled {
   color: var(--sign-blue);
 }
 .chip:focus-visible {
-  outline: 3px solid var(--sign-orange);
-  outline-offset: 2px;
+  filter: brightness(1.15);
 }
 .panel dl {
   margin: 0;
@@ -748,8 +755,7 @@ kbd.wide {
   cursor: pointer;
 }
 .round-btn:focus-visible {
-  outline: 3px solid var(--sign-orange);
-  outline-offset: 2px;
+  filter: brightness(1.15);
 }
 
 /* ---------- Touch screens: the HUD for a phone held sideways (844 x 390 and up) ---------- */
@@ -1298,7 +1304,7 @@ kbd.wide {
   background: rgba(255, 255, 255, 0.14);
 }
 .run:focus-visible {
-  outline: 3px solid var(--sign-orange);
+  border-color: rgba(255, 255, 255, 0.8);
 }
 .run b {
   font-size: 15px;
@@ -1355,6 +1361,30 @@ kbd.wide {
   border-color: #fff;
   background: rgba(255, 255, 255, 0.14);
 }
+.car-picture {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 1;
+  margin: -4px 0 -2px;
+  user-select: none;
+}
+.car-picture.outline path,
+.car-picture.outline circle {
+  fill: rgba(255, 255, 255, 0.12);
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.car-picture.outline circle {
+  fill: rgba(0, 0, 0, 0.25);
+}
+.car-picture .ground {
+  fill: rgba(0, 0, 0, 0.18);
+}
+.car.soon .car-picture:not(.outline) {
+  opacity: 0.75;
+}
 .car b {
   font-size: 16px;
   font-weight: 900;
@@ -1392,6 +1422,10 @@ kbd.wide {
   }
   .route-preview {
     max-height: 150px;
+  }
+  .car-picture {
+    max-height: 64px;
+    object-fit: contain;
   }
 }
 @media (max-width: 560px) {

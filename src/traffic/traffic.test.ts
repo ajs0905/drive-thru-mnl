@@ -7,7 +7,7 @@ import { buildRoadGraph } from '../routing/graph';
 import { pointOnRoute, Router } from '../routing/route';
 import { snap } from '../routing/graph';
 import { IDM, idmAccel } from './idm';
-import { laneOffset, roadsWithParking, TrafficSim, type Agent } from './sim';
+import { laneOffset, laneWidth, parkingRoom, roadsWithParking, TrafficSim, type Agent } from './sim';
 
 const MODELS = PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]] as [number, number], weight: m.weight }));
 const PAINTS = PARKED_PAINTS.map((p) => p.weight);
@@ -46,44 +46,79 @@ describe('lanes', () => {
     expect(laneOffset(one, 0) + laneOffset(one, 2)).toBeCloseTo(0);
   });
 
-  it('finds roads with parked cars along them', () => {
+  it('finds roads with parked cars along them, and the room the cars leave either side', () => {
     const roads: Road[] = [
       { id: 'a', highway: 'residential', cls: 'minor', w: 8, points: [[0, 0], [100, 0]] },
       { id: 'b', highway: 'residential', cls: 'minor', w: 8, points: [[0, 50], [100, 50]] },
     ];
     expect([...roadsWithParking(roads, [{ p: [40, -3.5] }])]).toEqual([0]);
+    // Parked on the right of road a (heading east, right is south): 3.5 - 0.95 - 0.3 m clear on that side, all 4 m on the left.
+    const room = parkingRoom(roads, [{ p: [40, -3.5] }]);
+    expect(room.get(0)![0]).toBeCloseTo(4);
+    expect(room.get(0)![1]).toBeCloseTo(2.25);
+    expect(room.has(1)).toBe(false);
+  });
+
+  it('keeps lanes inside the room parked cars leave', () => {
+    const one = { oneway: true, w: 8, lanes: 1 };
+    // Cars parked on the right: the lane moves left, centered in what's clear.
+    const off = laneOffset(one, 0, [4, 1.5]);
+    expect(off).toBeCloseTo(-1.25);
+    expect(off + laneWidth(one, [4, 1.5]) / 2).toBeLessThanOrEqual(1.5);
+    expect(off - laneWidth(one, [4, 1.5]) / 2).toBeGreaterThanOrEqual(-4);
+    // Two-way with parking both sides: each direction keeps right inside its half of the gap.
+    const two = { oneway: false, w: 12, lanes: 1 };
+    expect(laneOffset(two, 0, [2.8, 2.8])).toBeCloseTo(1.4);
+    expect(laneWidth(two, [2.8, 1])).toBeLessThan(2.4);
   });
 });
 
-/** Footprint of a traffic car. */
-const foot = (a: Agent): Point[] => {
-  const [c, s, hl, hw] = [Math.cos(a.heading), Math.sin(a.heading), a.len / 2, a.width / 2];
+/** A footprint: center, heading, length and width. */
+const rect = (p: Point, heading: number, len: number, width: number): Point[] => {
+  const [c, s, hl, hw] = [Math.cos(heading), Math.sin(heading), len / 2, width / 2];
   return [
-    [a.x + c * hl - s * hw, a.y + s * hl + c * hw],
-    [a.x - c * hl - s * hw, a.y - s * hl + c * hw],
-    [a.x - c * hl + s * hw, a.y - s * hl - c * hw],
-    [a.x + c * hl + s * hw, a.y + s * hl - c * hw],
+    [p[0] + c * hl - s * hw, p[1] + s * hl + c * hw],
+    [p[0] - c * hl - s * hw, p[1] - s * hl + c * hw],
+    [p[0] - c * hl + s * hw, p[1] - s * hl - c * hw],
+    [p[0] + c * hl + s * hw, p[1] + s * hl - c * hw],
   ];
 };
+/** Footprint of a traffic car. */
+const foot = (a: Agent): Point[] => rect([a.x, a.y], a.heading, a.len, a.width);
 
 describe('traffic on the real map', () => {
   const map = JSON.parse(bgcRaw) as MapData;
   const graph = buildRoadGraph(map);
-  const avoid = roadsWithParking(map.roads, map.parked ?? []);
+  const room = parkingRoom(map.roads, map.parked ?? []);
+  // Parked cars' footprints, to check traffic keeps clear of them.
+  const parked = (map.parked ?? []).map((c) => rect(c.p, c.rot, PARKED_MODELS[c.v].size[0], PARKED_MODELS[c.v].size[1]));
   // The player drives a long route across BGC at 12 m/s.
   const router = new Router(graph, 4);
   const route = router.route(snap(graph, [-500, -600])!, snap(graph, [800, 1200])!)!;
 
   function drive(count: number, seconds: number, seed = 'test') {
-    const sim = new TrafficSim(graph, { count, models: MODELS, paints: PAINTS, avoid, seed });
-    let [moving, total, overlaps] = [0, 0, 0];
+    const sim = new TrafficSim(graph, { count, models: MODELS, paints: PAINTS, room, seed });
+    let [moving, total, overlaps, onParked, turn, jump] = [0, 0, 0, 0, 0, 0];
+    const last = new Map<number, Agent>();
     for (let i = 0; i < seconds * 60; i++) {
       const at = pointOnRoute(route, ((i / 60) * 12) % route.length);
       sim.step(1 / 60, at.p, [{ p: at.p, speed: 12, heading: at.heading, half: 2.25 }]);
       for (const a of sim.agents) {
         total++;
         if (a.v > 0.5) moving++;
+        // How far each car's heading turns, and how far it moves past its speed, in one step.
+        const b = last.get(a.id);
+        if (b) {
+          turn = Math.max(turn, Math.abs(Math.atan2(Math.sin(a.heading - b.heading), Math.cos(a.heading - b.heading))));
+          jump = Math.max(jump, Math.hypot(a.x - b.x, a.y - b.y) - a.v / 60);
+        }
+        last.set(a.id, { ...a });
       }
+      if (i % 30 === 0)
+        for (const a of sim.agents) {
+          const mine = foot(a);
+          if (a.z < 1 && parked.some((c) => Math.abs(c[0][0] - a.x) < 8 && Math.abs(c[0][1] - a.y) < 8 && footprintsOverlap(mine, c))) onParked++;
+        }
       if (i % 30 === 0)
         for (let x = 0; x < sim.agents.length; x++)
           for (let y = x + 1; y < sim.agents.length; y++) {
@@ -91,16 +126,22 @@ describe('traffic on the real map', () => {
             if (Math.abs(a.z - b.z) < 1.5 && Math.hypot(a.x - b.x, a.y - b.y) < 6 && footprintsOverlap(foot(a), foot(b))) overlaps++;
           }
     }
-    return { sim, moving: moving / total, overlaps };
+    return { sim, moving: moving / total, overlaps, onParked, turn, jump };
   }
 
-  it('keeps the count around the player, keeps moving, and cars keep apart', () => {
-    const { sim, moving, overlaps } = drive(6, 240);
-    expect(sim.agents).toHaveLength(6);
+  it('keeps the count around the player, keeps moving, and cars keep apart and clear of parked cars', () => {
+    const { sim, moving, overlaps, onParked } = drive(10, 240);
+    expect(sim.agents).toHaveLength(10);
     expect(moving).toBeGreaterThan(0.9);
     expect(overlaps).toBe(0);
-    // On the avenues and wider streets, never on a road with parked cars.
-    for (const a of sim.agents) expect(avoid.has(graph.edges[a.edge].road)).toBe(false);
+    expect(onParked).toBe(0);
+  });
+
+  it('turns smoothly: no snapped headings, no jumps sideways', () => {
+    const { turn, jump } = drive(10, 120);
+    // At most ~0.1 rad in a 60th of a second (a tight turn at turning speed), and never more than a few cm past where its speed takes it.
+    expect(turn).toBeLessThan(0.1);
+    expect(jump).toBeLessThan(0.05);
   });
 
   it('is the same every time for the same seed', () => {
@@ -109,8 +150,34 @@ describe('traffic on the real map', () => {
     expect(pose(drive(6, 30, 'other').sim)).not.toEqual(pose(drive(6, 30).sim));
   });
 
+  it('eases round a car stopped at the curb, without touching it, where the road has room', () => {
+    let passed = 0;
+    for (const seed of ['curb-a', 'curb-b', 'curb-c', 'curb-d']) {
+      const sim = new TrafficSim(graph, { count: 6, models: MODELS, paints: PAINTS, room, seed });
+      const p = pointOnRoute(route, 0).p;
+      for (let i = 0; i < 120; i++) sim.step(1 / 60, p);
+      const a = sim.agents[0];
+      // Stopped 25 m ahead, a meter right of its lane's center (half in the lane, like a car at the curb of a narrow street).
+      const [c, sn] = [Math.cos(a.heading), Math.sin(a.heading)];
+      const block: Point = [a.x + c * 25 + sn * 1, a.y + sn * 25 - c * 1];
+      const parkedFoot = rect(block, a.heading, 4.45, 2.4);
+      let touched = false;
+      let past = false;
+      for (let i = 0; i < 60 * 12; i++) {
+        sim.step(1 / 60, p, [{ p: block, speed: 0, heading: a.heading, half: 2.25 }]);
+        const o = sim.agents.find((x) => x.id === a.id);
+        if (!o) break;
+        if (footprintsOverlap(foot(o), parkedFoot)) touched = true;
+        if ((o.x - block[0]) * c + (o.y - block[1]) * sn > 5) past = true;
+      }
+      expect(touched, seed).toBe(false);
+      if (past) passed++;
+    }
+    expect(passed).toBeGreaterThan(0);
+  });
+
   it('stops behind the player and waits, and drops a knocked car from the flow', () => {
-    const sim = new TrafficSim(graph, { count: 6, models: MODELS, paints: PAINTS, avoid, seed: 'stop' });
+    const sim = new TrafficSim(graph, { count: 6, models: MODELS, paints: PAINTS, room, seed: 'stop' });
     const p = pointOnRoute(route, 0).p;
     for (let i = 0; i < 120; i++) sim.step(1 / 60, p);
     const a = sim.agents[0];

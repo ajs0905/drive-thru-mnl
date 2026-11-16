@@ -10,12 +10,17 @@
  * edge, and doesn't touch a parked car or solid street furniture, wins. The car faces
  * along the road, the way closest to where it was heading (one-way roads: their way), at
  * the road's height. Deck spots skip the ground checks: the deck has its own barriers.
+ *
+ * On the ground, given a curb finder (curbSpot.ts), the car is put parked at the right-hand
+ * curb of the nearest street instead, facing the way traffic goes on that side, out of the
+ * lanes; the lane spot is the fallback (no curb clear nearby, service lanes, decks).
  */
 import { DRESSING, dressingCorners } from '../geometry/dressing';
 import { pillarCorners } from '../geometry/road';
 import { pointInRing, segmentDistanceToRing } from '../geometry/polygon';
 import { SegmentGrid } from '../geometry/spatialGrid';
 import type { MapData, Point, Road } from '../map/types';
+import type { CurbFinder } from './curbSpot';
 import { PARKED_MODELS } from './parked';
 
 export const RESET_SPOT = {
@@ -34,6 +39,8 @@ export const RESET_SPOT = {
   deck: 1,
   /** Room kept from loose pieces passed in `avoid` (roadblock cones, drums, barricades) (m). */
   looseRoom: 1.5,
+  /** At a curb spot, room kept from buildings, walls and the edge (m): the sidewalk is between. */
+  curbClearance: 0.5,
 };
 
 export interface ResetSpot {
@@ -86,6 +93,7 @@ const drivable = (r: Road) => r.cls !== 'path' && !r.scenery && !r.tunnel && r.w
 export function resetSpotFinder(
   map: Pick<MapData, 'roads' | 'buildings'> & Partial<Pick<MapData, 'barriers' | 'pillars' | 'playable' | 'parked' | 'dressing'>>,
   avoid: Point[] = [],
+  curb?: CurbFinder,
 ): (at: Point, heading: number, y?: number) => ResetSpot | null {
   const R = RESET_SPOT;
   const spots = new SegmentGrid<Candidate>(40);
@@ -165,7 +173,22 @@ export function resetSpotFinder(
     return true;
   };
 
+  // A curb spot has had its own checks (curbSpot.ts); here only the edge, buildings and loose pieces, with a curb's room.
+  const curbClear = (p: Point, heading: number): boolean => {
+    const foot = carCorners(p, heading);
+    const [lo, hi]: Point[] = [[p[0] - 8, p[1] - 8], [p[0] + 8, p[1] + 8]];
+    if (edge.length >= 3 && !pointInRing(p, edge)) return false;
+    if (hard.query(lo, hi).some((e) => segmentDistanceToRing(e.a, e.b, foot) < R.curbClearance)) return false;
+    if (rings.query(p, p).some((e) => pointInRing(p, e.item))) return false;
+    return !soft.query(lo, hi).some((e) => footprintsOverlap(foot, e.item));
+  };
+
   return (at: Point, heading: number, y = 0) => {
+    // On the ground: parked at the right-hand curb, facing the way traffic goes there (curbSpot.ts).
+    if (curb && y <= R.deck) {
+      const spot = curb.near(at, heading);
+      if (spot && Math.hypot(spot.p[0] - at[0], spot.p[1] - at[1]) <= R.reach && curbClear(spot.p, spot.heading)) return { p: spot.p, heading: spot.heading, z: 0, cls: spot.cls };
+    }
     const near = spots
       .query([at[0] - R.reach, at[1] - R.reach], [at[0] + R.reach, at[1] + R.reach])
       .map((e) => e.item)

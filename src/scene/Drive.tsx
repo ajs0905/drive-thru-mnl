@@ -18,6 +18,7 @@ import { useThree } from '@react-three/fiber';
 import { CuboidCollider, Physics, RigidBody, TrimeshCollider, type RapierCollider, type RapierRigidBody } from '@react-three/rapier';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Vector3 } from 'three';
+import { curbFinder } from '../car/curbSpot';
 import { resetSpotFinder } from '../car/resetSpot';
 import { headingOfDirection, spawnOnRoad, yawForHeading, type Spawn } from '../car/spawn';
 import type { ResetPose } from '../car/vehicle';
@@ -53,7 +54,6 @@ export default function Drive({
   props,
   game,
   traffic = 0,
-  shadows = false,
 }: {
   map: MapData;
   parked?: ParkedPoses;
@@ -68,9 +68,8 @@ export default function Drive({
   props?: { knock: Dressing[]; broke: Dressing[]; knockPoses: ParkedPoses; breakPoses: ParkedPoses; debris: DebrisStore };
   /** The modes (cargo runs): stepped every frame, and their markers drawn. */
   game?: GameSession;
-  /** Cars of light traffic to keep around the player (0: none), and whether they cast shadows. */
+  /** Cars of light traffic to keep around the player (0: none). */
   traffic?: number;
-  shadows?: boolean;
 }) {
   const get = useThree((s) => s.get);
   const speed = useRef(0);
@@ -95,13 +94,13 @@ export default function Drive({
   const finder = useMemo(() => ({ find: null as ReturnType<typeof resetSpotFinder> | null }), []);
   const avoid = useMemo(() => (roadblocks?.loose ?? []).map((r) => r.p), [roadblocks]);
   useEffect(() => {
-    const t = setTimeout(() => (finder.find ??= resetSpotFinder(map, avoid)), 2000);
+    const t = setTimeout(() => (finder.find ??= resetSpotFinder(map, avoid, curbFinder(map, avoid))), 2000);
     return () => clearTimeout(t);
   }, [map, finder, avoid]);
   const findReset = useMemo(
     () =>
       (x: number, y: number, z: number, heading: number): ResetPose | null => {
-        finder.find ??= resetSpotFinder(map, avoid);
+        finder.find ??= resetSpotFinder(map, avoid, curbFinder(map, avoid));
         const s = finder.find([x, -z], heading, Math.max(0, y - GROUND_Y));
         return s && { x: s.p[0], y: ROAD_Y[s.cls] + s.z, z: -s.p[1], yaw: yawForHeading(s.heading) };
       },
@@ -129,7 +128,7 @@ export default function Drive({
       )}
       {game && session && <RunDriver game={game} session={session} paused={paused} />}
       {game && <RunMarkers game={game} />}
-      {game && session && traffic > 0 && <Traffic game={game} session={session} map={map} count={traffic} shadows={shadows} car={carBody} />}
+      {game && session && traffic > 0 && <Traffic game={game} session={session} map={map} count={traffic} car={carBody} />}
       {speedBlur && <SpeedBlur speed={speed} />}
     </Physics>
   );
