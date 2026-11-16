@@ -24,6 +24,7 @@
   "ramp-in-lanes": 3,
   "signal-cluster": 0,
   "signal-misaligned": 0,
+  "signal-near-side": 0,
   "tree-by-deck": 0,
   "tree-in-building": 0,
   "tree-on-road": 0,

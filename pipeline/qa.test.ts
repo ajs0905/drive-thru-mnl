@@ -89,6 +89,23 @@ describe('runQa', () => {
     expect(n['dressing-overlap']).toBe(1);
   });
 
+  it('finds a traffic light on the near side of its junction, and takes one on the far side or on a post across a T', () => {
+    const m: MapData = {
+      ...map([road({}), road({ id: 'stem', points: [[50, -100], [50, 0]] })]),
+      junctions: [{ id: 'j', ring: [[44, -6], [56, -6], [56, 6], [44, 6]], z: 0, cls: 'major' }],
+      dressing: [
+        // Eastbound traffic, heads facing back west (-x): past the junction is right, before it (at the stop line) is wrong.
+        { k: 'signalpole', p: [60, -5.5], rot: Math.PI / 2 },
+        { k: 'signalpole', p: [40, -5.5], rot: Math.PI / 2 },
+        // Northbound up the stem, on a post across the top of the T, heads facing back south.
+        { k: 'signalpole', p: [55.5, 8], rot: Math.PI },
+      ],
+    };
+    const n = countByKind(runQa(m));
+    expect(n['signal-near-side']).toBe(1);
+    expect(n['signal-misaligned']).toBeUndefined();
+  });
+
   it('reports nothing for a clean map', () => {
     expect(runQa(map([road({})], [box(40, 20, 50, 30)]))).toEqual([]);
   });

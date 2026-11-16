@@ -9,9 +9,10 @@
  */
 import { ARMS, DRESSING, drawnCorners, dressingCorners } from '../src/geometry/dressing';
 import { readFileSync } from 'node:fs';
-import { distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../src/geometry/polygon';
+import { distanceToRing, distanceToSegment, pointInRing, ringBounds, vertexCentroid } from '../src/geometry/polygon';
 import { SegmentGrid } from '../src/geometry/spatialGrid';
 import type { Building, Dressing, MapData, Point, Road } from '../src/map/types';
+import { headsAlongRoad, LIGHTS } from './lights';
 import { roadIssues } from './qaRoads';
 import { nestedBuildings } from './overlaps';
 import { structureIssues } from './qaStructures';
@@ -146,7 +147,10 @@ export function runQa(map: MapData): Issue[] {
 
 /**
  * 7. Street and traffic lights where they don't belong: a traffic light whose heads don't
- * face along a road beside it or whose mast arm doesn't reach over it (`signal-misaligned`),
+ * face along a road beside it (or the road they look back at across a junction) or whose
+ * mast arm doesn't reach over it (`signal-misaligned`), a traffic light on the near side,
+ * standing before the junction or mid-block crossing it controls instead of past it
+ * (`signal-near-side`),
  * two traffic lights on one corner (`signal-cluster`), a pole beside a zebra crossing's band
  * (`pole-by-crossing`), a pole or its arm reaching into a flyover deck or a raised
  * building above it (`pole-under-structure`), and solid furniture drawn into other solid
@@ -158,22 +162,25 @@ function lightIssues(map: MapData, ground: SegmentGrid<Road>): Issue[] {
   const isPole = (d: Dressing) => d.k === 'streetlight' || d.k === 'signal' || d.k === 'signalpole';
   for (const d of pieces) {
     if (d.k !== 'signal' && d.k !== 'signalpole') continue;
-    // The roads it stands beside: ground roads whose curb is within 3 m (a corner pole has two).
-    const beside = ground.query(d.p, d.p, 15).filter((e) => distanceToSegment(d.p, e.a, e.b) < e.item.w / 2 + 3);
-    if (!beside.length) {
+    const facing = headsAlongRoad(d.p, d.rot, ground);
+    if (facing < 0) {
       issues.push({ kind: 'signal-misaligned', at: d.p, detail: `${d.k} with no road beside it`, severity: 1 });
       continue;
     }
-    // Heads face the model's -z, (-sin, cos) of rot: along one of those roads.
-    const facing = Math.max(
-      ...beside.map((e) => {
-        const l = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) || 1;
-        return Math.abs((-Math.sin(d.rot) * (e.b[0] - e.a[0]) + Math.cos(d.rot) * (e.b[1] - e.a[1])) / l);
-      }),
-    );
-    if (facing < Math.cos(Math.PI / 6)) {
+    if (facing < Math.cos((LIGHTS.facing * Math.PI) / 180)) {
       issues.push({ kind: 'signal-misaligned', at: d.p, detail: `${d.k} heads ${((Math.acos(Math.min(1, facing)) * 180) / Math.PI).toFixed(0)} degrees off the road`, severity: 1 - facing });
       continue;
+    }
+    const heads: Point = [-Math.sin(d.rot), Math.cos(d.rot)];
+    // Far side: a junction (or a mid-block zebra crossing) to control in front of its heads. On the near side it has a
+    // junction or crossing right behind it instead, the one its traffic is about to enter.
+    const inFront = (c: Point) => (c[0] - d.p[0]) * heads[0] + (c[1] - d.p[1]) * heads[1] > 0;
+    const controls = [
+      ...map.junctions.filter((j) => !j.patch && j.z <= 1 && (pointInRing(d.p, j.ring) || distanceToRing(d.p, j.ring) < 30)).map((j) => vertexCentroid(j.ring)),
+      ...map.crossings.filter((c) => c.z <= 1 && Math.hypot(c.c[0] - d.p[0], c.c[1] - d.p[1]) < 15).map((c) => c.c),
+    ];
+    if (controls.length && !controls.some(inFront)) {
+      issues.push({ kind: 'signal-near-side', at: d.p, detail: `${d.k} before the junction or crossing it controls, not past it`, severity: 1 });
     }
     if (d.k === 'signal') {
       const reach = ARMS.signal - 0.45;

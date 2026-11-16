@@ -224,7 +224,7 @@ export interface MapStats {
   parking?: { roads: number; slots: number; cars: number };
   lots?: LotStats;
   sidewalks?: { placed: Record<string, number>; skipped: Record<string, number> };
-  lights?: { signalNodes: number; junctions: number; signals: number; signalPoles: number; streetlights: number; skipped: Record<string, number> };
+  lights?: { signalNodes: number; junctions: number; intersections?: number; signals: number; signalPoles: number; across?: number; streetlights: number; skipped: Record<string, number> };
 }
 
 /** What pipeline/lots.ts did with the empty land inside the drivable area. */

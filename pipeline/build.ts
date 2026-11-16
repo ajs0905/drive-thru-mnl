@@ -235,7 +235,7 @@ if (extras) {
 {
   const l = lights.stats;
   const why = Object.entries(l.skipped).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
-  console.log(`  lights: ${l.signals} traffic lights on mast arms and ${l.signalPoles} on poles at ${l.junctions} junctions (from ${l.signalNodes} signal nodes), ${l.streetlights} street lights (skipped: ${why})`);
+  console.log(`  lights: ${l.signals} traffic lights on mast arms and ${l.signalPoles} on poles (${l.across ?? 0} of them on a post across the junction) at ${l.junctions} junctions in ${l.intersections ?? 0} intersections (from ${l.signalNodes} signal nodes), ${l.streetlights} street lights (skipped: ${why})`);
 }
 {
   const w = sidewalks.stats;
