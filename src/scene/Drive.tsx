@@ -14,7 +14,7 @@
  * have it, fast driving blurs the screen's edges (SpeedBlur.tsx).
  */
 import { useThree } from '@react-three/fiber';
-import { CuboidCollider, Physics, RigidBody, TrimeshCollider, type RapierCollider } from '@react-three/rapier';
+import { CuboidCollider, Physics, RigidBody, TrimeshCollider, type RapierCollider, type RapierRigidBody } from '@react-three/rapier';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Vector3 } from 'three';
 import { resetSpotFinder } from '../car/resetSpot';
@@ -22,12 +22,14 @@ import { headingOfDirection, spawnOnRoad, yawForHeading, type Spawn } from '../c
 import type { ResetPose } from '../car/vehicle';
 import { restLift, SEDAN } from '../car/spec';
 import { buildCollision } from '../geometry/collision';
-import type { MapData } from '../map/types';
+import type { Dressing, MapData } from '../map/types';
 import { Car } from './Car';
 import { ROAD_Y } from './cityGeometry';
 import { ParkedPhysics } from './ParkedPhysics';
 import type { DriveSession } from './driveSession';
 import type { ParkedPoses } from './parkedPoses';
+import type { DebrisStore } from './breakaway';
+import { PropPhysics } from './PropPhysics';
 import { ROADBLOCK_POOL, ROADBLOCK_Y, type LooseProp } from './roadblockBodies';
 import { SpeedBlur } from './SpeedBlur';
 
@@ -43,6 +45,7 @@ export default function Drive({
   start,
   session,
   paused = false,
+  props,
 }: {
   map: MapData;
   parked?: ParkedPoses;
@@ -53,6 +56,8 @@ export default function Drive({
   start?: Spawn | null;
   session?: DriveSession;
   paused?: boolean;
+  /** Street furniture the car can knock over or break, and where moved pieces and debris are (shared with the renderer). */
+  props?: { knock: Dressing[]; broke: Dressing[]; knockPoses: ParkedPoses; breakPoses: ParkedPoses; debris: DebrisStore };
 }) {
   const get = useThree((s) => s.get);
   const speed = useRef(0);
@@ -91,6 +96,7 @@ export default function Drive({
   );
   const spawnAt = useMemo((): [number, number] => [spawn.position[0], -spawn.position[2]], [spawn]);
   const walls = useRef<RapierCollider>(null);
+  const carBody = useRef<RapierRigidBody>(null);
 
   return (
     // Stepped in the render loop just before other per-frame work (camera, wheels, shadow).
@@ -102,7 +108,8 @@ export default function Drive({
         {/* Decks need road grip; their sides are thin enough that it barely matters. */}
         {solid.structures.indices.length > 0 && <TrimeshCollider args={[solid.structures.vertices, solid.structures.indices]} friction={1} restitution={0.1} />}
       </RigidBody>
-      <Car spec={SEDAN} spawn={spawn} onSpeed={reportSpeed} cameraBlockers={walls} session={session} paused={paused} findReset={findReset} />
+      <Car spec={SEDAN} spawn={spawn} onSpeed={reportSpeed} cameraBlockers={walls} session={session} paused={paused} findReset={findReset} bodyRef={carBody} />
+      {props && <PropPhysics knock={props.knock} broke={props.broke} knockPoses={props.knockPoses} breakPoses={props.breakPoses} debris={props.debris} spawn={spawnAt} car={carBody} />}
       {parked && map.parked && <ParkedPhysics cars={map.parked} poses={parked} spawn={spawnAt} />}
       {roadblocks && roadblocks.loose.length > 0 && (
         <ParkedPhysics cars={roadblocks.loose} poses={roadblocks.poses} spawn={spawnAt} options={ROADBLOCK_POOL} groundY={ROADBLOCK_Y} />

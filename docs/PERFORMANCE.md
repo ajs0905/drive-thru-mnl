@@ -101,6 +101,10 @@ Closing off empty lots and the sidewalk furniture ([ADR 0018](decisions/0018-wor
 
 1,106 street lights and 194 traffic lights as dressing (a fourth reach tier, `dressingMid`: 220 m on Low, 320 on Medium, 450 on High, so the tall poles don't pop in at the street clutter's 90 to 120 m and are drawn on Low too). Three more instanced meshes: at most 3 more draw calls (measured +2 in the same three Medium views as above: 58 / 232k, 107 / 472k, 80 / 366k). The poles are 100 triangles (street light), 320 (mast arm with two heads) and 164 (short pole). Collisions grew by about 9k triangles (8 per pole box). Map data 3.31 MB, 779 KB gzipped; `props.glb` 24 KB gzipped.
 
+### Knockable and breakaway props
+
+The street furniture left the static collision meshes (125k to 99k triangles) for pooled bodies near the player ([ADR 0019](decisions/0019-knockable-and-breakaway-props.md)): at most 28 knockable bodies within 35 m (asleep until hit, put to sleep after 3 s lying still), fixed bodies for the sheds, kiosks and booth within 40 m, and at most 30 debris bodies (no shadows, removed after 12 s out of sight). The renderer redraws the dressing's instance lists only when a piece moves or the focus moves 20 m (a loop over the 4,040 pieces, a fraction of a millisecond). Main bundle 387 KB gzipped (was 384), Drive chunk 861 KB.
+
 ### Desktop with a GPU
 
 Run `npm run dev`, open the page with `?debug` at the end of the address, and read the overlay (FPS, draw calls, triangles, build time): top middle on the menu and while driving, bottom left in the map view (`?view=map`). On laptops with two GPUs, check that the browser runs on the dedicated one (`chrome://gpu`, or Windows Settings > Display > Graphics > browser > High performance).

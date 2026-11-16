@@ -33,6 +33,10 @@ export interface PoolOptions<T extends Placed> {
   /** Items within this distance of the player are bodies, and leave the pool this much farther out (m). */
   radius?: number;
   margin?: number;
+  /** At most this many bodies at once: moved ones first, then the nearest. */
+  max?: number;
+  /** A moved body that has lain still this long (s) is put to sleep (it would doze off later on its own). */
+  restSleep?: number;
 }
 
 const CELL = 50;
@@ -62,6 +66,9 @@ export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v
   private readonly createBody: (rapier: typeof RAPIER, world: RAPIER.World, item: T, groundY: number) => RAPIER.RigidBody;
   private readonly radius?: number;
   private readonly margin?: number;
+  private readonly max?: number;
+  private readonly restSleep?: number;
+  private readonly resting = new Map<number, number>();
 
   /** Where an item stands: its own height, else the pool's ground. */
   private baseY(item: T): number {
@@ -77,6 +84,8 @@ export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v
     this.createBody = opts.createBody ?? (createParkedBody as unknown as (rapier: typeof RAPIER, world: RAPIER.World, item: T, groundY: number) => RAPIER.RigidBody);
     this.radius = opts.radius;
     this.margin = opts.margin;
+    this.max = opts.max;
+    this.restSleep = opts.restSleep;
     cars.forEach((c, i) => {
       const k = `${Math.floor(c.p[0] / CELL)},${Math.floor(c.p[1] / CELL)}`;
       this.grid.set(k, [...(this.grid.get(k) ?? []), i]);
@@ -127,6 +136,13 @@ export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v
       const hidden = !onScreen(t.x, t.y, t.z) && !homeOnScreen(i);
       this.hidden.set(i, hidden ? (this.hidden.get(i) ?? 0) + dt : 0);
       const v = body.linvel();
+      if (this.restSleep !== undefined && !body.isSleeping()) {
+        const w = body.angvel();
+        const still = Math.hypot(v.x, v.y, v.z) < 0.15 && Math.hypot(w.x, w.y, w.z) < 0.25;
+        const rest = still ? (this.resting.get(i) ?? 0) + dt : 0;
+        this.resting.set(i, rest);
+        if (rest > this.restSleep) body.sleep();
+      }
       if (shouldReturn(this.hidden.get(i) ?? 0, Math.hypot(v.x, v.y, v.z)) && spotFree(i)) {
         body.setTranslation({ x: car.p[0], y: this.baseY(car), z: -car.p[1] }, false);
         body.setRotation({ x: 0, y: hy, z: 0, w: hw }, false);
@@ -140,13 +156,18 @@ export class ParkedPool<T extends Placed = { p: [number, number]; rot: number; v
 
     if (this.frame++ % POOL_EVERY !== 0) return;
     const keep = (i: number) => poses.moved.has(i) && !this.cleared.has(i);
-    const want = poolFor(cars, player, new Set(this.bodies.keys()), keep, (x, y, r) => this.near(x, y, r), this.radius, this.margin);
+    let want = poolFor(cars, player, new Set(this.bodies.keys()), keep, (x, y, r) => this.near(x, y, r), this.radius, this.margin);
     for (const i of this.cleared) want.delete(i);
+    if (this.max !== undefined && want.size > this.max) {
+      const d = (i: number) => Math.hypot(cars[i].p[0] - player[0], cars[i].p[1] - player[1]);
+      want = new Set([...want].sort((a, b) => Number(keep(b)) - Number(keep(a)) || d(a) - d(b)).slice(0, this.max));
+    }
     for (const [i, body] of this.bodies) {
       if (want.has(i)) continue;
       this.world.removeRigidBody(body);
       this.bodies.delete(i);
       this.hidden.delete(i);
+      this.resting.delete(i);
       poses.clear(i); // only moved cars that are off screen get here: back on their spot
     }
     for (const i of want) if (!this.bodies.has(i)) this.bodies.set(i, this.createBody(this.rapier, this.world, cars[i], this.baseY(cars[i])));

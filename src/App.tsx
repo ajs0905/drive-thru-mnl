@@ -8,6 +8,9 @@ import { BACKDROP, backdropReady } from './ui/backdrop';
 import type { MapData } from './map/types';
 import { City } from './scene/City';
 import { Dressing } from './scene/Dressing';
+import { Debris } from './scene/Debris';
+import { DebrisStore } from './scene/breakaway';
+import { propLists } from './geometry/dressing';
 import { ParkedCars } from './scene/ParkedCars';
 import { ParkedPoses } from './scene/parkedPoses';
 import { Roadblocks } from './scene/Roadblocks';
@@ -171,6 +174,10 @@ export default function App() {
   // Where moved parked cars and roadblock pieces are: written by the physics while driving, read by the renderer.
   const [poses] = useState(() => new ParkedPoses());
   const [blockPoses] = useState(() => new ParkedPoses());
+  // The same for street furniture knocked over or broken, and the debris of what broke.
+  const [knockPoses] = useState(() => new ParkedPoses());
+  const [breakPoses] = useState(() => new ParkedPoses());
+  const [debris] = useState(() => new DebrisStore());
   const [session] = useState(() => new DriveSession());
   const [quality, setQuality] = useState<Quality>(initialQuality);
   const settings = QUALITY[quality];
@@ -244,6 +251,8 @@ export default function App() {
   const viewData = useMemo(() => (map ? mapViewData(map) : null), [map]);
   const streetAt = useMemo(() => (map ? streetNameLookup(map) : null), [map]);
   const roadblocks = useMemo(() => (map ? roadblocksFor(map, ROAD_Y) : null), [map]);
+  const props = useMemo(() => (map?.dressing ? propLists(map.dressing) : null), [map]);
+  const moved = useMemo(() => (props ? { knock: knockPoses, broke: breakPoses, knockOf: props.knockOf, breakOf: props.breakOf } : undefined), [props, knockPoses, breakPoses]);
 
   const startDriving = useCallback(() => {
     // A focused button would be pressed again by the space bar (the handbrake).
@@ -369,7 +378,8 @@ export default function App() {
           {roadblocks && built && <Roadblocks props={roadblocks.props} loose={roadblocks.loose} poses={blockPoses} far={settings.parkedFar} shadows={settings.shadowMap > 0} />}
           {map?.dressing && built && (
             <Suspense fallback={null}>
-              <Dressing pieces={map.dressing} near={settings.dressingNear} mid={settings.dressingMid} far={settings.dressingFar} shadows={settings.shadowMap > 0} />
+              <Dressing pieces={map.dressing} near={settings.dressingNear} mid={settings.dressingMid} far={settings.dressingFar} shadows={settings.shadowMap > 0} moved={moved} />
+              <Debris store={debris} />
             </Suspense>
           )}
           {map?.parked && built && (
@@ -384,6 +394,7 @@ export default function App() {
                 parked={poses}
                 speedBlur={settings.speedBlur}
                 roadblocks={roadblocks ? { loose: roadblocks.loose, poses: blockPoses } : undefined}
+                props={props ? { knock: props.knock, broke: props.broke, knockPoses, breakPoses, debris } : undefined}
                 start={MAP_VIEW ? undefined : start}
                 session={session}
                 paused={holdPhysics}

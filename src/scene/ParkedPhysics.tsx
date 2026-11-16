@@ -7,6 +7,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useRapier } from '@react-three/rapier';
 import { useEffect, useMemo } from 'react';
 import { Frustum, Matrix4, Sphere, Vector3 } from 'three';
+import { screenTest } from './screenTest';
 import { PARKED_Y, type ParkedPoses } from './parkedPoses';
 import { ParkedPool, type Placed, type PoolOptions } from './parkedPool';
 
@@ -36,10 +37,4 @@ export function ParkedPhysics<T extends Placed>({
     pool.update([focus.x, -focus.z], dt, screenTest(view, camera.projectionMatrix, camera.matrixWorldInverse));
   });
   return null;
-}
-
-/** A test for "is this point (with a car's size around it) on screen?" for this frame. */
-function screenTest(view: { frustum: Frustum; m: Matrix4; sphere: Sphere }, projection: Matrix4, inverseWorld: Matrix4) {
-  view.frustum.setFromProjectionMatrix(view.m.multiplyMatrices(projection, inverseWorld));
-  return (x: number, y: number, z: number) => view.frustum.intersectsSphere(view.sphere.set(view.sphere.center.set(x, y + 1, z), 3));
 }

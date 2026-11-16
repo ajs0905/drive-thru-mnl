@@ -34,7 +34,7 @@
  * thin walls need only one quad.
  */
 import { CONCRETE_SIZE, roadblockCorners, roadblockLayout } from './roadblocks';
-import { DRESSING, dressingCorners } from './dressing';
+import { DRESSING, dressingCorners, PROP_PHYSICS } from './dressing';
 import earcut from 'earcut';
 import type { MapData, Point, Road, RoadClass } from '../map/types';
 import { PROP_SHAPE, type Prop, type PropKind } from './props';
@@ -247,10 +247,12 @@ export function buildCollision(map: CollisionInput, opts: CollisionOptions): Col
     counts.posts++;
   }
 
-  // Street and park furniture that's solid (scene/Dressing.tsx draws it); lot clutter behind the walls isn't.
+  // Street and park furniture that's solid and stays put (the pavilion); lot clutter behind
+  // the walls isn't solid, and what the car can knock over or break is a pooled body near
+  // the player instead (scene/PropPhysics.tsx).
   for (const d of map.dressing ?? []) {
     const spec = DRESSING[d.k];
-    if (!spec.solid) continue;
+    if (!spec.solid || PROP_PHYSICS[d.k]) continue;
     structures.walls(dressingCorners(d.k, d.p, d.rot), 0, spec.size[2], true);
     counts.dressing++;
   }

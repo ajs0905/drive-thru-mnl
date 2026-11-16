@@ -39,6 +39,7 @@ export function Car({
   session,
   paused = false,
   findReset,
+  bodyRef,
 }: {
   spec: CarSpec;
   spawn: { position: Vec3; yaw: number };
@@ -52,6 +53,8 @@ export function Car({
   paused?: boolean;
   /** Where a reset puts the car (an open road nearby), given where it is (three.js space) and its map heading; null resets it in place. */
   findReset?: (x: number, y: number, z: number, heading: number) => ResetPose | null;
+  /** Where to keep the car's rigid body, for others that need it (the breakaway props). */
+  bodyRef?: RefObject<RapierRigidBody | null>;
 }) {
   const gltf = useLoader(GLTFLoader, `${import.meta.env.BASE_URL}${spec.model}`);
   const model = useMemo(() => prepareCarModel(gltf.scene), [gltf]);
@@ -65,7 +68,8 @@ export function Car({
     [model, shadow],
   );
 
-  const body = useRef<RapierRigidBody>(null);
+  const own = useRef<RapierRigidBody>(null);
+  const body = bodyRef ?? own;
   const { world, rapier } = useRapier();
   const sim = useRef({ vc: null as VehicleController | null, drive: newDriveState(), keys: { ...NO_KEYS }, held: { ...NO_KEYS }, reset: false, stuck: 0, time: 0, lastReset: -Infinity });
   const view = useRef({
@@ -98,7 +102,7 @@ export function Car({
       world.removeVehicleController(vc);
       world.removeCollider(collider, false);
     };
-  }, [world, rapier, spec]);
+  }, [world, rapier, spec, body]);
 
   // Leaving drive mode: lift the camera to an overview behind where the car stopped, so the
   // map view doesn't start inside a building.

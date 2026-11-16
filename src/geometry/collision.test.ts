@@ -100,16 +100,23 @@ describe('buildCollision', () => {
     expect(Math.max(...ys)).toBeCloseTo(5.8);
   });
 
-  it('makes street furniture solid at its drawn size, but not the clutter behind lot walls', () => {
-    const w = build({ ...empty, dressing: [{ k: 'shed', p: [0, 0], rot: 0 }, { k: 'container', p: [20, 0], rot: 0, c: 1 }, { k: 'stall', p: [40, 0], rot: 0 }] }, { surfaceY: SURFACE });
+  it('makes the pavilion solid at its drawn size, and leaves out lot clutter and what the car can knock over or break (pooled bodies instead)', () => {
+    const dressing = [
+      { k: 'pavilion', p: [0, 0], rot: 0 },
+      { k: 'shed', p: [30, 0], rot: 0 },
+      { k: 'streetlight', p: [40, 0], rot: 0 },
+      { k: 'container', p: [60, 0], rot: 0, c: 1 },
+      { k: 'stall', p: [80, 0], rot: 0 },
+    ] as const;
+    const w = build({ ...empty, dressing: dressing.map((d) => ({ ...d, p: [...d.p] as [number, number] })) }, { surfaceY: SURFACE });
     expect(w.counts.dressing).toBe(1);
     expect(w.structures.indices.length / 3).toBe(8);
     const v = Array.from(w.structures.vertices);
     const xs = v.filter((_, i) => i % 3 === 0);
     const zs = v.filter((_, i) => i % 3 === 2);
-    expect(Math.max(...v.filter((_, i) => i % 3 === 1))).toBeCloseTo(DRESSING.shed.size[2]);
-    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(DRESSING.shed.size[0]);
-    expect(Math.max(...zs) - Math.min(...zs)).toBeCloseTo(DRESSING.shed.size[1]);
+    expect(Math.max(...v.filter((_, i) => i % 3 === 1))).toBeCloseTo(DRESSING.pavilion.size[2]);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(DRESSING.pavilion.size[0]);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeCloseTo(DRESSING.pavilion.size[1]);
   });
 });
 
