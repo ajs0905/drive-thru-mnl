@@ -182,6 +182,18 @@ export interface ResetPose {
  * where the car was, so resetting again and again lands it in the same place. With no
  * ground found (fallen off the world), it goes to `fallbackY`.
  */
+/** How far from the map's origin (m) the car can be before it's taken as lost (the map is about 3 km across). */
+export const LOST_AT = 10_000;
+
+/**
+ * Has the car's body gone somewhere it can't be: a position or rotation that isn't a number (the physics blew up),
+ * or far off the map. The car is then put back where it last was fine.
+ */
+export function poseLost(t: { x: number; y: number; z: number }, r: { x: number; y: number; z: number; w: number }): boolean {
+  const numbers = [t.x, t.y, t.z, r.x, r.y, r.z, r.w];
+  return !numbers.every(Number.isFinite) || Math.abs(t.x) > LOST_AT || Math.abs(t.z) > LOST_AT || Math.abs(t.y) > LOST_AT;
+}
+
 export function resetOnGround(world: RAPIER.World, rapier: Rapier, body: RAPIER.RigidBody, spec: CarSpec, fallbackY: number, to?: ResetPose) {
   const p = to ? { x: to.x, y: to.y, z: to.z } : body.translation();
   const r = body.rotation();

@@ -687,7 +687,8 @@ export class TrafficSim {
     for (let i = this.agents.length - 1; i >= 0; i--) {
       const a = this.agents[i];
       const d = Math.hypot(a.x - player[0], a.y - player[1]);
-      if (d > (a.knocked ? TRAFFIC.knockedGone : TRAFFIC.despawn) || (!a.knocked && a.next < 0 && this.graph.edges[a.edge].length - a.s < a.len / 2 + 2 && a.v < 0.5)) {
+      // A car whose numbers went bad (a knocked body the physics lost) goes too: it can't be drawn or followed.
+      if (!Number.isFinite(d + a.z + a.heading) || d > (a.knocked ? TRAFFIC.knockedGone : TRAFFIC.despawn) || (!a.knocked && a.next < 0 && this.graph.edges[a.edge].length - a.s < a.len / 2 + 2 && a.v < 0.5)) {
         this.drop(a);
         this.agents.splice(i, 1);
       }

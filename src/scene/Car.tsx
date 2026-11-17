@@ -21,7 +21,7 @@ import { CHASE, cameraPull, chaseView, clipDistance, compressedLift, crashShake,
 import { inputFromKeys, KEY_BINDINGS, NO_KEYS, type DriveInput } from '../car/controls';
 import { headingOfDirection, yawForHeading } from '../car/spawn';
 import { restLift, wheelHardPoint, type CarSpec } from '../car/spec';
-import { chassisCollider, newDriveState, resetOnGround, RESET, setupWheels, stepVehicle, type DriveState, type ResetPose, type VehicleController } from '../car/vehicle';
+import { chassisCollider, newDriveState, poseLost, resetOnGround, RESET, setupWheels, stepVehicle, type DriveState, type ResetPose, type VehicleController } from '../car/vehicle';
 import { blinkAfterReset, blobShadow, placeShadow, placeSunShadow, poseBody, prepareCarModel, setBrakeLights, setReverseLights, sunShadowMesh, updateHalos } from './carModel';
 import { mergeKeys, type DriveSession } from './driveSession';
 
@@ -77,7 +77,7 @@ export function Car({
   const own = useRef<RapierRigidBody>(null);
   const body = bodyRef ?? own;
   const { world, rapier } = useRapier();
-  const sim = useRef({ vc: null as VehicleController | null, drive: newDriveState(), keys: { ...NO_KEYS }, held: { ...NO_KEYS }, reset: false, stuck: 0, time: 0, lastReset: -Infinity });
+  const sim = useRef({ vc: null as VehicleController | null, drive: newDriveState(), keys: { ...NO_KEYS }, held: { ...NO_KEYS }, reset: false, stuck: 0, time: 0, lastReset: -Infinity, good: { x: spawn.position[0], y: spawn.position[1], z: spawn.position[2], heading: 0 } });
   const view = useRef({
     dir: [0, 1] as [number, number],
     placed: false,
@@ -157,6 +157,15 @@ export function Car({
     if (!s.vc || !b) return;
     const dt = w.timestep;
     const r = b.rotation();
+    const at = b.translation();
+    // Lost (not a number, or far off the map): straight back to where it last was fine, standing still.
+    if (poseLost(at, r)) {
+      const g = s.good;
+      resetOnGround(w, rapier, b, spec, spawn.position[1] - restLift(spec), findReset?.(g.x, g.y, g.z, g.heading) ?? { x: g.x, y: g.y, z: g.z, yaw: yawForHeading(g.heading) });
+      Object.assign(s, { lastReset: s.time, reset: false, stuck: 0, drive: { ...newDriveState(), gearbox: { ...s.drive.gearbox, gear: 1, shifting: 0 }, impacts: s.drive.impacts } });
+      return;
+    }
+    Object.assign(s.good, { x: at.x, y: at.y, z: at.z, heading: headingOfDirection(2 * (r.x * r.z + r.w * r.y), 1 - 2 * (r.x * r.x + r.y * r.y)) });
     const upY = 1 - 2 * (r.x * r.x + r.z * r.z);
     s.stuck = upY < 0.3 || b.translation().y < -20 ? s.stuck + dt : 0;
     s.time += dt;

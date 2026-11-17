@@ -4,7 +4,8 @@
  * Whatever is stored is read back through `parseSave`, which keeps only fields of the
  * right type and range and fills in the rest with defaults: a save edited by hand, left
  * over from an older version, or cut short can't crash the game or give it impossible
- * values. It isn't protection against cheating (there's no server, and anything in the
+ * values, and nothing in it can reach an object's prototype (`__proto__` and the like are
+ * dropped, every object is built fresh from known fields). It isn't protection against cheating (there's no server, and anything in the
  * browser can be changed); it keeps the game working whatever it finds.
  */
 
@@ -39,6 +40,9 @@ export const NEW_SAVE: Save = { v: 1, seenWelcome: false, pesos: 0, cars: ['seda
 export const MAX_PESOS = 10_000_000;
 
 const finite = (n: unknown, lo: number, hi: number): n is number => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
+/** A run id as the game makes them (lowercase words and dashes). Anything else, `__proto__` and `constructor` included, is dropped. */
+const RUN_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const RESERVED = new Set(['__proto__', 'constructor', 'prototype']);
 
 /** A save from whatever was stored (JSON text or nothing): valid fields kept, the rest defaults. */
 export function parseSave(text: string | null): Save {
@@ -54,7 +58,8 @@ export function parseSave(text: string | null): Save {
   if (o.best && typeof o.best === 'object' && !Array.isArray(o.best)) {
     for (const [id, b] of Object.entries(o.best as Record<string, unknown>)) {
       const x = b as Partial<Best> | null;
-      if (typeof id === 'string' && id.length < 64 && x && finite(x.time, 0.1, 86400) && finite(x.net, -MAX_PESOS, MAX_PESOS)) best[id] = { time: x.time, net: Math.round(x.net * 100) / 100 };
+      if (id.length > 63 || !RUN_ID.test(id) || RESERVED.has(id) || !x || typeof x !== 'object') continue;
+      if (finite(x.time, 0.1, 86400) && finite(x.net, -MAX_PESOS, MAX_PESOS)) best[id] = { time: x.time, net: Math.round(x.net * 100) / 100 };
     }
   }
   return {

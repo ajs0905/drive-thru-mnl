@@ -15,6 +15,8 @@ export default defineConfig({
     // chunks are past it by design. Their real limits are the gzipped budgets in
     // tools/bundleBudget.ts (npm run size); this only flags a chunk far past those.
     chunkSizeWarningLimit: 2600,
+    // No source maps in the published build (Vite's default, stated so it stays that way).
+    sourcemap: false,
   },
   test: {
     // Some tests drive minutes of traffic or physics on the real map: a few seconds each on

@@ -356,6 +356,18 @@ describe('traffic on the real map', () => {
     expect(dodged).toBeGreaterThan(0);
   });
 
+  it('drops a car whose position stops being a number (a knocked body the physics lost)', () => {
+    const sim = new TrafficSim(graph, { count: 6, models: MODELS, paints: PAINTS, room, seed: 'lost' });
+    const p = pointOnRoute(route, 0).p;
+    for (let i = 0; i < 120; i++) sim.step(1 / 60, p);
+    const a = sim.agents[0];
+    sim.knock(a.id);
+    sim.moveKnocked(a.id, NaN, a.y, a.z, a.heading);
+    sim.step(1 / 60, p);
+    expect(sim.agents.includes(a)).toBe(false);
+    expect(sim.agents.every((x) => Number.isFinite(x.x + x.y + x.z + x.heading))).toBe(true);
+  });
+
   /** A car well into a long edge and moving, and the player coming at it head-on from 40 m, `across` m to its left (- right), drifting across at `drift` m/s. */
   function headOn(seed: string, across: number, drift: number, stopped = false) {
     const sim = new TrafficSim(graph, { count: 6, models: MODELS, paints: PAINTS, room, seed });

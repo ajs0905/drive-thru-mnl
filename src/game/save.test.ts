@@ -46,6 +46,36 @@ describe('save', () => {
     expect(parseSave(JSON.stringify({ pesos: 'lots' })).pesos).toBe(0);
   });
 
+  it('shrugs off hostile saves: prototype keys, NaN and huge numbers, nested junk, wrong types everywhere', () => {
+    const hostile = [
+      '{"__proto__":{"pesos":5},"best":{"__proto__":{"time":5,"net":1},"constructor":{"time":5,"net":1},"morning-parcels":{"time":40,"net":300}}}',
+      '{"pesos":-5,"runs":-1,"cars":"coupe","car":{"toString":1},"best":[1,2,3],"seenWelcome":"yes"}',
+      '{"pesos":1e400,"runs":1e400,"best":{"a":{"time":"NaN","net":null},"b":null,"c":[1]}}',
+      '{"pesos":"NaN","cars":[null,{},["coupe"],"sedan","muscle","muscle","not-a-car"]}',
+      '[1,2,3]',
+      '"just a string"',
+      'null',
+      '{"best":{"' + 'x'.repeat(5000) + '":{"time":5,"net":1}}}',
+    ];
+    for (const text of hostile) {
+      const s = parseSave(text);
+      expect(Object.getPrototypeOf(s)).toBe(Object.prototype);
+      expect(Object.getPrototypeOf(s.best)).toBe(Object.prototype);
+      expect(Object.keys(s.best).every((k) => /^[a-z0-9-]+$/.test(k) && k.length < 64)).toBe(true);
+      expect(Number.isFinite(s.pesos) && s.pesos >= 0 && s.pesos <= MAX_PESOS).toBe(true);
+      expect(Number.isInteger(s.runs) && s.runs >= 0).toBe(true);
+      expect(s.cars[0]).toBe('sedan');
+      expect(s.cars.includes(s.car)).toBe(true);
+      expect(typeof s.seenWelcome).toBe('boolean');
+    }
+    // Nothing leaked onto Object.prototype either.
+    expect(({} as Record<string, unknown>).pesos).toBeUndefined();
+    expect(({} as Record<string, unknown>).time).toBeUndefined();
+    // And what was valid survived.
+    expect(parseSave(hostile[0]).best['morning-parcels']).toEqual({ time: 40, net: 300 });
+    expect(parseSave(hostile[3]).cars).toEqual(['sedan', 'muscle']);
+  });
+
   it('credits runs, keeps the best time and pay, and never goes below zero', () => {
     let s = creditRun(NEW_SAVE, 'r', 500.5, 90);
     s = creditRun(s, 'r', 300, 80);

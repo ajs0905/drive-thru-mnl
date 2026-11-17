@@ -181,9 +181,9 @@ function initialView(map: MapData) {
   }
   let target: [number, number, number] = [cx, 0, -cy];
   let position: [number, number, number] = [cx + 700, 1100, -cy + 1500];
-  // Debug / screenshot helper: ?cam=x,y,z,tx,ty,tz (three.js coordinates)
+  // Debug / screenshot helper: ?cam=x,y,z,tx,ty,tz (three.js coordinates; six plain numbers within 20 km, or it's ignored)
   const cam = new URLSearchParams(window.location.search).get('cam')?.split(',').map(Number);
-  if (cam?.length === 6 && cam.every(Number.isFinite)) {
+  if (cam?.length === 6 && cam.every((n) => Number.isFinite(n) && Math.abs(n) < 20000)) {
     position = [cam[0], cam[1], cam[2]];
     target = [cam[3], cam[4], cam[5]];
   }
@@ -281,6 +281,9 @@ export default function App() {
   const [drive, setDrive] = useState({ step: STEP.engine as number, mounted: false, waiting: false, loaderShown: false, count: 0 });
   const [paused, setPaused] = useState(false);
   const [bigMap, setBigMap] = useState(false);
+  // The GPU dropped the page's WebGL context (a driver reset, or the phone reclaiming memory from a background tab):
+  // three.js restores it when the browser allows, and until then a card says so instead of a frozen picture.
+  const [gpuLost, setGpuLost] = useState(false);
   // The modes and the progress kept between visits (game/session.ts), "How to play" from the
   // pause menu, and the modes and cars menu. The game is read through small snapshots, so
   // the run's clock ticking doesn't re-render the whole app.
@@ -421,6 +424,17 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [screen, driving, loading, drive.waiting, help, closeHelp, modes, runCard, bigMap, panel, paused, cityReady, startDriving, startPlaying]);
 
+  // Leaving the tab (another app, the home screen) while driving pauses the game, so it's waiting on the pause menu
+  // when you come back instead of catching up on the time away.
+  useEffect(() => {
+    if (!driving) return;
+    const away = () => {
+      if (document.hidden) setPaused(true);
+    };
+    document.addEventListener('visibilitychange', away);
+    return () => document.removeEventListener('visibilitychange', away);
+  }, [driving]);
+
   // The city and everything standing in it, made once per map, quality and build: pausing,
   // opening the map or a menu re-renders the app, and none of this needs to follow.
   const mapView = screen === 'map';
@@ -470,6 +484,12 @@ export default function App() {
           onCreated={({ gl }) => {
             gl.toneMappingExposure = SKY.toneExposure;
             gl.info.autoReset = false; // PerfProbe resets once per frame, so stats cover every pass
+            // three.js already asks the browser to keep the context restorable; this just shows it and pauses the drive.
+            gl.domElement.addEventListener('webglcontextlost', () => {
+              setGpuLost(true);
+              setPaused(true);
+            });
+            gl.domElement.addEventListener('webglcontextrestored', () => setGpuLost(false));
           }}
         >
           <color attach="background" args={[SKY.horizon]} />
@@ -619,6 +639,23 @@ export default function App() {
       {panel === 'settings' && <SettingsPanel quality={quality} onQuality={pickQuality} stats={showStats} onStats={pickStats} onClose={() => setPanel(null)} />}
       {panel === 'about' && <AboutPanel map={map} onClose={() => setPanel(null)} />}
 
+      {gpuLost && (
+        <div className="overlay gpu-lost" role="alertdialog" aria-modal="true" aria-label="Graphics reset">
+          <div className="sign sheet small">
+            <div className="face">
+              <div className="sheet-head">
+                <h2>GRAPHICS RESET</h2>
+              </div>
+              <p>The browser reset the graphics, which can happen after a driver hiccup or a long time in the background. It usually comes back by itself in a moment; if it doesn't, reload. Your wallet and cars are saved.</p>
+              <div className="go">
+                <button type="button" className="chip on" onClick={() => window.location.reload()}>
+                  RELOAD
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {statsOn && perf && (DEBUG || driving) && (
         <div className={screen === 'map' ? 'perf' : 'perf debug'}>
           {perf.idle ? 'idle (draws only when something changes)' : `${perf.fps.toFixed(0)} fps`} · {perf.calls} draw calls · {fmt(perf.triangles)} tris

@@ -11,7 +11,7 @@ import { createParkedBody, PARKED } from './parked';
 import { buildCollision } from '../geometry/collision';
 import type { MapData, Point } from '../map/types';
 import bgc from '../../public/data/bgc.json?raw';
-import { chassisCollider, chassisInertia, downforce, newDriveState, resetOnGround, setupWheels, stepVehicle } from './vehicle';
+import { chassisCollider, chassisInertia, downforce, LOST_AT, newDriveState, poseLost, resetOnGround, setupWheels, stepVehicle } from './vehicle';
 
 const DT = 1 / 60;
 
@@ -70,6 +70,18 @@ function drive(car: Car, partial: Partial<DriveInput>, seconds: number) {
   }
   return car.vc.currentVehicleSpeed();
 }
+
+describe('a lost car', () => {
+  const upright = { x: 0, y: 0, z: 0, w: 1 };
+  it('is one whose position or rotation is not a number, or far off the map', () => {
+    expect(poseLost({ x: 10, y: 0.5, z: -300 }, upright)).toBe(false);
+    expect(poseLost({ x: NaN, y: 0.5, z: 0 }, upright)).toBe(true);
+    expect(poseLost({ x: 0, y: Infinity, z: 0 }, upright)).toBe(true);
+    expect(poseLost({ x: 0, y: 0, z: 0 }, { ...upright, w: NaN })).toBe(true);
+    expect(poseLost({ x: LOST_AT + 1, y: 0, z: 0 }, upright)).toBe(true);
+    expect(poseLost({ x: 0, y: -LOST_AT - 1, z: 0 }, upright)).toBe(true);
+  });
+});
 
 describe('the Sedan in Rapier', () => {
   it('rests on all four wheels with the springs partly compressed', () => {

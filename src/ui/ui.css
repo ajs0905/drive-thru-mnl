@@ -1869,3 +1869,8 @@ kbd.wide {
     justify-content: center;
   }
 }
+
+/* Over everything, the pause menu included: nothing under it can be drawn until the graphics come back. */
+.overlay.gpu-lost {
+  z-index: 70;
+}
