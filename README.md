@@ -22,53 +22,68 @@ Free-roam arcade driving on BGC's real streets, with less traffic than the real 
 
 W A S D or the arrow keys to drive, Space for the handbrake, R to reset, M for the map, Esc to pause. All controls, the modes and the testing options: [Controls & modes](docs/PLAYING.md).
 
-## Architecture
-
-```mermaid
-flowchart TB
-  subgraph BUILD["1. Build time: pipeline/ (Node, run by the developer)"]
-    direction LR
-    OSM[("OpenStreetMap<br/>GeoJSON exports")] --> STEPS["18 steps: clip, heights,<br/>flyovers, junctions, lots,<br/>parking, lights, signs"]
-    STEPS --> QA{{"Map QA<br/>33 checks"}}
-    QA --> MAP[("public/data/bgc.json<br/>806 KB gzipped,<br/>committed to Git")]
-  end
-  subgraph HOST["2. Static hosting: GitHub to Vercel"]
-    direction LR
-    GH["GitHub main"] --> CI["CI: types, lint, tests,<br/>data in sync, QA, sizes"]
-    CI --> VB["Vercel:<br/>npm run build"]
-    VB --> DIST["dist/ on a CDN<br/>static files, no backend"]
-  end
-  subgraph WEB["3. Browser runtime: src/"]
-    direction LR
-    LOAD["map/loadMap.ts"] --> GEO["geometry/ + scene/<br/>low-poly roads, buildings,<br/>instanced props, shaders"]
-    LOAD --> SIM["routing/ + traffic/ + game/<br/>road graph, A* routes,<br/>traffic sim, cargo runs"]
-    LOAD --> PHYS["car/ + Drive chunk<br/>Rapier physics on demand,<br/>pooled bodies near you"]
-    GEO --> GL["React Three Fiber<br/>WebGL"]
-    PHYS --> GL
-    SIM --> GL
-    SIM --> UI["ui/: HUD, minimap,<br/>full map, menus"]
-  end
-  BUILD -->|"git push"| HOST
-  HOST -->|"page, scripts, map file, models"| WEB
-```
-
-- **Build time:** the expensive, careful work (projection, cleanup, heights, flyovers, placement by rule) happens once on the developer's machine. The output is deterministic: CI rebuilds the map and fails if a single byte differs, and map QA counts can only go down.
-- **Hosting:** only static files. Hashed scripts are cached for good, the map and models are re-checked on each visit, every response carries strict security headers, and visits are counted without cookies through the site's own address.
-- **Browser:** the city is built from the map file in about half a second, merged into grid cells and drawn on demand. Physics loads only when you start driving, and only what's near the player becomes a physics body.
-
-More: [Architecture](docs/ARCHITECTURE.md) (module boundaries, data contract, rendering, testing) and [Decisions](docs/decisions/) (32 records).
-
 ## Algorithms
 
-- **Geometry:** equirectangular projection checked against Haversine, Sutherland-Hodgman clipping and earcut triangulation, low-poly extrusion with hip roofs and podium towers, polyline offsetting and convex-hull junction polygons, Catmull-Rom flyover curves, SAT overlap tests for every placed object
-- **Spatial indexing:** 2D spatial hash grids for placement, physics pools and culling; union-find to merge junctions and group traffic lights; greedy graph coloring for a flicker-free road draw order
-- **Routing:** a directed road graph (Tarjan's strongly connected components) and edge-based A\* with ALT landmarks: 179 states expanded per route against Dijkstra's 1,447
-- **Traffic:** Intelligent Driver Model car-following, junction reservations, signal compliance at fixed-time lights, a kinematic bicycle model on Bézier paths, MOBIL-style lane changes as quintic S-curves, evasive steering
-- **Physics:** a ray-cast vehicle on Rapier at a fixed 60 Hz with slip-angle drift assists, static collision meshes built from the same shapes the renderer draws, bumps as impulses at the contact point
-- **Rendering:** merged grid cells, GPU instancing with frustum and distance culling, shader-drawn markings and windows from per-vertex data, render on demand, adaptive resolution
-- **QA and determinism:** rasterization and flood fill to find unpaved holes, 33 deterministic map QA geometry checks, golden replays of cargo runs played back in CI
+What each algorithm is used for. Where they run and their numbers: [Algorithms](docs/ALGORITHMS.md).
 
-Each one, where it runs and its numbers: [Algorithms](docs/ALGORITHMS.md).
+**Map geometry and meshes** (build-time pipeline and `src/geometry/`)
+
+| Algorithm | Used for |
+| :--- | :--- |
+| Equirectangular projection, checked against Haversine | Turning latitude and longitude into local meters |
+| Sutherland-Hodgman polygon clipping | Cutting buildings and land to the map, and building walls back off the roads |
+| Earcut triangulation | Filling roofs, land use, road surfaces and junctions |
+| Extrusion and rotating calipers (minimum-area rectangles) | Low-poly buildings with hip roofs and towers stepped back from their podiums |
+| Polyline offsetting and convex hulls | Road ribbons, crack-free flyover decks and 1,384 junction polygons |
+| Catmull-Rom splines | Rounding the curves of flyovers and ramps |
+| Contour tracing, Ramer-Douglas-Peucker and a BFS distance transform | Walling off empty lots at the back of the sidewalk |
+| Separating Axis Theorem (SAT) | Keeping parked cars, roadblocks, street furniture and reset spots clear of obstacles |
+
+**Spatial indexing and routing**
+
+| Algorithm | Used for |
+| :--- | :--- |
+| 2D spatial hash grids | Fast "what's near here" lookups for placement, physics pools and culling |
+| Union-find | Merging the junctions of divided roads, and clustering junctions for traffic lights and traffic |
+| Greedy graph coloring | A draw order for overlapping roads at interchanges, so nothing flickers |
+| Tarjan's strongly connected components | Finding the drivable road network (1,706 nodes, 3,062 directed edges) |
+| A\* with ALT landmarks | Cargo run routes and the GPS line: 179 states searched per route, against Dijkstra's 1,447 |
+
+**Traffic** (`src/traffic/`)
+
+| Algorithm | Used for |
+| :--- | :--- |
+| Intelligent Driver Model | Following the car ahead and stopping at red lights |
+| Junction reservations and fixed-time signal phases | Crossing junctions without passing through each other, on green |
+| Kinematic bicycle model on Bézier curves | Steering along lanes and through junctions like a real car |
+| MOBIL-style lane changes as quintic S-curves | Changing lanes, signal on, when there's a gap |
+| Collision prediction | Dodging the player, to the side with room |
+
+**Physics** (`src/car/`, Rapier at a fixed 60 Hz)
+
+| Algorithm | Used for |
+| :--- | :--- |
+| Ray-cast vehicle with slip-angle drift control | The car's arcade handling: drifts, anti-spin, automatic gears |
+| Static triangle meshes from the map | Solid buildings, walls and drivable flyover decks (98,615 triangles) |
+| Impulse at the contact point | Bumping traffic cars into a spin |
+| Filtered ray casting | Keeping the chase camera out of walls |
+
+**Rendering** (`src/scene/`)
+
+| Algorithm | Used for |
+| :--- | :--- |
+| Merged grid cells and GPU instancing | Drawing the city, props and cars in few draw calls |
+| Frustum and distance culling | Drawing only the props, parked cars, traffic and lamps in view and in range |
+| GLSL shaders from per-vertex data | Lane markings, zebras, windows and car reflections without textures |
+| Render on demand and adaptive resolution | Keeping the frame rate up on phones, and nothing drawn when nothing changes |
+
+**QA and testing**
+
+| Algorithm | Used for |
+| :--- | :--- |
+| Rasterization and flood fill | Finding unpaved holes in the road network, then paving them |
+| 33 deterministic map QA checks | Catching map problems in CI (counts can only go down) |
+| Deterministic replays with a pure-pursuit autopilot | Golden cargo runs replayed in the real physics in CI |
 
 ## Results & Benchmarks
 
@@ -120,6 +135,42 @@ Measured with `npm run size`, `npm run bench`, the pipeline's output and the `?d
 | :---: | :---: | :---: |
 | ![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags, over hip-roofed houses and an empty lot closed off with hoarding](docs/images/flyover.jpg) | ![A junction with far-side traffic lights, zebra crossings, lane markings, street lights and parked cars, all generated from OSM data](docs/images/streets.jpg) | ![Hip-roofed houses, rooftop water tanks and palm-lined streets, with shopfronts along the ground floors and the BGC towers behind](docs/images/buildings.jpg) |
 | Flyovers raised from OSM bridge tags | Junctions, lights and parking by rule | Low-poly building forms |
+
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph BUILD["1. Build time: pipeline/ (Node, run by the developer)"]
+    direction LR
+    OSM[("OpenStreetMap<br/>GeoJSON exports")] --> STEPS["18 steps: clip, heights,<br/>flyovers, junctions, lots,<br/>parking, lights, signs"]
+    STEPS --> QA{{"Map QA<br/>33 checks"}}
+    QA --> MAP[("public/data/bgc.json<br/>806 KB gzipped,<br/>committed to Git")]
+  end
+  subgraph HOST["2. Static hosting: GitHub to Vercel"]
+    direction LR
+    GH["GitHub main"] --> CI["CI: types, lint, tests,<br/>data in sync, QA, sizes"]
+    CI --> VB["Vercel:<br/>npm run build"]
+    VB --> DIST["dist/ on a CDN<br/>static files, no backend"]
+  end
+  subgraph WEB["3. Browser runtime: src/"]
+    direction LR
+    LOAD["map/loadMap.ts"] --> GEO["geometry/ + scene/<br/>low-poly roads, buildings,<br/>instanced props, shaders"]
+    LOAD --> SIM["routing/ + traffic/ + game/<br/>road graph, A* routes,<br/>traffic sim, cargo runs"]
+    LOAD --> PHYS["car/ + Drive chunk<br/>Rapier physics on demand,<br/>pooled bodies near you"]
+    GEO --> GL["React Three Fiber<br/>WebGL"]
+    PHYS --> GL
+    SIM --> GL
+    SIM --> UI["ui/: HUD, minimap,<br/>full map, menus"]
+  end
+  BUILD -->|"git push"| HOST
+  HOST -->|"page, scripts, map file, models"| WEB
+```
+
+- **Build time:** the expensive, careful work (projection, cleanup, heights, flyovers, placement by rule) happens once on the developer's machine. The output is deterministic: CI rebuilds the map and fails if a single byte differs, and map QA counts can only go down.
+- **Hosting:** only static files. Hashed scripts are cached for good, the map and models are re-checked on each visit, every response carries strict security headers, and visits are counted without cookies through the site's own address.
+- **Browser:** the city is built from the map file in about half a second, merged into grid cells and drawn on demand. Physics loads only when you start driving, and only what's near the player becomes a physics body.
+
+More: [Architecture](docs/ARCHITECTURE.md) (module boundaries, data contract, rendering, testing) and [Decisions](docs/decisions/) (32 records).
 
 ## Known issues
 
