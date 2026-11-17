@@ -15,13 +15,13 @@ Real Metro Manila map data, streamed into the browser as a drivable low-poly 3D 
 
 Free-roam low-poly arcade driving across Metro Manila's real streets, starting in BGC, Taguig. Runs straight in the browser on desktop and mobile with nothing to install.
 
-**Explore the city:** Drive around a 3D city generated from OpenStreetMap data.
+- **Explore the city:** Drive around a 3D city generated from OpenStreetMap data.
 
-**Cargo runs:** Pick up deliveries between areas around the city using GPS routing, keep the cargo intact, and earn peso payouts (with tax included, of course).
+- **Cargo runs:** Pick up deliveries between areas around the city using GPS routing, keep the cargo intact, and earn peso payouts (with tax included, of course).
 
-**Traffic & mobile support:** Share the road with roaming traffic, or play on your phone with touch controls and automatic landscape mode.
+- **Traffic & mobile support:** Share the road with roaming traffic, or play on your phone with touch controls and automatic landscape mode.
 
-W A S D or the arrow keys to drive, Space for the handbrake, R to reset, M for the map, Esc to pause. All controls, the modes and the testing options: [Controls & modes](docs/PLAYING.md).
+W A S D or the arrow keys to drive, Space for the handbrake, R to reset, M for the map, Esc to pause; Touch controls for mobile are supported as well. All controls, the modes and the testing options: [Controls & modes](docs/PLAYING.md).
 
 ## Algorithms
 
