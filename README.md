@@ -140,31 +140,28 @@ Measured with `npm run size`, `npm run bench`, the pipeline's output and the `?d
 ## Architecture
 
 ```mermaid
-flowchart TB
-  subgraph BUILD["1. Build time: pipeline/ (Node, run by the developer)"]
-    direction LR
-    OSM[("OpenStreetMap<br/>GeoJSON exports")] --> STEPS["18 steps: clip, heights,<br/>flyovers, junctions, lots,<br/>parking, lights, signs"]
-    STEPS --> QA{{"Map QA<br/>33 checks"}}
-    QA --> MAP[("public/data/bgc.json<br/>806 KB gzipped,<br/>committed to Git")]
+flowchart LR
+  subgraph BUILD["1. Build time: pipeline/"]
+    direction TB
+    OSM[("OpenStreetMap<br/>exports")] --> STEPS["18 steps: heights,<br/>flyovers, junctions,<br/>parking, lights, signs"]
+    STEPS --> QA["Map QA: 33 checks"]
+    QA --> MAP[("bgc.json, 806 KB<br/>committed to Git")]
   end
-  subgraph HOST["2. Static hosting: GitHub to Vercel"]
-    direction LR
-    GH["GitHub main"] --> CI["CI: types, lint, tests,<br/>data in sync, QA, sizes"]
-    CI --> VB["Vercel:<br/>npm run build"]
-    VB --> DIST["dist/ on a CDN<br/>static files, no backend"]
+  subgraph HOST["2. Hosting: GitHub to Vercel"]
+    direction TB
+    GH["GitHub main"] --> CI["CI: tests, data,<br/>QA, sizes"]
+    CI --> VB["Vercel build"]
+    VB --> DIST["dist/ on a CDN<br/>no backend"]
   end
-  subgraph WEB["3. Browser runtime: src/"]
-    direction LR
-    LOAD["map/loadMap.ts"] --> GEO["geometry/ + scene/<br/>low-poly roads, buildings,<br/>instanced props, shaders"]
-    LOAD --> SIM["routing/ + traffic/ + game/<br/>road graph, A* routes,<br/>traffic sim, cargo runs"]
-    LOAD --> PHYS["car/ + Drive chunk<br/>Rapier physics on demand,<br/>pooled bodies near you"]
-    GEO --> GL["React Three Fiber<br/>WebGL"]
-    PHYS --> GL
-    SIM --> GL
-    SIM --> UI["ui/: HUD, minimap,<br/>full map, menus"]
+  subgraph WEB["3. Browser: src/"]
+    direction TB
+    LOAD["map/loadMap.ts"] --> GEO["geometry/ + scene/<br/>low-poly city"]
+    GEO --> SIM["routing/ + traffic/<br/>+ game/"]
+    SIM --> PHYS["car/: Rapier,<br/>on demand"]
+    PHYS --> GL["React Three Fiber,<br/>WebGL + ui/"]
   end
   BUILD -->|"git push"| HOST
-  HOST -->|"page, scripts, map file, models"| WEB
+  HOST -->|"static files"| WEB
 ```
 
 - **Build time:** the expensive, careful work (projection, cleanup, heights, flyovers, placement by rule) happens once on the developer's machine. The output is deterministic: CI rebuilds the map and fails if a single byte differs, and map QA counts can only go down.
