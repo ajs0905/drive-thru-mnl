@@ -1,0 +1,55 @@
+name: Bug report
+description: Report something that isn't working properly in the game.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report this. A few details help a lot.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can it be made to happen again? If it's somewhere on the map, the address bar after `?cam=` shows where.
+      placeholder: |
+        1. Start a cargo run
+        2. Drive onto the flyover
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Desktop
+        - Mobile
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: Chrome, Firefox, Safari, Edge, ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Game version
+      description: Bottom right of the main menu, for example v0.1.0.
+    validations:
+      required: false
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshot or clip
+      description: Optional. Drag images or videos into this box.
+    validations:
+      required: false

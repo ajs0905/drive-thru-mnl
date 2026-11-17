@@ -1,10 +1,15 @@
+import { readFileSync } from 'node:fs'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 import { fiberClock } from './tools/fiberClock.ts'
 import { rapierInit } from './tools/rapierInit.ts'
 
+/** The version in package.json, shown on the main menu (src/ui/version.ts). */
+const version: string = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(version) },
   // Two dependencies call APIs that are deprecated: React Three Fiber creates a THREE.Clock
   // (fiberClock swaps in a Timer-based clock) and Rapier 0.19 starts its WebAssembly the old
   // way (rapierInit makes the call the current way). See ADR 0031.

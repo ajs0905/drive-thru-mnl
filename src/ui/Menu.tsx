@@ -5,6 +5,7 @@
  */
 import { BACKDROP_PORTRAIT, PORTRAIT_QUERY } from './backdrop';
 import { ArrowRight } from './icons';
+import { APP_VERSION } from './version';
 
 export interface LoadStatus {
   /** What's happening now, e.g. "Building 11,687 buildings". */
@@ -63,7 +64,9 @@ export function Menu({ status, background, quality, onPlay, onSettings, onAbout 
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             © OpenStreetMap contributors
           </a>
-          <span>{quality.charAt(0).toUpperCase() + quality.slice(1)} quality</span>
+          <span>
+            <span className="menu-tier">{quality.charAt(0).toUpperCase() + quality.slice(1)} quality · </span>v{APP_VERSION}
+          </span>
         </div>
       </div>
     </div>

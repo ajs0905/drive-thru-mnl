@@ -258,8 +258,19 @@ button.sign:disabled {
     text-align: center;
     padding: 14px 10px 11px;
   }
-  .menu .footer span:last-child {
+  /* No room for the tier on a narrow screen; the version stays. */
+  .menu .footer .menu-tier {
     display: none;
+  }
+}
+/* Short screens (a phone sideways): the menu closes up so the footer stays on screen. */
+@container app (max-height: 400px) {
+  .menu .inner {
+    padding-top: 40px;
+    padding-bottom: 12px;
+  }
+  .menu .footer {
+    margin-top: 10px;
   }
 }
 

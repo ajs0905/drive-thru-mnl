@@ -1,6 +1,7 @@
 # Drive Thru MNL: No Traffic Edition?
 
 [![Play live](https://img.shields.io/badge/play-live-ec7a2c.svg)](https://drive-thru-mnl.vercel.app/)
+[![Release](https://img.shields.io/github/v/release/ajs0905/drive-thru-mnl.svg)](https://github.com/ajs0905/drive-thru-mnl/releases)
 [![CI](https://github.com/ajs0905/drive-thru-mnl/actions/workflows/ci.yml/badge.svg)](https://github.com/ajs0905/drive-thru-mnl/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Map data: ODbL](https://img.shields.io/badge/map%20data-ODbL-green.svg)](https://www.openstreetmap.org/copyright)
@@ -126,7 +127,7 @@ What each algorithm is used for. Where they run and their numbers: [Algorithms](
 
 | Metric | Value | Notes |
 | :--- | :--- | :--- |
-| Automated tests | 797 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 799 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 33 checks | A CI gate: counts can only go down |
 | Golden replays | 3 cargo runs | Played back in the real physics in CI, must end within 5 cm |
 
@@ -195,7 +196,7 @@ More: [Architecture](docs/ARCHITECTURE.md) (module boundaries, data contract, re
 
 ## Contributing
 
-Issues and pull requests are welcome: bug reports with a screenshot and the `?cam=` part of the address, road errors you spot on the map, ideas for the planned list.
+Issues and pull requests are welcome. [Open an issue](https://github.com/ajs0905/drive-thru-mnl/issues/new/choose) with the bug report or feature request form: bugs with a screenshot and the `?cam=` part of the address, road errors you spot on the map, ideas for the planned list.
 
 **Run it locally** (Node 26, the version in `.nvmrc`; 22.15 or newer also works):
 
@@ -220,6 +221,8 @@ The BGC map data is already in the repo, so that's all you need to play and work
 | `npm run check` | Everything CI runs: typecheck, lint, tests, data in sync, QA gate, build size |
 
 **Changing the map:** edit the steps in `pipeline/`, run `npm run pipeline`, and commit `public/data/bgc.json` with your change (CI fails until the committed file matches what the pipeline builds). If a fix lowers a map QA count, lower it in `data/qa-baseline.json` too; a count that rises fails CI. Each step and its numbers are in [Map pipeline & data](docs/DATA.md).
+
+**Releases:** each one has an entry in [CHANGELOG.md](CHANGELOG.md), the version in `package.json` (shown on the main menu) and a `vX.Y.Z` tag with notes on the [Releases](https://github.com/ajs0905/drive-thru-mnl/releases) page. Below 1.0, a new mode or big feature raises the middle number and fixes raise the last one.
 
 **Pull requests:** keep them focused, with tests for new behavior and `npm run check` passing. Module boundaries (for example, no three.js or React in `src/car` and `src/traffic`) are enforced by `tests/architecture.test.ts`; see [Architecture](docs/ARCHITECTURE.md#3-repository-layout-and-module-boundaries). For a big change, open an issue first so it can be talked through.
 
