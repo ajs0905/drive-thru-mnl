@@ -31,6 +31,14 @@ export function parseLanes(v: unknown): number | undefined {
   return Number.isFinite(n) && n >= 1 && n <= 12 ? Math.floor(n) : undefined;
 }
 
+/** A speed limit tag in km/h ("40", "60 mph" is converted), or undefined when it isn't a plain number. */
+export function parseMaxspeed(v: unknown): number | undefined {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(mph|km\/h|kmh)?\s*$/i.exec(String(v ?? ''));
+  if (!m) return undefined;
+  const n = parseFloat(m[1]) * (m[2]?.toLowerCase() === 'mph' ? 1.609 : 1);
+  return n >= 5 && n <= 130 ? Math.round(n) : undefined;
+}
+
 export const isOneway = (t: Tags) => t.oneway === 'yes' || t.oneway === '1' || t.oneway === '-1' || t.junction === 'roundabout';
 
 /** Typical lane count when the data doesn't say: [two-way, one-way]. */

@@ -1,8 +1,14 @@
 /**
  * The big map, over the paused game: the whole drivable area north-up with street names,
  * the car as an arrow, and on a run (or on the way to one) the GPS route and the stop, to
- * plan a way there; drag to move, scroll or pinch to zoom. Opened with M or by tapping
- * the minimap; M, Esc, the close button or (on the menu side) Resume closes it.
+ * plan a way there; drag to move, scroll or pinch to zoom. A highway-sign header names the
+ * region and the district (MapData.district). Opened with M or by tapping the minimap; M,
+ * Esc or the close button closes it.
+ *
+ * Opening and closing it while driving must not cost frames: it's mounted once and then
+ * only shown and hidden (its full-screen canvas isn't made again each time), it draws only
+ * while shown (no animation frames, no resize work while hidden), and its tiles are kept
+ * between openings.
  */
 import { useEffect, useRef } from 'react';
 import type { GameSession } from '../game/session';
@@ -13,25 +19,63 @@ import { CarArrow, Close } from './icons';
 import { drawMapLabels, drawRoute, drawStop, MAP_COLORS, ROUTE_COLORS, toCanvas, toMap, type MapViewport } from './mapCanvas';
 import { MapTiles } from './mapTiles';
 
-export function BigMap({ view, session, game, touch, onClose }: { view: MapViewData; session: DriveSession; game: GameSession; touch: boolean; onClose: () => void }) {
+export function BigMap({
+  view,
+  session,
+  game,
+  touch,
+  open,
+  district,
+  onClose,
+}: {
+  view: MapViewData;
+  session: DriveSession;
+  game: GameSession;
+  touch: boolean;
+  open: boolean;
+  district?: { region: string; name: string };
+  onClose: () => void;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const me = useRef<HTMLDivElement>(null);
+  const close = useRef<HTMLButtonElement>(null);
+  const api = useRef<BigMapApi | null>(null);
 
   useEffect(() => {
     const el = canvas.current;
     if (!el) return;
-    return startBigMap(el, me.current, view, session, game);
+    const started = startBigMap(el, me.current, view, session, game);
+    api.current = started;
+    return () => {
+      started.dispose();
+      api.current = null;
+    };
   }, [view, session, game]);
 
+  useEffect(() => {
+    if (!open) {
+      api.current?.hide();
+      return;
+    }
+    api.current?.show();
+    close.current?.focus();
+  }, [open]);
+
   return (
-    <div className="bigmap" role="dialog" aria-modal="true" aria-label="Map">
+    <div className="bigmap" role="dialog" aria-modal="true" aria-label="Map" hidden={!open}>
       <canvas ref={canvas} />
       <div ref={me} className="me">
         <CarArrow style={{ width: '100%', height: '100%' }} />
       </div>
       <div className="bar-top">
+        <div className="sign region">
+          <div className="face">
+            <small>{(district?.region ?? 'Metro Manila').toUpperCase()}</small>
+            <b>{(district?.name ?? '').toUpperCase()}</b>
+          </div>
+        </div>
         <span className="hint">{touch ? 'Drag to move, pinch to zoom' : 'Drag to move, scroll to zoom, M to close'}</span>
-        <button type="button" className="round-btn" aria-label="Close the map" onClick={onClose} autoFocus>
+        <button ref={close} type="button" className="round-btn" aria-label="Close the map" onClick={onClose}>
           <Close />
         </button>
       </div>
@@ -39,8 +83,14 @@ export function BigMap({ view, session, game, touch, onClose }: { view: MapViewD
   );
 }
 
-/** Sets up drawing and the pan and zoom gestures; returns the cleanup. */
-function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapViewData, session: DriveSession, game: GameSession): () => void {
+interface BigMapApi {
+  show: () => void;
+  hide: () => void;
+  dispose: () => void;
+}
+
+/** Sets up drawing and the pan and zoom gestures; nothing is drawn until `show`. */
+function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapViewData, session: DriveSession, game: GameSession): BigMapApi {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const b = data.bounds;
   const car = session.car;
@@ -49,19 +99,18 @@ function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapVie
   let frame = 0;
   // Buildings once zoomed in enough to make them out. Kept between openings of the map.
   const tiles = tilesFor(data, dpr);
+  let shown = false;
   const size = () => {
     const [w, h] = [Math.round(el.clientWidth * dpr), Math.round(el.clientHeight * dpr)];
-    if (el.width !== w || el.height !== h) [el.width, el.height] = [w, h];
+    if (w && h && (el.width !== w || el.height !== h)) [el.width, el.height] = [w, h];
   };
-  size();
-  // Start with about 900 m across around the car, never closer than fits the whole map.
-  view.scale = Math.max(fit(), Math.min(el.width, el.height) / 900);
   const clamp = () => {
     view.scale = Math.min(6 * dpr, Math.max(fit() * 0.9, view.scale));
     view.center = [Math.min(b.maxX, Math.max(b.minX, view.center[0])), Math.min(b.maxY, Math.max(b.minY, view.center[1]))];
   };
   const draw = () => {
     frame = 0;
+    if (!shown) return;
     size();
     clamp();
     const ctx = el.getContext('2d');
@@ -83,7 +132,7 @@ function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapVie
     }
   };
   const redraw = () => {
-    if (!frame) frame = requestAnimationFrame(draw);
+    if (shown && !frame) frame = requestAnimationFrame(draw);
   };
   /** Zooms by `k` keeping the map point under (x, y) (CSS px) where it is. */
   const zoomAt = (k: number, x: number, y: number) => {
@@ -134,15 +183,33 @@ function startBigMap(el: HTMLCanvasElement, me: HTMLElement | null, data: MapVie
   el.addEventListener('pointercancel', up);
   el.addEventListener('wheel', wheel, { passive: false });
   window.addEventListener('resize', redraw);
-  redraw();
-  return () => {
-    cancelAnimationFrame(frame);
-    el.removeEventListener('pointerdown', down);
-    el.removeEventListener('pointermove', move);
-    el.removeEventListener('pointerup', up);
-    el.removeEventListener('pointercancel', up);
-    el.removeEventListener('wheel', wheel);
-    window.removeEventListener('resize', redraw);
+  let first = true;
+  return {
+    // Each time it opens: centered on the car again, at about 900 m across the first time (never closer than the whole map fits).
+    show: () => {
+      shown = true;
+      size();
+      if (car.placed) view.center = [car.x, car.y];
+      if (first) view.scale = Math.max(fit(), Math.min(el.width, el.height) / 900);
+      first = false;
+      clamp();
+      redraw();
+    },
+    hide: () => {
+      shown = false;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      pointers.clear();
+    },
+    dispose: () => {
+      cancelAnimationFrame(frame);
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      el.removeEventListener('wheel', wheel);
+      window.removeEventListener('resize', redraw);
+    },
   };
 }
 

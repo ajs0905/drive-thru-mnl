@@ -60,7 +60,7 @@ function aim(player: RAPIER.RigidBody, a: Agent, along: number, right: number, f
 const turned = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
 
 describe('bumping traffic', () => {
-  it('spins a car tapped on its rear quarter, the nose swinging away from the side it was hit', () => {
+  it('turns a car tapped on its rear quarter a little, the nose swinging away from the side it was hit', () => {
     const { player, bodies, step, target } = setup('pit');
     expect(target).toBeDefined();
     const a = target!;
@@ -74,10 +74,13 @@ describe('bumping traffic', () => {
       if (a.knocked && b) spin = Math.max(spin, Math.abs(b.angvel().y));
     }
     expect(a.knocked).toBe(true);
-    expect(spin).toBeGreaterThan(0.5);
+    expect(spin).toBeGreaterThan(0.3);
     // Hit on the right at the back: the tail goes left, the nose turns right (clockwise on the map: heading goes down).
+    // A weighted nudge, not a spin: turned a little, never a fishtail.
     const d = Math.atan2(Math.sin(a.heading - heading), Math.cos(a.heading - heading));
-    expect(d).toBeLessThan(-0.3);
+    expect(d).toBeLessThan(-0.08);
+    expect(d).toBeGreaterThan(-0.4);
+    expect(spin).toBeLessThanOrEqual(1.21);
   });
 
   it('shoves a car hit square from behind along the road, hardly turning it, and puts it back in the flow once it settles', () => {

@@ -22,6 +22,7 @@ import { PARKED_MODELS, PARKED_PAINTS } from '../src/car/parked';
 import { footprintsOverlap } from '../src/car/resetSpot';
 import { snap } from '../src/routing/graph';
 import { pointOnRoute, Router } from '../src/routing/route';
+import { Signals } from '../src/traffic/signals';
 import { parkingRoom, TrafficSim, type Agent } from '../src/traffic/sim';
 import { TRAFFIC_TIERS } from '../src/traffic/tiers';
 import type { Replay } from '../src/sim/replay';
@@ -121,13 +122,16 @@ for (const c of map.parked ?? []) {
 }
 const counts = process.env.TRAFFIC_COUNTS ? process.env.TRAFFIC_COUNTS.split(',').map(Number) : Object.values(TRAFFIC_TIERS).map((t) => t.count);
 for (const count of counts) {
-  const sim = new TrafficSim(graph, { count, models: PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]], weight: m.weight })), paints: PARKED_PAINTS.map((p) => p.weight), room });
+  // The traffic lights cycle as in the game, and the traffic keeps to them.
+  const signals = new Signals(graph, map.dressing ?? []);
+  const sim = new TrafficSim(graph, { count, models: PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]], weight: m.weight })), paints: PARKED_PAINTS.map((p) => p.weight), room, signals });
   let [moving, total, overlaps, time, parked, changes, ring] = [0, 0, 0, 0, 0, 0, 0];
   const lanes = new Map<number, number>();
   const onRing = new Map<number, number>();
   for (let i = 0; i < 60 * 300; i++) {
     const at = pointOnRoute(across, ((i / 60) * 12) % across.length);
     const t = performance.now();
+    signals.advance(1 / 60);
     sim.step(1 / 60, at.p, [{ p: at.p, speed: 12, heading: at.heading, half: 2.25 }]);
     time += performance.now() - t;
     for (const a of sim.agents) {

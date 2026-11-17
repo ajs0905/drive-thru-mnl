@@ -26,7 +26,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 - Constrained placement search: pillars out of the lanes below, cars along the curbs, the nearest open road for a reset
 - A directed road graph with Tarjan's strongly connected components, and routes by an edge-based A* with ALT landmark bounds: about 180 states expanded per route against Dijkstra's 1,450 (`npm run bench`)
 - Deterministic headless simulation: golden replays of cargo runs driven by a pure-pursuit autopilot in the real physics, played back in CI (`npm run replay` records them)
-- Traffic by the Intelligent Driver Model on the road graph, with junctions clustered by union-find and reserved one movement at a time, lanes fitted into the room parked cars leave, cubic Bézier curves through every junction (arc-length paced), a kinematic bicycle model on the path (the rear axle a tractrix of the front), lane changes in the spirit of MOBIL as quintic S-curves, and exits picked on entering a roundabout: about 60 µs per step for 24 cars, measured overlap-free in tests
+- Traffic by the Intelligent Driver Model on the road graph, with junctions clustered by union-find and reserved one movement at a time, lanes fitted into the room parked cars leave, cubic Bézier curves through every junction (arc-length paced), a kinematic bicycle model on the path (the rear axle a tractrix of the front), lane changes in the spirit of MOBIL as quintic S-curves, exits picked on entering a roundabout, and fixed-time two-phase traffic lights per junction cluster that the cars queue at: about 85 µs per step for 24 cars, measured overlap-free in tests
 
 **Rendering, physics and automated QA**
 - Rasterization and flood fill: find unpaved holes in the road network, then pave them with the same detector
@@ -41,12 +41,12 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Metric | Value | Notes |
 | :--- | :--- | :--- |
 | **Build & Bundle** | | |
-| Main / Drive bundle | 406 KB / 873 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
-| Map file (`bgc.json`) | 3.31 MB (775 KB gzipped) | Deterministic: CI rebuilds it from the raw data and fails if a byte differs |
-| Pipeline | 17 steps, a few seconds | Node + TypeScript, offline |
+| Main / Drive bundle | 418 KB / 867 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
+| Map file (`bgc.json`) | 3.35 MB (806 KB gzipped) | Deterministic: CI rebuilds it from the raw data and fails if a byte differs |
+| Pipeline | 18 steps, a few seconds | Node + TypeScript, offline |
 | **World Data** | | |
 | Input | 25,930 OpenStreetMap features | A 19 MB GeoJSON export, plus 1,634 more for walls, trees and street fixtures |
-| Output | 11,685 buildings, 3,536 roads, 1,384 junctions | Plus 511 zebras, 70 raised flyover and footbridge pieces on 279 pillars, 162 far-side traffic lights at 49 intersections, 1,195 street lights, 938 trees, 51 walled-off lots, 2,731 pieces of street and lot furniture, 1,106 parked cars |
+| Output | 11,685 buildings, 3,536 roads, 1,384 junctions | Plus 511 zebras, 70 raised flyover and footbridge pieces on 279 pillars, 162 far-side traffic lights at 49 intersections, 1,195 street lights, 552 road signs (stop, one-way, speed limit), 938 trees, 51 walled-off lots, 2,731 pieces of street and lot furniture, 1,106 parked cars |
 | Filled in by rules | 97% of building heights | OSM also has no bridge heights or ramps, no street parking and only outlines for empty lots |
 | **Physics & Collision** | | |
 | Collision meshes | 99k triangles, about 0.2 s to build | Walls and drivable decks built from the same data the renderer draws; street furniture is pooled bodies near the player instead (at most 28 knockable, 30 debris) |
@@ -55,7 +55,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
 | Frame rate (phones) | 60+ FPS on Low and Medium | On a low-mid range Android phone (30 to 50 on High); a newer mid-range one holds 62 on High |
 | Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
-| Automated tests | 747 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 760 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 33 automated checks | A CI gate: counts can only go down |
 
 ## How It Works
@@ -84,9 +84,10 @@ Free-roam arcade driving on BGC's real streets, with less traffic than the real 
 - 3D city: buildings with windows, shopfronts, hip roofs, podium towers and roof details, painted roads with clean intersections, a physically based sky, shadows, and filler city and real skylines past the edge
 - Performance: three quality tiers, adaptive resolution, grid culling, render on demand, reversed depth
 - Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, walled-off lots, street furniture you can knock over or smash through, parked cars and roadblocks you can push around
-- UI: a road sign menu, loading screens, a how-to-play card, a road sign HUD with a heading-up minimap and a full map, a pause menu, touch controls for phones
+- UI: a road sign menu, loading screens, a how-to-play card, a road sign HUD with a heading-up minimap and a full map with the area's name, a pause menu, touch controls for phones; menus and cards laid out to fit a landscape phone without scrolling, and kept light when a phone forces dark mode
 - Modes: cargo runs (courier and vault) between curbside loading bays and landmarks, routed by A* with landmarks, with checkpoints, a cargo integrity rating, a delivery receipt and a peso wallet saved in the browser; a CARS tab with pictures drawn from the models
-- Traffic on the avenues and streets: 24 to 40 cars around the player by quality tier, steering and leaning like cars, changing lanes with the signal on, finding their way off roundabouts, easing round stopped cars, and spinning off when you bump them before getting back in line
+- Traffic on the avenues and streets: 24 to 40 cars around the player by quality tier, steering and leaning like cars, changing lanes with the signal on, finding their way off roundabouts, easing round stopped cars, stopping at red lights (you don't have to), braking and pulling over when you come at them fast, and getting shoved aside when you bump them before getting back in line
+- Traffic lights that cycle with lit lenses, and stop, one-way and speed limit signs along the streets, all of which you can knock over
 
 ## Planned
 

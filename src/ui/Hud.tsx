@@ -29,6 +29,7 @@ export function Hud({
   onModes,
   game,
   touch,
+  active = true,
   children,
 }: {
   session: DriveSession;
@@ -40,6 +41,8 @@ export function Hud({
   /** The run in play and the GPS route, drawn on the minimap. */
   game: GameSession;
   touch: boolean;
+  /** Off while the game is paused or a menu or the big map covers it: the minimap and the street sign stop updating (no animation frames). */
+  active?: boolean;
   /** Extra HUD parts (the touch controls). */
   children?: ReactNode;
 }) {
@@ -52,6 +55,7 @@ export function Hud({
   }, [view]);
 
   useEffect(() => {
+    if (!active) return;
     const state = { frame: 0, lastDraw: 0, lastStreet: 0, drawn: { x: NaN, y: 0, heading: 0, complete: false, version: -1 } };
     const sign = new StreetSign();
     const tick = (now: number) => {
@@ -75,7 +79,7 @@ export function Hud({
     };
     state.frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(state.frame);
-  }, [session, tiles, streetAt, game]);
+  }, [session, tiles, streetAt, game, active]);
 
   return (
     <div className="hud2">

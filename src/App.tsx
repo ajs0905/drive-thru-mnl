@@ -1,6 +1,6 @@
 import { MapControls } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
 import { curbStart } from './car/curbSpot';
 import { GameSession } from './game/session';
 import { mapViewData, streetNameLookup } from './geometry/mapView';
@@ -39,6 +39,7 @@ import { DriveLoading } from './ui/DriveLoading';
 import { Hud } from './ui/Hud';
 import { Menu, type LoadStatus } from './ui/Menu';
 import { AboutPanel, PauseMenu, SettingsPanel } from './ui/Panels';
+import { loadShowStats, saveShowStats } from './ui/prefs';
 import { useSideways } from './ui/sideways';
 import { TouchControls } from './ui/TouchControls';
 import { ModesMenu } from './ui/ModesMenu';
@@ -56,7 +57,7 @@ const PARAMS = new URLSearchParams(window.location.search);
  * from map QA's camera links: `?cam=...` or `?view=map`. Players get the menu.
  */
 const MAP_VIEW = PARAMS.has('cam') || PARAMS.get('view') === 'map';
-/** Frame rate, draw calls and triangles in a corner: `?debug` (and always in the map view). */
+/** Frame rate, draw calls and triangles in a corner: `?debug` (and always in the map view), or turned on in Settings. */
 const DEBUG = MAP_VIEW || PARAMS.has('debug');
 /** Seconds of driving physics before the first welcome card opens: the car has landed and the camera has settled. */
 const WELCOME_AFTER = 0.9;
@@ -65,7 +66,8 @@ const WELCOME_AFTER = 0.9;
 const TOUCH = window.matchMedia?.('(pointer: coarse)').matches ?? false;
 
 // Checked once: reversed depth if the GPU has it, otherwise a logarithmic depth buffer.
-const REVERSED_DEPTH = supportsReversedDepth();
+// `?depth=log` forces the logarithmic one, to see what phones without the extension see.
+const REVERSED_DEPTH = PARAMS.get('depth') !== 'log' && supportsReversedDepth();
 // Frames are drawn only when something changes (camera moves, shadows catch up), unless ?render=always.
 const ALWAYS_RENDER = alwaysRender();
 
@@ -141,8 +143,8 @@ function AdaptiveResolution({ factor, onChange, active }: { factor: number; onCh
   return null;
 }
 
-/** Frames skipped by the resolution's frame rate count after driving resumes. */
-const RESUME_WARMUP = 20;
+/** Frames skipped by the resolution's frame rate count after driving resumes (the first ones after closing the map or a menu run slow while the GPU catches up, and mustn't lower the resolution). */
+const RESUME_WARMUP = 45;
 
 /**
  * When the drive starts again after a pause (the pause menu, the big map, a menu), the
@@ -152,7 +154,8 @@ const RESUME_WARMUP = 20;
  */
 function ResumeClock({ running }: { running: boolean }) {
   const clock = useThree((s) => s.clock);
-  useEffect(() => {
+  // A layout effect: done in the same commit that starts the frame loop again, so no frame can come first.
+  useLayoutEffect(() => {
     if (running) clock.getDelta();
   }, [running, clock]);
   return null;
@@ -209,6 +212,12 @@ export default function App() {
   const [debris] = useState(() => new DebrisStore());
   const [session] = useState(() => new DriveSession());
   const [quality, setQuality] = useState<Quality>(initialQuality);
+  const [showStats, setShowStats] = useState(loadShowStats);
+  const statsOn = DEBUG || showStats;
+  const pickStats = (on: boolean) => {
+    saveShowStats(on);
+    setShowStats(on);
+  };
   const settings = QUALITY[quality];
   // Performance factor: 1 = full resolution for the tier, lower when FPS drops.
   const [factor, setFactor] = useState(1);
@@ -230,7 +239,7 @@ export default function App() {
     f.triangles = triangles;
   }, []);
   useEffect(() => {
-    if (!DEBUG) return;
+    if (!statsOn) return;
     const timer = window.setInterval(() => {
       const f = frames.current;
       if (f.calls === 0) return;
@@ -241,7 +250,7 @@ export default function App() {
       setPerf({ fps: recent.length, calls: f.calls, triangles: f.triangles, idle });
     }, 500);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [statsOn]);
 
   useEffect(() => {
     loadMap((done, bytes) => setDownload({ done, bytes }))
@@ -297,6 +306,9 @@ export default function App() {
   const roadblocks = useMemo(() => (map ? roadblocksFor(map, ROAD_Y) : null), [map]);
   const props = useMemo(() => (map?.dressing ? propLists(map.dressing) : null), [map]);
   const moved = useMemo(() => (props ? { knock: knockPoses, broke: breakPoses, knockOf: props.knockOf, breakOf: props.breakOf } : undefined), [props, knockPoses, breakPoses]);
+  // What the drive shares with the renderer, made once (a new object on every render would re-render the drive's physics on every pause and map toggle).
+  const driveRoadblocks = useMemo(() => (roadblocks ? { loose: roadblocks.loose, poses: blockPoses } : undefined), [roadblocks, blockPoses]);
+  const driveProps = useMemo(() => (props ? { knock: props.knock, broke: props.broke, knockPoses, breakPoses, debris } : undefined), [props, knockPoses, breakPoses, debris]);
 
   const startDriving = useCallback(() => {
     // A focused button would be pressed again by the space bar (the handbrake).
@@ -409,6 +421,31 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [screen, driving, loading, drive.waiting, help, closeHelp, modes, runCard, bigMap, panel, paused, cityReady, startDriving, startPlaying]);
 
+  // The city and everything standing in it, made once per map, quality and build: pausing,
+  // opening the map or a menu re-renders the app, and none of this needs to follow.
+  const mapView = screen === 'map';
+  const world = useMemo(
+    () => (
+      <>
+        {map && buildNow && <City map={map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} treeModels={settings.treeModels} showEdgeOutline={mapView} />}
+        {map && built && <Surroundings map={map} density={settings.filler} />}
+        {roadblocks && built && <Roadblocks props={roadblocks.props} loose={roadblocks.loose} poses={blockPoses} far={settings.parkedFar} shadows={settings.shadowMap > 0} />}
+        {map?.dressing && built && (
+          <Suspense fallback={null}>
+            <Dressing pieces={map.dressing} near={settings.dressingNear} mid={settings.dressingMid} far={settings.dressingFar} shadows={settings.shadowMap > 0} moved={moved} />
+            <Debris store={debris} />
+          </Suspense>
+        )}
+        {map?.parked && built && (
+          <Suspense fallback={null}>
+            <ParkedCars cars={map.parked} near={settings.parkedNear} far={settings.parkedFar} poses={poses} shadows={settings.shadowMap > 0} />
+          </Suspense>
+        )}
+      </>
+    ),
+    [map, buildNow, onBuilt, settings, mapView, built, roadblocks, blockPoses, moved, debris, poses],
+  );
+
   // Phones held upright: the drive is drawn turned a quarter, the menu stays upright.
   const sideways = useSideways(driving && TOUCH);
   const view = map ? initialView(map) : null;
@@ -457,34 +494,22 @@ export default function App() {
             maxDistance={6000}
             dampingFactor={0.12}
           />
-          {map && buildNow && <City map={map} onBuilt={onBuilt} propsDistance={settings.propsDistance} treeDistance={settings.treeDistance} treeModels={settings.treeModels} showEdgeOutline={screen === 'map'} />}
-          {map && built && <Surroundings map={map} density={settings.filler} />}
-          {roadblocks && built && <Roadblocks props={roadblocks.props} loose={roadblocks.loose} poses={blockPoses} far={settings.parkedFar} shadows={settings.shadowMap > 0} />}
-          {map?.dressing && built && (
-            <Suspense fallback={null}>
-              <Dressing pieces={map.dressing} near={settings.dressingNear} mid={settings.dressingMid} far={settings.dressingFar} shadows={settings.shadowMap > 0} moved={moved} />
-              <Debris store={debris} />
-            </Suspense>
-          )}
-          {map?.parked && built && (
-            <Suspense fallback={null}>
-              <ParkedCars cars={map.parked} near={settings.parkedNear} far={settings.parkedFar} poses={poses} shadows={settings.shadowMap > 0} />
-            </Suspense>
-          )}
+          {world}
           <Suspense fallback={null}>
             {driving && drive.mounted && map && (
               <Drive
                 map={map}
                 parked={poses}
                 speedBlur={settings.speedBlur}
-                roadblocks={roadblocks ? { loose: roadblocks.loose, poses: blockPoses } : undefined}
-                props={props ? { knock: props.knock, broke: props.broke, knockPoses, breakPoses, debris } : undefined}
+                roadblocks={driveRoadblocks}
+                props={driveProps}
                 start={MAP_VIEW ? undefined : start}
                 session={session}
                 paused={holdPhysics}
                 game={game}
                 traffic={MAP_VIEW ? 0 : settings.traffic}
                 trafficNear={settings.trafficNear}
+                signalsNear={settings.dressingMid}
               />
             )}
           </Suspense>
@@ -543,7 +568,7 @@ export default function App() {
       )}
 
       {driving && viewData && streetAt && drive.step === STEP.done && !drive.waiting && (
-        <Hud session={session} view={viewData} streetAt={streetAt} onMap={() => setBigMap(true)} onModes={() => setModes(true)} game={game} touch={TOUCH}>
+        <Hud session={session} view={viewData} streetAt={streetAt} onMap={() => setBigMap(true)} onModes={() => setModes(true)} game={game} touch={TOUCH} active={!holdPhysics}>
           {TOUCH && !paused && !bigMap && !panel && !modes && !runCard && <TouchControls session={session} onPause={() => setPaused(true)} />}
         </Hud>
       )}
@@ -554,15 +579,18 @@ export default function App() {
         </div>
       )}
 
-      {driving && bigMap && viewData && <BigMap view={viewData} session={session} game={game} touch={TOUCH} onClose={() => setBigMap(false)} />}
+      {/* Mounted once the drive has started, then only shown and hidden (opening it while driving mustn't cost frames). */}
+      {driving && viewData && drive.step === STEP.done && <BigMap view={viewData} session={session} game={game} touch={TOUCH} open={bigMap} district={map?.district} onClose={() => setBigMap(false)} />}
 
       {driving && modes && viewData && <ModesMenu game={game} view={viewData} touch={TOUCH} onClose={() => setModes(false)} />}
-      {driving && runPhase === 'intro' && <RunIntro game={game} touch={TOUCH} />}
+      {driving && runPhase === 'intro' && viewData && <RunIntro game={game} view={viewData} touch={TOUCH} />}
       {driving && (runPhase === 'done' || runPhase === 'failed') && <RunResult game={game} touch={TOUCH} />}
 
       {driving && paused && !panel && help === null && !modes && (
         <PauseMenu
           run={runPhase}
+          runName={game.run?.def.name}
+          touch={TOUCH}
           onResume={() => setPaused(false)}
           onReset={() => {
             session.requestReset();
@@ -588,10 +616,10 @@ export default function App() {
 
       {driving && help && <Welcome touch={TOUCH} first={help === 'first'} onClose={closeHelp} />}
 
-      {panel === 'settings' && <SettingsPanel quality={quality} onQuality={pickQuality} onClose={() => setPanel(null)} />}
+      {panel === 'settings' && <SettingsPanel quality={quality} onQuality={pickQuality} stats={showStats} onStats={pickStats} onClose={() => setPanel(null)} />}
       {panel === 'about' && <AboutPanel map={map} onClose={() => setPanel(null)} />}
 
-      {DEBUG && perf && (
+      {statsOn && perf && (
         <div className={screen === 'map' ? 'perf' : 'perf debug'}>
           {perf.idle ? 'idle (draws only when something changes)' : `${perf.fps.toFixed(0)} fps`} · {perf.calls} draw calls · {fmt(perf.triangles)} tris
           {built && ` · built in ${built.ms.toFixed(0)} ms`}

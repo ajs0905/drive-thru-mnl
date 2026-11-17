@@ -1,10 +1,11 @@
 /**
  * Street and lot dressing (MapData.dressing: construction yards, park and sidewalk
- * furniture, the parking yard's stalls) from public/models/props.glb, one model per kind
- * (tools/props-to-glb.ts).
+ * furniture, the parking yard's stalls, street and traffic lights, road signs) from
+ * public/models/props.glb, one model per kind (tools/props-to-glb.ts), and the road signs
+ * from models built in code, one per face (signModels.ts).
  *
  * One instanced mesh per kind for the whole map, so the dressing costs one draw call per
- * kind in view, at most 18 (a first version with a mesh per kind per grid cell added 20 to
+ * kind in view, at most 30 with every sign face (a first version with a mesh per kind per grid cell added 20 to
  * 50). Each mesh holds only the pieces within reach of where the camera looks, refilled
  * when that point moves `DRESS.step` m: landmarks (cranes, containers, mounds, the
  * pavilion) out to `far`, street and traffic lights out to `mid`, the rest out to `near`,
@@ -12,11 +13,12 @@
  */
 import { useFrame, useLoader, useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
-import { Color, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3, type Mesh, type Object3D } from 'three';
+import { Color, Group, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3, type BufferGeometry, type Material, type Mesh, type Object3D } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRESSING, DRESSING_TINTS } from '../geometry/dressing';
-import type { Dressing as Piece, DressingKind } from '../map/types';
+import { CODE_MODELS, DRESSING, DRESSING_TINTS } from '../geometry/dressing';
+import type { Dressing as Piece } from '../map/types';
 import type { ParkedPoses } from './parkedPoses';
+import { signModels } from './signModels';
 
 /** How far the focus moves before the meshes are refilled (m), and how high pieces stand (m): on the sidewalks and the parking yard's asphalt. */
 const DRESS = { step: 20, base: 0.1 };
@@ -47,15 +49,19 @@ export function Dressing({ pieces, near, mid, far, shadows, moved }: { pieces: P
 
   const built = useMemo(() => {
     const material = new MeshLambertMaterial({ vertexColors: true });
-    const models = new Map<string, Mesh>();
+    const models = new Map<string, { geometry: BufferGeometry; material: Material }>();
     gltf.scene.traverse((o: Object3D) => {
-      if ((o as Mesh).isMesh) models.set(o.name, o as Mesh);
+      if ((o as Mesh).isMesh) models.set(o.name, { geometry: (o as Mesh).geometry, material });
     });
-    const byKind = new Map<DressingKind, Piece[]>();
+    // The road signs, one model per face.
+    const signs = signModels();
+    for (const [key, geometry] of signs.models) models.set(key, { geometry, material: signs.material });
+    const byKind = new Map<string, Piece[]>();
     for (const p of pieces) {
-      const list = byKind.get(p.k);
+      const key = modelKey(p);
+      const list = byKind.get(key);
       if (list) list.push(p);
-      else byKind.set(p.k, [p]);
+      else byKind.set(key, [p]);
     }
     const group = new Group();
     const kinds: Kind[] = [];
@@ -64,10 +70,11 @@ export function Dressing({ pieces, near, mid, far, shadows, moved }: { pieces: P
     const one = new Vector3(1, 1, 1);
     const white = new Color(1, 1, 1);
     const tints = DRESSING_TINTS.map((h) => new Color(h));
-    for (const [k, list] of byKind) {
-      const model = models.get(k);
+    for (const [key, list] of byKind) {
+      const model = models.get(key);
       if (!model) continue;
-      const mesh = new InstancedMesh(model.geometry, material, list.length);
+      const k = list[0].k;
+      const mesh = new InstancedMesh(model.geometry, model.material, list.length);
       mesh.count = 0;
       group.add(mesh);
       kinds.push({
@@ -76,18 +83,21 @@ export function Dressing({ pieces, near, mid, far, shadows, moved }: { pieces: P
         xs: Float32Array.from(list, (p) => p.p[0]),
         zs: Float32Array.from(list, (p) => -p.p[1]),
         matrices: list.map((p) => new Matrix4().compose(new Vector3(p.p[0], DRESS.base, -p.p[1]), q.setFromAxisAngle(up, p.rot), one)),
-        colors: list.map((p) => (p.c !== undefined ? tints[p.c % tints.length] : white)),
+        colors: list.map((p) => (p.k === 'container' && p.c !== undefined ? tints[p.c % tints.length] : white)),
         knock: Int32Array.from(list, (p) => moved?.knockOf.get(p) ?? -1),
         broke: Int32Array.from(list, (p) => moved?.breakOf.get(p) ?? -1),
       });
     }
-    return { group, kinds, material };
+    return { group, kinds, material, signs };
   }, [gltf, pieces, moved]);
 
   useEffect(
     () => () => {
       built.kinds.forEach((k) => k.mesh.dispose());
       built.material.dispose();
+      built.signs.material.map?.dispose();
+      built.signs.material.dispose();
+      built.signs.models.forEach((g) => g.dispose());
     },
     [built],
   );
@@ -108,6 +118,9 @@ export function Dressing({ pieces, near, mid, far, shadows, moved }: { pieces: P
 
   return <primitive object={built.group} />;
 }
+
+/** Which model a piece is drawn with: its kind's, or for a sign the one with its face. */
+const modelKey = (p: Piece) => (CODE_MODELS.includes(p.k) ? `${p.k}:${p.c ?? 0}` : p.k);
 
 function setShadows(kinds: Kind[], on: boolean) {
   for (const k of kinds) {

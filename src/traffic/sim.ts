@@ -49,6 +49,7 @@ import { seeded } from '../map/hash';
 import type { Point } from '../map/types';
 import { stronglyConnected, type GraphEdge, type RoadGraph } from '../routing/graph';
 import { IDM, idmAccel } from './idm';
+import type { Signals } from './signals';
 
 export const TRAFFIC = {
   spawnMin: 140,
@@ -112,6 +113,20 @@ export const TRAFFIC = {
   ringSlack: 0.5,
   /** Turn signals come on this far (m) before a turn. */
   signalFrom: 35,
+  /**
+   * Getting out of the way of the player's car coming at it: head-on in its lane less than
+   * `evadeTime` s from meeting, or closing in from behind in its lane `evadeClosing` m/s
+   * faster within `evadeBehind` m. The driver brakes (down to `evadeSpeed` m/s, or 70% of
+   * its speed) and moves toward the curb, up to `evadeMax` m, over at least `evadeLen` m,
+   * for `evadeFor` s after the threat was last seen, then eases back.
+   */
+  evadeTime: 3,
+  evadeClosing: 6,
+  evadeBehind: 28,
+  evadeSpeed: 3,
+  evadeMax: 1.2,
+  evadeLen: 6,
+  evadeFor: 1.6,
 };
 
 export interface TrafficModel {
@@ -145,6 +160,9 @@ export interface Agent {
   calm: number;
   /** Turn signal: 1 left, -1 right, 0 off. */
   signal: number;
+  /** Getting out of the player's way until this time (s), and how far over (shift, m, negative: toward the curb). */
+  evadeUntil: number;
+  evadeShift: number;
   /** On or heading into a roundabout: the exit it picked (-1 none), and how far (m) it may still go round before taking any exit. */
   ringExit: number;
   ringLeft: number;
@@ -224,6 +242,26 @@ export interface TrafficOptions {
   paints: number[];
   /** How far each road (map index) is clear of parked cars left and right of its center line, along the road's direction (`parkingRoom`). Roads not in it are clear across. */
   room?: Map<number, [number, number]>;
+  /** The junctions' traffic signals (built on the same graph), obeyed: stop on red, and on amber unless too close to stop comfortably. */
+  signals?: Signals;
+}
+
+/** Is this road part of a junction: too little of it between the junction polygons at its ends to wait on? */
+export function internalEdge(e: GraphEdge): boolean {
+  return e.length - e.trimStart - e.trimEnd < TRAFFIC.cluster;
+}
+
+/**
+ * The junction each graph node belongs to: nodes joined by roads too short to wait on
+ * (`internalEdge`) are one junction, so a divided avenue's crossing (two or more nodes a
+ * few meters apart) is reserved, and signalled, as one. Union-find; the value is a node id
+ * standing for its group.
+ */
+export function junctionGroups(graph: RoadGraph): Int32Array {
+  const parent = Int32Array.from(graph.nodes.keys());
+  const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  for (const e of graph.edges) if (internalEdge(e)) parent[find(e.from)] = find(e.to);
+  return Int32Array.from(graph.nodes.keys(), (v) => find(v));
 }
 
 interface Pose {
@@ -246,6 +284,8 @@ export class TrafficSim {
   private nextId = 1;
   private time = 0;
   private filled = false;
+  /** Live traffic signals, if the map has any (traffic/signals.ts): a red or late amber is a stop line. */
+  private readonly signals: Signals | null;
   /** Holders and queues per junction (a group of nodes, `group`). */
   private readonly holders = new Map<number, Movement[]>();
   private readonly queues = new Map<number, Movement[]>();
@@ -262,11 +302,8 @@ export class TrafficSim {
     this.opts = opts;
     this.count = opts.count;
     this.rand = seeded(opts.seed ?? 'traffic');
-    // Junctions: union-find over short roads, so a divided avenue's crossing (two or more nodes a few meters apart) is reserved as one.
-    const parent = Int32Array.from(graph.nodes.keys());
-    const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x])));
-    for (const e of graph.edges) if (this.internal(e)) parent[find(e.from)] = find(e.to);
-    this.group = Int32Array.from(graph.nodes.keys(), (v) => find(v));
+    this.group = junctionGroups(graph);
+    this.signals = opts.signals ?? null;
     this.usable = new Uint8Array(graph.edges.length);
     this.usableList = [];
     this.usableLength = [];
@@ -331,7 +368,13 @@ export class TrafficSim {
       const inside = this.group[e.from] === junction && this.internal(e);
       // The stop line is before the junction polygon (wide avenues have big ones), and the asking starts that much earlier.
       const stopAt = Math.max(TRAFFIC.stopBack, e.trimEnd + 1);
-      if (a.next >= 0 && left < TRAFFIC.reserveAt + stopAt && !inside && !a.held.some((h) => h.junction === junction)) {
+      const holding = a.held.some((h) => h.junction === junction);
+      // A red light (or an amber it can still stop for comfortably) is a stop line; it doesn't even ask for the junction.
+      const lamp = !inside && !holding && a.next >= 0 ? this.signals?.edgeLamp(a.edge) : undefined;
+      const toStop = left - stopAt - a.len / 2;
+      if (lamp && lamp !== 'green' && toStop > 0 && (lamp === 'red' || (a.v * a.v) / (2 * IDM.brake) < toStop)) {
+        if (toStop < gap) [gap, lead] = [Math.max(0.1, toStop), 0];
+      } else if (a.next >= 0 && left < TRAFFIC.reserveAt + stopAt && !inside && !holding) {
         if (this.request(a, junction)) a.held.push({ junction, passedAt: null });
         else {
           const stop = left - stopAt - a.len / 2;
@@ -382,9 +425,20 @@ export class TrafficSim {
         const g = along - a.len / 2 - o.half;
         if (g < gap) [gap, lead] = [Math.max(0.1, g), Math.max(0, o.speed * Math.cos(o.heading - a.heading))];
       }
+      // The player's car coming at it fast: brake, and move toward the curb for a moment.
+      if (this.threatened(a, obstacles)) {
+        a.evadeUntil = this.time + TRAFFIC.evadeFor;
+        // Toward the curb as far as the road's edge allows, and only with nobody alongside on that side (a lane to the right).
+        a.evadeShift = this.clearOnRight(a) ? -Math.max(0, Math.min(TRAFFIC.evadeMax, this.room[a.edge][1] - here - a.width / 2 - 0.25)) : 0;
+      }
+      const evading = this.time < a.evadeUntil;
+      if (evading) {
+        v0 = Math.min(v0, Math.max(TRAFFIC.evadeSpeed, a.v * 0.7));
+        if (shiftTo === 0 && a.evadeShift < -0.2) shiftTo = a.evadeShift;
+      }
       a.shiftTo = shiftTo;
       // A new sideways move when the target grows, falls back to the lane, or shrinks a lot (small wobbles in it don't restart the curve).
-      if (a.shiftTo - a.latTo > 0.1 || a.latTo - a.shiftTo > 0.4 || (a.shiftTo === 0 && a.latTo !== 0)) this.moveOver(a, a.shiftTo);
+      if (a.shiftTo - a.latTo > 0.1 || a.latTo - a.shiftTo > 0.4 || (a.shiftTo === 0 && a.latTo !== 0)) this.moveOver(a, a.shiftTo, true, evading ? Math.max(TRAFFIC.evadeLen, a.v * 0.8) : undefined);
       else if (shiftTo === 0) this.changeLane(a, lanes, ahead ? ahead[0] : Infinity, ahead ? ahead[1] : 0, v0);
       a.latP = Math.min(1, a.latP + Math.max((a.v * dt) / a.latLen, a.latCrawl ? dt / TRAFFIC.latTime : 0));
       a.shift = a.latFrom + (a.latTo - a.latFrom) * smoother(a.latP);
@@ -404,12 +458,42 @@ export class TrafficSim {
   }
 
   /** Starts a sideways move from where the car is now to `to` (shift, m), an S-curve over 12 to 20 m depending on speed. */
-  private moveOver(a: Agent, to: number, crawl = true) {
+  private moveOver(a: Agent, to: number, crawl = true, length?: number) {
     a.latCrawl = crawl;
     a.latFrom = a.shift;
     a.latTo = to;
     a.latP = 0;
-    a.latLen = Math.max(TRAFFIC.latMin, Math.min(TRAFFIC.latMax, a.v * TRAFFIC.latPerSpeed));
+    a.latLen = length ?? Math.max(TRAFFIC.latMin, Math.min(TRAFFIC.latMax, a.v * TRAFFIC.latPerSpeed));
+  }
+
+  /** Is there room alongside on the right for a car to move over by up to `evadeMax` (no other car there, ahead or behind by a car length)? */
+  private clearOnRight(a: Agent): boolean {
+    const [c, s] = [Math.cos(a.path), Math.sin(a.path)];
+    for (const o of this.agents) {
+      if (o === a || Math.abs(o.z - a.z) > 2) continue;
+      const [dx, dy] = [o.x - a.x, o.y - a.y];
+      const along = dx * c + dy * s;
+      if (Math.abs(along) > (a.len + o.len) / 2 + 2) continue;
+      // Right of this car (-), within the width it would take plus the other's half.
+      const across = -dx * s + dy * c;
+      if (across < 0 && across > -(a.width / 2 + TRAFFIC.evadeMax + o.width / 2 + 0.3)) return false;
+    }
+    return true;
+  }
+
+  /** Is the player's car (or anything moving in `obstacles`) coming at this car fast: head-on in its lane, or from behind in its lane much faster? */
+  private threatened(a: Agent, obstacles: Obstacle[]): boolean {
+    const [c, s] = [Math.cos(a.path), Math.sin(a.path)];
+    for (const o of obstacles) {
+      if (o.speed < 4) continue;
+      const [dx, dy] = [o.p[0] - a.x, o.p[1] - a.y];
+      const along = dx * c + dy * s;
+      const across = -dx * s + dy * c;
+      const facing = Math.cos(o.heading - a.path);
+      if (facing < -0.7 && along > a.len / 2 && Math.abs(across) < a.width / 2 + (o.side ?? 1.2) + 0.6 && along / (o.speed + a.v) < TRAFFIC.evadeTime) return true;
+      if (facing > 0.7 && along < -a.len / 2 && along > -TRAFFIC.evadeBehind && Math.abs(across) < 2 && o.speed * facing - a.v > TRAFFIC.evadeClosing) return true;
+    }
+    return false;
   }
 
   /**
@@ -624,6 +708,8 @@ export class TrafficSim {
         laneAt: this.time,
         calm: 1 + this.rand(),
         signal: 0,
+        evadeUntil: -Infinity,
+        evadeShift: 0,
         ringExit: -1,
         ringLeft: 0,
         v0,
@@ -665,7 +751,7 @@ export class TrafficSim {
 
   /** Is this road part of a junction (too little of it between the polygons at its ends to wait on)? */
   private internal(e: GraphEdge): boolean {
-    return e.length - e.trimStart - e.trimEnd < TRAFFIC.cluster;
+    return internalEdge(e);
   }
 
   /** Turn angle (radians, + left) from the end of edge a onto edge b. */

@@ -15,6 +15,7 @@ import { targetTime } from './cargo';
 import { playableRuns, resolvePlaces, type Place, type RunDef } from './events';
 import { lastCheckpoint, newRun, startCountdown, stepRun, type CarSignals, type Checkpoint, type RunState } from './run';
 import { buyCar, creditRun, loadSave, writeSave, type Save, type SaveStorage } from './save';
+import { Signals } from '../traffic/signals';
 
 /** Where to put the car: map position, heading (radians counter-clockwise from east), height of the road (m). */
 export interface Pose {
@@ -65,6 +66,7 @@ export class GameSession {
 
   private map: MapData | null = null;
   private built: { graph: RoadGraph; router: Router; places: Map<string, Place>; runs: RunDef[] } | null = null;
+  private lights: Signals | null = null;
   private plans = new Map<string, { route: Route; target: number } | null>();
   private readonly listeners = new Set<() => void>();
   private readonly storage: SaveStorage | null | undefined;
@@ -80,6 +82,7 @@ export class GameSession {
     if (map === this.map) return;
     this.map = map;
     this.built = null;
+    this.lights = null;
     this.plans.clear();
   }
 
@@ -118,6 +121,12 @@ export class GameSession {
   /** The road graph (built on first use): routes, and the traffic. */
   get graph(): RoadGraph {
     return this.world.graph;
+  }
+
+  /** The intersections' traffic signals (built on first use with the road graph): the traffic obeys them, the lights show them. */
+  get signals(): Signals {
+    this.lights ??= new Signals(this.graph, this.map?.dressing ?? []);
+    return this.lights;
   }
 
   get runs(): RunDef[] {

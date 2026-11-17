@@ -41,6 +41,7 @@ export function Traffic({ game, map, count, near, car }: { game: GameSession; ma
         models: PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]], weight: m.weight })),
         paints: PARKED_PAINTS.map((p) => p.weight),
         room: parkingRoom(map.roads, map.parked ?? []),
+        signals: game.signals,
       }),
     [game, map, count],
   );
@@ -78,6 +79,9 @@ interface Look extends BodyMotion {
   steer: number;
   brake: number;
   heading: number;
+  /** How far the wheels have turned (radians), and the distance driven when it was last updated. */
+  spin: number;
+  odo: number;
 }
 
 type Built = ReturnType<typeof buildTraffic>;
@@ -208,7 +212,9 @@ function draw(sim: TrafficSim, bodies: TrafficBodies, built: Built, camera: Vect
       carRotation(a.heading, a.pitch, q);
     }
     const look = lookOf(built.looks, a);
-    updateLook(look, a, dt);
+    // Knocked loose, the wheels roll with how fast the body moves along its length.
+    const rolling = body ? body.linvel().x * Math.cos(a.heading) - body.linvel().z * Math.sin(a.heading) : null;
+    updateLook(look, a, dt, rolling, built.models.parts[a.model].wheelRadius || 0.3);
     base.compose(pos, q, one);
     // The body leans on its springs (pitch dips the nose, roll lowers the right side), the wheels don't.
     lean.copy(q).multiply(leanX.setFromAxisAngle(X, look.pitch)).multiply(leanZ.setFromAxisAngle(Z, look.roll));
@@ -232,7 +238,7 @@ function draw(sim: TrafficSim, bodies: TrafficBodies, built: Built, camera: Vect
       (mesh.geometry.getAttribute('brake') as InstancedBufferAttribute).setX(k, brake);
 
       // Wheels: spin by the distance driven (the wheel's top rolls forward), front ones steered; right ones are the left wheel turned round.
-      const spin = a.odo / (parts.wheelRadius || 0.3);
+      const spin = look.spin;
       for (let w = 0; w < 4; w++) {
         const [x, y, z] = parts.wheels[w];
         local.makeRotationX(spin);
@@ -310,14 +316,21 @@ function show(m: InstancedMesh, count: number) {
 function lookOf(looks: Map<number, Look>, a: Agent): Look {
   let look = looks.get(a.id);
   if (!look) {
-    look = { steer: 0, brake: 0, heading: a.heading, pitch: 0, pitchVel: 0, roll: 0, rollVel: 0 };
+    look = { steer: 0, brake: 0, heading: a.heading, pitch: 0, pitchVel: 0, roll: 0, rollVel: 0, spin: 0, odo: a.odo };
     looks.set(a.id, look);
   }
   return look;
 }
 
-/** Front wheels eased toward the simulation's steering angle, brake lights on when slowing or stopped (eased), and the body's lean from its braking and how hard it's turning. */
-function updateLook(look: Look, a: Agent, dt: number) {
+/**
+ * Front wheels eased toward the simulation's steering angle, wheel spin from the distance
+ * driven (knocked loose: from `rolling`, the body's speed along its length), brake lights
+ * on when slowing or stopped (eased), and the body's lean from its braking and how hard
+ * it's turning.
+ */
+function updateLook(look: Look, a: Agent, dt: number, rolling: number | null, wheelRadius: number) {
+  look.spin += (rolling === null ? a.odo - look.odo : rolling * dt) / wheelRadius;
+  look.odo = a.odo;
   const steer = a.knocked ? 0 : Math.max(-LOOK.maxSteer, Math.min(LOOK.maxSteer, a.steer));
   look.steer += (steer - look.steer) * Math.min(1, dt * LOOK.steerRate);
   const braking = !a.knocked && (a.acc < LOOK.brakeFrom || a.v < LOOK.stopped) ? 1 : 0;

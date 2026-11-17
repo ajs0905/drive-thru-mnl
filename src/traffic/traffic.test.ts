@@ -7,6 +7,7 @@ import { buildRoadGraph } from '../routing/graph';
 import { pointOnRoute, Router } from '../routing/route';
 import { snap } from '../routing/graph';
 import { IDM, idmAccel } from './idm';
+import { Signals } from './signals';
 import { laneOffset, laneWidth, oncomingRoom, parkingRoom, roadsWithParking, TRAFFIC, TrafficSim, type Agent } from './sim';
 
 const MODELS = PARKED_MODELS.map((m) => ({ size: [m.size[0], m.size[1]] as [number, number], weight: m.weight }));
@@ -117,12 +118,14 @@ describe('traffic on the real map', () => {
   const router = new Router(graph, 4);
   const route = router.route(snap(graph, [-500, -600])!, snap(graph, [800, 1200])!)!;
 
-  function drive(count: number, seconds: number, seed = 'test') {
-    const sim = new TrafficSim(graph, { count, models: MODELS, paints: PAINTS, room, seed });
+  function drive(count: number, seconds: number, seed = 'test', lights = false) {
+    const signals = lights ? new Signals(graph, map.dressing ?? []) : undefined;
+    const sim = new TrafficSim(graph, { count, models: MODELS, paints: PAINTS, room, seed, signals });
     let [moving, total, overlaps, onParked, turn, jump] = [0, 0, 0, 0, 0, 0];
     const last = new Map<number, Agent>();
     for (let i = 0; i < seconds * 60; i++) {
       const at = pointOnRoute(route, ((i / 60) * 12) % route.length);
+      signals?.advance(1 / 60);
       sim.step(1 / 60, at.p, [{ p: at.p, speed: 12, heading: at.heading, half: 2.25 }]);
       for (const a of sim.agents) {
         total++;
@@ -154,6 +157,12 @@ describe('traffic on the real map', () => {
     const { sim, moving, overlaps, onParked } = drive(10, 240);
     expect(sim.agents).toHaveLength(10);
     expect(moving).toBeGreaterThan(0.9);
+    expect(overlaps).toBe(0);
+    expect(onParked).toBe(0);
+  });
+
+  it('keeps cars apart with the traffic lights cycling and the player driving through queues (nobody swerves into the next lane)', () => {
+    const { overlaps, onParked } = drive(24, 180, 'b', true);
     expect(overlaps).toBe(0);
     expect(onParked).toBe(0);
   });
@@ -313,5 +322,37 @@ describe('traffic on the real map', () => {
     // Facing across the road: no lane to rejoin.
     sim.knock(a.id);
     expect(sim.rejoin(a.id, a.x, a.y, a.z, a.heading + Math.PI / 2, 0)).toBe(false);
+  });
+
+  it('brakes and moves toward the curb when the player comes at it head-on in its lane, then goes back to its lane', () => {
+    let tried = 0;
+    let dodged = 0;
+    for (const seed of ['dodge-a', 'dodge-b', 'dodge-c', 'dodge-d']) {
+      const sim = new TrafficSim(graph, { count: 6, models: MODELS, paints: PAINTS, room, seed });
+      const p = pointOnRoute(route, 0).p;
+      for (let i = 0; i < 120; i++) sim.step(1 / 60, p);
+      const a = sim.agents.find((x) => x.v > 5 && graph.edges[x.edge].length - x.s > 60 && !graph.edges[x.edge].roundabout);
+      if (!a) continue;
+      tried++;
+      const speed = a.v;
+      // The player 40 m ahead in its lane, coming straight at it at 15 m/s.
+      const [c, sn] = [Math.cos(a.path), Math.sin(a.path)];
+      const player = { p: [a.x + c * 40, a.y + sn * 40] as Point, speed: 15, heading: a.path + Math.PI, half: 2.25 };
+      let [minShift, slowest] = [0, speed];
+      for (let i = 0; i < 60 * 1.2; i++) {
+        player.p = [player.p[0] - c * (15 / 60), player.p[1] - sn * (15 / 60)];
+        sim.step(1 / 60, p, [player]);
+        minShift = Math.min(minShift, a.shift);
+        slowest = Math.min(slowest, a.v);
+      }
+      expect(a.evadeUntil).toBeGreaterThan(0);
+      expect(slowest).toBeLessThan(speed * 0.9);
+      if (minShift < -0.2) dodged++;
+      // Gone past: it eases back to its lane.
+      for (let i = 0; i < 60 * 6; i++) sim.step(1 / 60, p);
+      if (sim.agents.includes(a)) expect(Math.abs(a.shift)).toBeLessThan(0.05);
+    }
+    expect(tried).toBeGreaterThan(0);
+    expect(dodged).toBeGreaterThan(0);
   });
 });

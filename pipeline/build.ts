@@ -16,6 +16,7 @@ import { smoothRaisedCurves } from './smoothRaised';
 import { placeLots } from './lots';
 import { placeParkedCars } from './parking';
 import { placeSidewalkDressing } from './sidewalks';
+import { placeSigns } from './signs';
 import { placeLights } from './lights';
 import { placeStructures } from './structures';
 import { dropBuildingsOnRoads, fitRoadWidths, trimBuildingsOffRoads } from './fitWidths';
@@ -67,12 +68,15 @@ function findPlayable(): string | undefined {
   return ['data/playable-area.geojson', 'data/raw/playable-area.geojson'].find((p) => existsSync(p));
 }
 
-/** First Polygon in a geojson.io export, as a lat/lon ring. */
-function playableRing(path: string): [number, number][] {
+/** First Polygon in a geojson.io export, as a lat/lon ring, and the district it names (`region` and `district` properties), if it does. */
+function playableArea(path: string): { ring: [number, number][]; district?: MapData['district'] } {
   const fc = readJson<FeatureCollection>(path);
-  const poly = fc.features?.find((f) => f.geometry?.type === 'Polygon')?.geometry as Polygon | undefined;
+  const feature = fc.features?.find((f) => f.geometry?.type === 'Polygon');
+  const poly = feature?.geometry as Polygon | undefined;
   if (!poly) return fail(`${path} has no Polygon. Draw one at geojson.io and export it as GeoJSON.`);
-  return poly.coordinates[0] as [number, number][];
+  const props = (feature?.properties ?? {}) as Record<string, unknown>;
+  const named = typeof props.region === 'string' && typeof props.district === 'string';
+  return { ring: poly.coordinates[0] as [number, number][], ...(named && { district: { region: props.region as string, name: props.district as string } }) };
 }
 
 if (!Number.isFinite(margin) || margin < 0) fail('--margin must be a number of meters >= 0');
@@ -88,7 +92,8 @@ const playablePath = findPlayable();
 if (playablePath) {
   const proj = createProjection(map.origin, map.scale);
   const round2 = (n: number) => Math.round(n * 100) / 100;
-  const ring: Ring = playableRing(playablePath).map(([lon, lat]): Point => {
+  const area = playableArea(playablePath);
+  const ring: Ring = area.ring.map(([lon, lat]): Point => {
     const { x, y } = proj.toLocal({ lat, lon });
     return [round2(x), round2(y)];
   });
@@ -96,6 +101,7 @@ if (playablePath) {
   const [first, last] = [ring[0], ring[ring.length - 1]];
   if (ring.length > 1 && first[0] === last[0] && first[1] === last[1]) ring.pop();
   map = clipToPlayable(map, ring, margin);
+  if (area.district) map = { ...map, district: area.district };
 }
 const elevation = elevateRoads(map.roads);
 const settled = settleRaised(elevation.roads, map.buildings);
@@ -156,6 +162,8 @@ const lights = placeLights(map, signals);
 map = { ...map, dressing: [...(map.dressing ?? []), ...lights.dressing], stats: { ...map.stats, lights: lights.stats } };
 const sidewalks = placeSidewalkDressing(map);
 map = { ...map, dressing: [...(map.dressing ?? []), ...sidewalks.dressing], stats: { ...map.stats, sidewalks: sidewalks.stats } };
+const signs = placeSigns(map);
+map = { ...map, dressing: [...(map.dressing ?? []), ...signs.dressing], stats: { ...map.stats, signs: signs.stats } };
 if (map.stats.clip) {
   const sceneryLeft = cleared.buildings.filter((b) => b.scenery).length;
   map.stats.clip = { ...map.stats.clip, playableBuildings: cleared.buildings.length - sceneryLeft, sceneryBuildings: sceneryLeft };
@@ -249,6 +257,11 @@ console.log(`  fixtures in open lanes: ${lanes.moved} bollards and blocks moved 
   const w = sidewalks.stats;
   const list = (r: Record<string, number>) => Object.entries(r).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
   console.log(`  sidewalks: ${list(w.placed)} (skipped: ${list(w.skipped)})`);
+}
+{
+  const g = signs.stats;
+  const list = (r: Record<string, number>) => Object.entries(r).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
+  console.log(`  signs: ${list(g.placed)} (skipped: ${list(g.skipped)})`);
 }
 const skipped = Object.entries(stats.skipped).sort((a, b) => b[1] - a[1]);
 if (skipped.length) console.log(`  skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(', ')}`);

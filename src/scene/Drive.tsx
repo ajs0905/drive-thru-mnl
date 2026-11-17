@@ -10,8 +10,9 @@
  * meshes: walls (buildings, walls and fences, the playable edge), which the chase camera
  * keeps in front of, and structures (flyover decks and ramps, footbridge sides, posts).
  * Parked cars near the player are physics bodies too (ParkedPhysics.tsx), and so are the
- * roadblocks' cones, drums, barricades and signs. Light traffic drives the avenues
- * around the player (Traffic.tsx), and the modes run alongside (RunDriver.tsx). On tiers
+ * roadblocks' cones, drums, barricades and signs. Traffic drives the avenues around the
+ * player (Traffic.tsx), the traffic lights cycle (SignalLights.tsx), and the modes run
+ * alongside (RunDriver.tsx). On tiers
  * that have it, fast driving blurs the screen's edges (SpeedBlur.tsx).
  */
 import { useThree } from '@react-three/fiber';
@@ -34,6 +35,7 @@ import type { DebrisStore } from './breakaway';
 import { PropPhysics } from './PropPhysics';
 import { ROADBLOCK_POOL, ROADBLOCK_Y, type LooseProp } from './roadblockBodies';
 import { RunDriver } from './RunDriver';
+import { SignalLights } from './SignalLights';
 import { Traffic } from './Traffic';
 import { RunMarkers } from './RunMarkers';
 import { SpeedBlur } from './SpeedBlur';
@@ -55,6 +57,7 @@ export default function Drive({
   game,
   traffic = 0,
   trafficNear = 90,
+  signalsNear = 300,
 }: {
   map: MapData;
   parked?: ParkedPoses;
@@ -72,6 +75,8 @@ export default function Drive({
   /** Cars of traffic to keep around the player (0: none), and how far (m) they're drawn as full models. */
   traffic?: number;
   trafficNear?: number;
+  /** How far (m) the traffic lights' lamps are drawn lit (as far as the poles themselves). */
+  signalsNear?: number;
 }) {
   const get = useThree((s) => s.get);
   const speed = useRef(0);
@@ -130,6 +135,7 @@ export default function Drive({
       )}
       {game && session && <RunDriver game={game} session={session} paused={paused} />}
       {game && <RunMarkers game={game} />}
+      {game && map.dressing && <SignalLights game={game} pieces={map.dressing} near={signalsNear} paused={paused} knock={props?.knock} knockPoses={props?.knockPoses} />}
       {game && session && traffic > 0 && <Traffic game={game} map={map} count={traffic} near={trafficNear} car={carBody} />}
       {speedBlur && <SpeedBlur speed={speed} />}
     </Physics>

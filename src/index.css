@@ -1,4 +1,6 @@
 :root {
+  /* No automatic dark theme (see the color-scheme meta tag in index.html). */
+  color-scheme: only light;
   font: 14px/1.4 system-ui, 'Segoe UI', Roboto, sans-serif;
   color: #e8e8ea;
   background: #15171c;
@@ -13,6 +15,7 @@ html,
 body,
 #root,
 .app {
+  color-scheme: only light;
   margin: 0;
   width: 100%;
   height: 100%;
@@ -28,6 +31,7 @@ body,
 }
 
 .hud {
+  color-scheme: only light;
   position: absolute;
   top: 12px;
   left: 12px;

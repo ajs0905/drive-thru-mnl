@@ -1,35 +1,42 @@
 /** Stroke icons for the signs and buttons (decorative: the buttons carry the labels). */
 import type { CSSProperties } from 'react';
 
-export function ArrowRight({ size = 24 }: { size?: number }) {
+/**
+ * Icon colors are spelled out, never `currentColor`: browsers that darken pages on their own
+ * (forced dark mode on phones) recolor inherited colors, and the white strokes on the
+ * game's signs turned dark grey.
+ */
+const WHITE = '#ffffff';
+
+export function ArrowRight({ size = 24, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M5 12h14" />
       <path d="M13 6l6 6-6 6" />
     </svg>
   );
 }
 
-export function ArrowUp({ size = 24 }: { size?: number }) {
+export function ArrowUp({ size = 24, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 20V5" />
       <path d="M6 11l6-6 6 6" />
     </svg>
   );
 }
 
-export function Check({ size = 20 }: { size?: number }) {
+export function Check({ size = 20, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M5 12l5 5 9-10" />
     </svg>
   );
 }
 
-export function Busy({ size = 20 }: { size?: number }) {
+export function Busy({ size = 20, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3} aria-hidden="true">
       <circle cx="12" cy="12" r="7" strokeDasharray="30 14">
         <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
       </circle>
@@ -37,17 +44,17 @@ export function Busy({ size = 20 }: { size?: number }) {
   );
 }
 
-export function Todo({ size = 20 }: { size?: number }) {
+export function Todo({ size = 20, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.5} aria-hidden="true">
       <circle cx="12" cy="12" r="6" />
     </svg>
   );
 }
 
-export function Handbrake({ size = 24 }: { size?: number }) {
+export function Handbrake({ size = 24, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M7 19L16 5" />
       <rect x="13.5" y="2.5" width="5" height="4" rx="1.5" transform="rotate(32 16 4.5)" />
       <path d="M4 20h7" />
@@ -55,45 +62,45 @@ export function Handbrake({ size = 24 }: { size?: number }) {
   );
 }
 
-export function Pause({ size = 18 }: { size?: number }) {
+export function Pause({ size = 18, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} aria-hidden="true">
       <rect x="5" y="4" width="5" height="16" rx="1.5" />
       <rect x="14" y="4" width="5" height="16" rx="1.5" />
     </svg>
   );
 }
 
-export function Reset({ size = 20 }: { size?: number }) {
+export function Reset({ size = 20, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 12a8 8 0 1 0 2.4-5.7" />
       <path d="M4 4v5h5" />
     </svg>
   );
 }
 
-export function Close({ size = 20 }: { size?: number }) {
+export function Close({ size = 20, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" aria-hidden="true">
       <path d="M6 6l12 12" />
       <path d="M18 6L6 18" />
     </svg>
   );
 }
 
-export function Lock({ size = 14 }: { size?: number }) {
+export function Lock({ size = 14, color = WHITE }: { size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="5" y="11" width="14" height="10" rx="2" />
       <path d="M8 11V8a4 4 0 0 1 8 0v3" />
     </svg>
   );
 }
 
-export function Chevron({ dir, size = 32 }: { dir: 'left' | 'right'; size?: number }) {
+export function Chevron({ dir, size = 32, color = WHITE }: { dir: 'left' | 'right'; size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={dir === 'left' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'} />
     </svg>
   );

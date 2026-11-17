@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LANE_WIDTH, parseLanes, parseWidth, roadWidth } from './roadWidth';
+import { LANE_WIDTH, parseLanes, parseMaxspeed, parseWidth, roadWidth } from './roadWidth';
 
 describe('roadWidth', () => {
   it('uses the width tag first', () => {
@@ -59,4 +59,14 @@ describe('parseLanes', () => {
     expect(parseLanes(4)).toBe(4);
   });
   it.each(['', 'many', '0', '40', null])('rejects %j', (v) => expect(parseLanes(v)).toBeUndefined());
+});
+
+describe('parseMaxspeed', () => {
+  it('reads km/h, converts mph and ignores the rest', () => {
+    expect(parseMaxspeed('40')).toBe(40);
+    expect(parseMaxspeed('60 km/h')).toBe(60);
+    expect(parseMaxspeed('30 mph')).toBe(48);
+    expect(parseMaxspeed('signals')).toBeUndefined();
+    expect(parseMaxspeed(undefined)).toBeUndefined();
+  });
 });

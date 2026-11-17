@@ -9,7 +9,7 @@ import { createProjection, type LatLon, type Projection } from '../src/geo/proje
 import { polygonArea } from '../src/geometry/polygon';
 import type { Area, AreaKind, Building, MapData, Point, Ring, Road, RoadClass, SidewalkSides } from '../src/map/types';
 import { estimateHeight, LEVEL_HEIGHT } from './heights';
-import { isOneway, parseLanes, roadWidth } from './roadWidth';
+import { isOneway, parseLanes, parseMaxspeed, roadWidth } from './roadWidth';
 
 const ROAD_CLASSES: Record<string, RoadClass> = {
   motorway: 'major', motorway_link: 'major',
@@ -270,6 +270,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
       const drivable = cls !== 'path';
       const lanes = drivable ? parseLanes(t.lanes) : undefined;
       const oneway = drivable && isOneway(t);
+      const maxspeed = drivable ? parseMaxspeed(t.maxspeed) : undefined;
       const roundabout = drivable && (t.junction === 'roundabout' || t.junction === 'circular');
       const sidewalk = drivable ? sidewalkSides(t) : undefined;
       const noParking = drivable ? noParkingSides(t) : undefined;
@@ -287,6 +288,7 @@ export function extractMap(fc: FeatureCollection, opts: ExtractOptions = {}): Ma
           ...(tunnel && { tunnel: true as const }),
           ...(lanes !== undefined && { lanes }),
           ...(oneway && { oneway: true as const }),
+          ...(maxspeed !== undefined && { maxspeed }),
           ...(roundabout && { roundabout: true as const }),
           ...(sidewalk && { sidewalk }),
           ...(noParking && { noParking }),

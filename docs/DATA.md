@@ -19,8 +19,8 @@ ODbL lets us use and adapt the data, including in a public project, as long as i
 | `data/raw/bgc.geojson` | The raw export (19 MB, about 25,900 features) |
 | [`data/barriers.overpassql`](../data/barriers.overpassql) | Second query, same box: walls, fences, hedges, guard rails, gates, booms, bollards, trees, and traffic signals |
 | `data/raw/bgc-barriers.geojson` | Its raw export (550 KB, 1,634 features). Optional: without it the map has no walls or trees. |
-| [`data/playable-area.geojson`](../data/playable-area.geojson) | 15-point polygon around BGC, 3.51 km². Where the car can drive. |
-| `public/data/bgc.json` | The processed map the game loads (3.3 MB, 775 KB gzipped). Generated: don't edit by hand. |
+| [`data/playable-area.geojson`](../data/playable-area.geojson) | 15-point polygon around BGC, 3.51 km². Where the car can drive. Its `region` and `district` properties name the area for the full map's header (`district` in the map data). |
+| `public/data/bgc.json` | The processed map the game loads (3.35 MB, 806 KB gzipped). Generated: don't edit by hand. |
 | `public/data/sample.json` | Tiny map built from the test fixture, used when `bgc.json` is missing |
 | `data/qa-baseline.json` | Accepted map QA counts; CI fails if a count goes above it |
 
@@ -179,6 +179,7 @@ Poles with an arm reaching out over the road, as dressing (so they're drawn, sol
 - **Room around poles.** Every pole keeps 0.5 m from what's drawn of the furniture already there (a shed's roof and a kiosk's awning reach past their footprints: `DRAWN` in `src/geometry/dressing.ts`) and from parked cars, 1 m along the road from a zebra crossing's band, and stays out from under flyover decks and raised buildings its pole or arm would reach into.
 - **Street lights** by rule, every 32 m on avenues (both curbs, staggered; one-way carriageways only their outer, right-hand curb) and every 40 m on one side of minor streets at least 7 m wide, arm over the road. A light that can't stand at its spot tries up to 3 m either way along the curb, then is skipped: near junctions, crossings, driveways, trees and pillars, on bends and footpaths, in other roads and buildings, against walls, under decks and outside the playable area.
 - Placed before the sidewalk furniture, which then keeps clear of the poles.
+- In the game the lights cycle (`src/traffic/signals.ts`): each intersection runs two phases, the busiest approach's axis and the one across it, 18 s green, 3 s amber and 2 s all red each, offset per intersection by a seed. A light's phase is the way its heads face. The traffic stops for red and for amber it can stop for comfortably; the player doesn't have to.
 - Result: 130 traffic lights on mast arms and 32 on poles (18 of them on the far curb across a junction) at 56 junctions in 49 intersections, 1,195 street lights (94 of them nudged along the curb; skipped: outside the playable area 115 plus 2 traffic lights, another road 73 plus 6, crossing 40, building 30, junction 18, a second light on a corner 1, and a few for pillars, footpaths, flyover decks, driveways, walls and bends). The first version put each light at its approach's stop line; the map QA check for that now finds 0 (it finds 104 in the old placement).
 
 ### 17. Sidewalk furniture (`pipeline/sidewalks.ts`)
@@ -188,6 +189,17 @@ Solid street furniture, so the sidewalks read as the edge of the street rather t
 - Waiting sheds along the avenues (about every 260 m, against the back of the sidewalk, facing the road), planters along the avenues' curbs (every 34 m), bins (90 m) and fire hydrants (160 m) on every street with a sidewalk, and a few snack kiosks by the open parks. Each spacing is varied by a seeded amount per street side, so the streets don't line up.
 - A piece is skipped near a junction, a crossing, a driveway (gate, boom or bollard), a tree trunk or a pillar, on a sharp bend, on a footpath, in another road or a building, across a wall, outside the playable area, and where it would crowd another piece (1 m kept between them).
 - Result: 842 bins, 578 planters, 481 hydrants, 68 waiting sheds and 4 kiosks (skipped: another road 347, outside the playable area 343, crowded 254 (mostly by the street lights; pieces keep their room from what's drawn, roofs and awnings included), building 119, crossing 88, junction 41, bend 17, pillar 14, footpath 14, wall 8, tree 3, fixture 3).
+
+### 18. Road signs (`pipeline/signs.ts`)
+
+Stop, one-way and speed limit signs on a 2.75 m post, as dressing, so they're drawn, knocked over and kept clear like the rest of the street furniture. OSM maps no stop or give-way points here, so they're placed by rule; the speeds come from `maxspeed` tags where the road has one (on 542 of the map's roads).
+
+- **Stop** on every road arriving at an unsignalized junction where a bigger road crosses (a street meeting an avenue, a driveway meeting a street), on the approach's right-hand curb 1.2 m before the junction polygon (or before a zebra crossing there), facing the driver. No traffic light within 30 m of the junction, no roundabouts.
+- **One way** where a one-way street leaves a junction: for each road arriving from the side, a sign on the one-way street's curb on that driver's side, facing them, the arrow pointing the way the street goes as they see it (so at the top of a T the stem's drivers see which way to turn). Streets only: not driveways and lot aisles, roundabouts, or the halves of a divided road (a one-way way with one going the other way within 25 m).
+- **Speed limit** on the avenues, 22 m past a junction on the right-hand curb, facing the traffic leaving it, longest roads first and at most one per direction within 260 m, on roads at least 60 m long. The speed is the road's tag, else 60 km/h on primary and trunk roads and 40 on the rest, rounded down to a sign there is (20, 30, 40, 50, 60, 80).
+- A sign slides up to 6 m further along the curb where it would stand in a road (a driveway's mouth included, 0.6 m kept), on a footpath, in a building or junction paving, against a wall, beside a crossing's band, outside the playable area, or crowd other furniture or a parked car (0.4 m kept). Placed last, so it keeps clear of everything else.
+- Result: 271 stop signs, 221 one-way signs and 60 speed limit signs (skipped: a speed limit sign already within 260 m 55, stop signs on roads too short to slide along 34, another road 31, and a few outside the playable area, in buildings, at crossings and on footpaths).
+
 ## Projection
 
 Equirectangular around a fixed origin (14.5509 N, 121.0503 E):

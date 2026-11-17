@@ -163,13 +163,15 @@ describe('extractMap: elevation, widths and junk', () => {
       { id: 'a', props: { highway: 'secondary', lanes: '3', oneway: 'yes', sidewalk: 'both' }, geometry: line },
       { id: 'b', props: { highway: 'residential', sidewalk: 'no' }, geometry: line },
       { id: 'c', props: { highway: 'tertiary', 'sidewalk:left': 'separate' }, geometry: line },
-      { id: 'd', props: { highway: 'primary', junction: 'roundabout' }, geometry: line },
+      { id: 'd', props: { highway: 'primary', junction: 'roundabout', maxspeed: '60' }, geometry: line },
     ]);
     expect(byId(m.roads, 'a')).toMatchObject({ lanes: 3, oneway: true, sidewalk: 'both' });
     expect(byId(m.roads, 'b')).toMatchObject({ sidewalk: 'none' });
     expect(byId(m.roads, 'b')?.oneway).toBeUndefined();
     expect(byId(m.roads, 'c')?.sidewalk).toBe('left');
     expect(byId(m.roads, 'd')?.oneway).toBe(true);
+    expect(byId(m.roads, 'd')?.maxspeed).toBe(60);
+    expect(byId(m.roads, 'a')?.maxspeed).toBeUndefined();
   });
 
   it('drops separately mapped sidewalks and parking aisles, keeps crossings as zebras', () => {

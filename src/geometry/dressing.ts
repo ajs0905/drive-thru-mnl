@@ -53,7 +53,20 @@ export const DRESSING: Record<DressingKind, DressingSpec> = {
   streetlight: { size: [0.35, 0.35, 8], solid: true, reach: 'mid' },
   signal: { size: [0.4, 0.4, 6.2], solid: true, reach: 'mid' },
   signalpole: { size: [0.3, 0.3, 3.6], solid: true, reach: 'mid' },
+  // Road signs (pipeline/signs.ts): a post with the sign on top, facing -z (the traffic it's for).
+  signstop: { size: [0.16, 0.16, 2.75], solid: true, reach: 'mid' },
+  signoneway: { size: [0.16, 0.16, 2.75], solid: true, reach: 'mid' },
+  signspeed: { size: [0.16, 0.16, 2.75], solid: true, reach: 'mid' },
 };
+
+/** Kinds drawn from models built in code (scene/signModels.ts) rather than props.glb. */
+export const CODE_MODELS: DressingKind[] = ['signstop', 'signoneway', 'signspeed'];
+
+/** The speed limits a speed limit sign can show (km/h); a sign's `c` indexes this. */
+export const SIGN_SPEEDS = [20, 30, 40, 50, 60, 80];
+
+/** A sign's plate: how wide and tall (m), where its middle is up the post (m), and how far in front of the post (m). */
+export const SIGN_PLATES = { stop: [0.75, 0.75], oneway: [0.9, 0.3], speed: [0.65, 0.65], middle: 2.3, front: 0.1 };
 
 /** Street and traffic light arms: how far out over the road they reach from the pole (m). */
 export const ARMS = { streetlight: 2.6, signal: 4.5, lamp: 1.3 };
@@ -118,6 +131,9 @@ export const PROP_PHYSICS: Partial<Record<DressingKind, { kind: 'knock' | 'break
   streetlight: { kind: 'knock', mass: 160 },
   signal: { kind: 'knock', mass: 220 },
   signalpole: { kind: 'knock', mass: 70 },
+  signstop: { kind: 'knock', mass: 25 },
+  signoneway: { kind: 'knock', mass: 25 },
+  signspeed: { kind: 'knock', mass: 25 },
   shed: { kind: 'break', mass: 0 },
   kiosk: { kind: 'break', mass: 0 },
   booth: { kind: 'break', mass: 0 },

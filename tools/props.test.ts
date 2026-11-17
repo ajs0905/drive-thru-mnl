@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { DRAWN, DRESSING } from '../src/geometry/dressing';
+import { CODE_MODELS, DRAWN, DRESSING } from '../src/geometry/dressing';
 
 /** The JSON chunk of a binary glTF file. */
 function glbJson(path: string): { nodes: { name: string; mesh?: number }[]; meshes: { primitives: { attributes: { POSITION: number } }[] }[]; accessors: { min: number[]; max: number[] }[] } {
@@ -9,9 +9,10 @@ function glbJson(path: string): { nodes: { name: string; mesh?: number }[]; mesh
   return JSON.parse(buf.subarray(20, 20 + length).toString('utf8'));
 }
 
-it('has one model per dressing kind in public/models/props.glb (built by tools/props-to-glb.ts)', () => {
+it('has one model per dressing kind in public/models/props.glb (built by tools/props-to-glb.ts), but the ones built in code', () => {
   const gltf = glbJson('public/models/props.glb');
-  expect(new Set(gltf.nodes.filter((n) => n.mesh !== undefined).map((n) => n.name))).toEqual(new Set(Object.keys(DRESSING)));
+  const fromGlb = Object.keys(DRESSING).filter((k) => !(CODE_MODELS as string[]).includes(k));
+  expect(new Set(gltf.nodes.filter((n) => n.mesh !== undefined).map((n) => n.name))).toEqual(new Set(fromGlb));
 });
 
 it('records how far each model reaches past its size (DRAWN) as props.glb draws it', () => {

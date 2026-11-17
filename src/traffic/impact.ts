@@ -19,12 +19,16 @@
 export type Vec2 = [number, number];
 
 export const IMPACT = {
-  /** How bouncy a car-to-car hit is (0 to 1). */
-  restitution: 0.2,
+  /** How bouncy a car-to-car hit is (0 to 1): cars crumple, they don't bounce. */
+  restitution: 0.1,
   /** Share of the sliding speed along the struck face passed on as drag, at most this share of the push plus `dragFloor` N·s. */
-  drag: 0.25,
-  dragCap: 0.6,
-  dragFloor: 600,
+  drag: 0.15,
+  dragCap: 0.4,
+  dragFloor: 300,
+  /** The impulse acts this share of the way from the car's center to where it was hit (1: right at the contact): tires, suspension and the car's own weight spread a real knock, so it turns less than a rigid box would. */
+  lever: 0.65,
+  /** The most a bump may set the struck car turning (rad/s). */
+  maxSpin: 1.2,
 };
 
 export interface Hit {
@@ -79,6 +83,11 @@ export function impactOf(h: Hit): HitResult {
   const drag = slideSpeed > 1e-6 ? Math.min(IMPACT.drag * mass * slideSpeed, IMPACT.dragCap * push + IMPACT.dragFloor) : 0;
   const impulse: Vec2 = [-normal[0] * push + (slideSpeed > 1e-6 ? (slide[0] / slideSpeed) * drag : 0), -normal[1] * push + (slideSpeed > 1e-6 ? (slide[1] / slideSpeed) * drag : 0)];
   return { normal, impulse, closing };
+}
+
+/** Where to apply a hit's impulse: `IMPACT.lever` of the way from the center to the contact point. */
+export function leverPoint(center: Vec2, point: Vec2): Vec2 {
+  return [center[0] + (point[0] - center[0]) * IMPACT.lever, center[1] + (point[1] - center[1]) * IMPACT.lever];
 }
 
 /** The turn an impulse at a point gives a body (the vertical part of r x J, three.js axes: positive turns from +x toward -z, i.e. counterclockwise seen from above). */

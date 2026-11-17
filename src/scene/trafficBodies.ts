@@ -16,7 +16,7 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { Quaternion, Vector3 } from 'three';
 import { yawForHeading } from '../car/spawn';
-import { closestOnBox, impactOf, type Vec2 } from '../traffic/impact';
+import { closestOnBox, IMPACT, impactOf, leverPoint, type Vec2 } from '../traffic/impact';
 import type { Agent, Obstacle, TrafficSim } from '../traffic/sim';
 import { ROAD_Y } from './cityGeometry';
 
@@ -31,7 +31,7 @@ const PLAYER_MASS = 1200;
  * after the knock, turning slower than `turn` rad/s and sliding slower than `slide` m/s
  * for `settle` s, rolling no faster than `roll` m/s, with the player at least `clear` m away.
  */
-export const KNOCKED = { grip: 7, rolling: 1.2, friction: 0.08, angularDamping: 0.8, after: 1.5, turn: 0.35, slide: 0.8, settle: 0.6, roll: 6, clear: 7 };
+export const KNOCKED = { grip: 7, rolling: 1.2, friction: 0.08, angularDamping: 1.3, after: 1.5, turn: 0.35, slide: 0.8, settle: 0.6, roll: 6, clear: 7 };
 /** Kept between steps (no garbage each step): the player as an obstacle, and the cars still around. */
 const PLAYER: Obstacle = { p: [0, 0], speed: 0, heading: 0, half: 2.25 };
 const PLAYER_LIST = [PLAYER];
@@ -200,7 +200,11 @@ function knock(sim: TrafficSim, bodies: TrafficBodies, rapier: typeof RAPIER, a:
   body.setEnabledRotations(false, true, false, true);
   body.setLinvel({ x: targetVel[0], y: 0, z: targetVel[1] }, true);
   body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-  body.applyImpulseAtPoint({ x: hit.impulse[0], y: 0, z: hit.impulse[1] }, { x: point[0], y: t.y + 0.6, z: point[1] }, true);
+  // At a point partway in from the contact (a weighted nudge, not a spinning top), and the spin capped.
+  const at = leverPoint(center, point);
+  body.applyImpulseAtPoint({ x: hit.impulse[0], y: 0, z: hit.impulse[1] }, { x: at[0], y: t.y + 0.6, z: at[1] }, true);
+  const w = body.angvel();
+  if (Math.abs(w.y) > IMPACT.maxSpin) body.setAngvel({ x: 0, y: Math.sign(w.y) * IMPACT.maxSpin, z: 0 }, true);
   bodies.loose.set(a.id, { at: bodies.time, still: 0, vx: targetVel[0], vz: targetVel[1] });
   // The hitter keeps what it didn't hand over (only if it was moving into the car at all).
   if (hit.closing > 0.2) hitterBody.setLinvel({ x: hitterVel[0] - hit.impulse[0] / hitterMass, y: hitterVy, z: hitterVel[1] - hit.impulse[1] / hitterMass }, true);

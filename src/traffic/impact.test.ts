@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { closestOnBox, faceNormal, impactOf, yawOf, type Hit, type Vec2 } from './impact';
+import { closestOnBox, faceNormal, IMPACT, impactOf, leverPoint, yawOf, type Hit, type Vec2 } from './impact';
 
 /** A traffic car at the origin heading +x (three.js ground plane: x, z), 4.4 m by 1.9 m, rolling at 8 m/s. */
 const car = (point: Vec2, hitterVel: Vec2): Hit => ({ center: [0, 0], forward: [1, 0], half: [2.2, 0.95], point, hitterVel, targetVel: [8, 0], hitterMass: 1200, targetMass: 1200 });
@@ -24,8 +24,8 @@ describe('a bump on a traffic car', () => {
     expect(r.impulse[0]).toBeGreaterThan(0);
     expect(Math.abs(r.impulse[1])).toBeLessThan(1e-9);
     expect(Math.abs(yawOf(hit.center, hit.point, r.impulse))).toBeLessThan(1e-9);
-    // Equal masses, a little bounce: about 0.6 of the closing speed handed over.
-    expect(r.impulse[0] / 1200).toBeCloseTo(0.6 * 6 * 0.5 * 2, 1);
+    // Equal masses, a little bounce: a bit over half the closing speed handed over.
+    expect(r.impulse[0] / 1200).toBeCloseTo((1 + IMPACT.restitution) * 0.5 * 6, 5);
   });
 
   it('spins a car tapped on a rear corner from the side, its nose kicking away from the hit side', () => {
@@ -45,7 +45,7 @@ describe('a bump on a traffic car', () => {
     const r = impactOf(car([0, 0.95], [20, -0.5]));
     expect(r.closing).toBeCloseTo(0.5);
     expect(r.impulse[0]).toBeGreaterThan(0);
-    expect(r.impulse[0]).toBeLessThanOrEqual(0.6 * Math.abs(r.impulse[1]) + 600 + 1e-6);
+    expect(r.impulse[0]).toBeLessThanOrEqual(IMPACT.dragCap * Math.abs(r.impulse[1]) + IMPACT.dragFloor + 1e-6);
   });
 
   it('does nothing to a car the other one was moving away from', () => {
@@ -59,5 +59,12 @@ describe('a bump on a traffic car', () => {
     const p = closestOnBox([0, 0], [1, 0], [2.2, 0.95], [0, -4]);
     expect(p[0]).toBeCloseTo(0);
     expect(p[1]).toBeCloseTo(-0.95);
+  });
+
+  it('applies the impulse partway in from the contact, so a knock turns a car less than a rigid box', () => {
+    const p = leverPoint([0, 0], [-2, 1]);
+    expect(p[0]).toBeCloseTo(-2 * IMPACT.lever);
+    expect(p[1]).toBeCloseTo(IMPACT.lever);
+    expect(IMPACT.lever).toBeLessThan(1);
   });
 });

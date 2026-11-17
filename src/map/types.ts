@@ -26,6 +26,8 @@ export interface Road {
   lanes?: number;
   /** One-way carriageway (half of a divided road, a ramp, a roundabout). */
   oneway?: true;
+  /** Tagged speed limit (km/h). Drivable roads only. */
+  maxspeed?: number;
   /** Part of a roundabout or traffic circle (OSM junction=roundabout or circular). */
   roundabout?: true;
   /** Which sides have a sidewalk. Drivable roads only. */
@@ -184,14 +186,19 @@ export type DressingKind =
   | 'lamp' | 'bench' | 'pavilion'
   | 'booth' | 'stall' | 'wheelstop'
   | 'shed' | 'kiosk' | 'planter' | 'hydrant' | 'bin'
-  | 'streetlight' | 'signal' | 'signalpole';
+  | 'streetlight' | 'signal' | 'signalpole'
+  | 'signstop' | 'signoneway' | 'signspeed';
 
 export interface Dressing {
   k: DressingKind;
   /** Center on the ground (map space), and the direction of its long side (radians counter-clockwise from east). */
   p: Point;
   rot: number;
-  /** Paint, for the kinds that come in colors (containers): an index into DRESSING_TINTS. */
+  /**
+   * Paint, for the kinds that come in colors (containers): an index into DRESSING_TINTS. For
+   * signs, which face: the speed on a speed limit sign (an index into SIGN_SPEEDS), which way
+   * a one-way sign's arrow points (0 right, 1 left, as the driver sees it).
+   */
   c?: number;
 }
 
@@ -227,6 +234,7 @@ export interface MapStats {
   lots?: LotStats;
   sidewalks?: { placed: Record<string, number>; skipped: Record<string, number> };
   lights?: { signalNodes: number; junctions: number; intersections?: number; signals: number; signalPoles: number; across?: number; streetlights: number; skipped: Record<string, number> };
+  signs?: { placed: Record<string, number>; skipped: Record<string, number> };
 }
 
 /** What pipeline/lots.ts did with the empty land inside the drivable area. */
@@ -252,6 +260,8 @@ export interface MapData {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   /** Outline of the drivable area, if one was given to the pipeline. */
   playable?: Ring;
+  /** The district the playable area is, and its region (named in the playable area's file), for the map's header. */
+  district?: { region: string; name: string };
   roads: Road[];
   /** Junction polygons between drivable roads. */
   junctions: Junction[];
