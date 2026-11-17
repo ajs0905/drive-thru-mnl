@@ -20,7 +20,7 @@
 import { seeded } from '../map/hash';
 import type { DressingKind, Point } from '../map/types';
 import type { RoadGraph } from '../routing/graph';
-import { internalEdge, junctionGroups } from './sim';
+import { internalEdge, junctionGroups } from './junctions';
 
 export const SIGNAL = {
   /** Seconds of green, amber, and all red (both phases stopped) per phase. */

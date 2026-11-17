@@ -104,13 +104,14 @@ export function Dressing({ pieces, near, mid, far, shadows, moved }: { pieces: P
   // Landmarks cast shadows; everything takes them.
   useEffect(() => setShadows(built.kinds, shadows), [built, shadows]);
 
-  const state = useMemo(() => ({ at: new Vector3(Infinity, 0, 0), near: -1, mid: -1, far: -1, kinds: null as Kind[] | null, versions: '' }), []);
+  const state = useMemo(() => ({ at: new Vector3(Infinity, 0, 0), near: -1, mid: -1, far: -1, kinds: null as Kind[] | null, knocked: -1, broken: -1 }), []);
   useFrame(({ camera, invalidate }) => {
     const focus = controls?.target ?? camera.position;
-    const versions = moved ? `${moved.knock.version}/${moved.broke.version}` : '';
-    const same = state.kinds === built.kinds && state.near === near && state.mid === mid && state.far === far && state.versions === versions;
+    const knocked = moved ? moved.knock.version : 0;
+    const broken = moved ? moved.broke.version : 0;
+    const same = state.kinds === built.kinds && state.near === near && state.mid === mid && state.far === far && state.knocked === knocked && state.broken === broken;
     if (same && Math.hypot(focus.x - state.at.x, focus.z - state.at.z) < DRESS.step) return;
-    Object.assign(state, { near, mid, far, kinds: built.kinds, versions });
+    Object.assign(state, { near, mid, far, kinds: built.kinds, knocked, broken });
     state.at.copy(focus);
     fill(built.kinds, focus, { near, mid, far }, moved);
     invalidate();

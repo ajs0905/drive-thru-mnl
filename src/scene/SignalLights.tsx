@@ -12,7 +12,7 @@
  */
 import { useFrame } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
-import { CircleGeometry, Color, InstancedMesh, Matrix4, MeshBasicMaterial, PlaneGeometry, Quaternion, Vector3 } from 'three';
+import { CircleGeometry, Color, Frustum, InstancedMesh, Matrix4, MeshBasicMaterial, PlaneGeometry, Quaternion, Sphere, Vector3 } from 'three';
 import { ARMS, DRESSING } from '../geometry/dressing';
 import type { GameSession } from '../game/session';
 import type { Dressing } from '../map/types';
@@ -20,8 +20,12 @@ import type { Lamp, Signals } from '../traffic/signals';
 import { haloMaterial } from './carPaint';
 import type { ParkedPoses } from './parkedPoses';
 
-/** Dressing stands this high (scene/Dressing.tsx), the lens discs' radius (m), and the halo's size (m) and brightness. */
-const LIGHTS = { base: 0.1, lens: 0.095, halo: 0.75, glow: 0.55, refill: 15 };
+/**
+ * Dressing stands this high (scene/Dressing.tsx), the lens discs' radius (m), the halo's size (m) and brightness, how
+ * far the camera moves (m) before the heads in reach are listed again, and how far (m) lamps are lit at most (past
+ * that a lens is under a pixel; only heads in view are drawn).
+ */
+const LIGHTS = { base: 0.1, lens: 0.095, halo: 0.75, glow: 0.55, refill: 15, reach: 260 };
 /** Each lens over its head's origin (m): red on top, amber, green; and how far in front of the head's origin the lenses are. */
 const LENS: Record<Lamp, number> = { red: 0.785, amber: 0.5, green: 0.215 };
 const LENS_Z = -0.18;
@@ -63,7 +67,10 @@ export function SignalLights({ game, pieces, near, paused, knock, knockPoses }: 
     [built],
   );
 
-  useFrame(({ camera }, dt) => drawLights(built, signals, camera.position, near, paused ? 0 : Math.min(dt, 0.1), knockPoses));
+  useFrame(({ camera }, dt) => {
+    frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    drawLights(built, signals, camera.position, Math.min(near, LIGHTS.reach), paused ? 0 : Math.min(dt, 0.1), knockPoses);
+  });
 
   return (
     <>
@@ -74,6 +81,9 @@ export function SignalLights({ game, pieces, near, paused, knock, knockPoses }: 
 }
 
 const m = new Matrix4();
+const view = new Matrix4();
+const frustum = new Frustum();
+const ball = new Sphere(new Vector3(), 1.2);
 const turn = new Quaternion();
 const none = new Quaternion();
 const back = new Vector3(0, 0, -1);
@@ -134,6 +144,8 @@ function drawLights(built: Built, signals: Signals, camera: Vector3, near: numbe
   let [n, k] = [0, 0];
   for (const i of built.near) {
     const h = built.heads[i];
+    // Only the heads in view (the list is everything in reach, refilled every few meters).
+    if (!frustum.intersectsSphere(ball.set(h.lenses[1], 1.2))) continue;
     const pole = signals.poles[h.pole];
     const lit = signals.lamp(pole.junction, pole.phase);
     for (let l = 0; l < 3; l++) {

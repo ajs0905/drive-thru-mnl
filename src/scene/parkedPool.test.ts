@@ -52,6 +52,17 @@ describe('ParkedPool', () => {
     expect(poses.moved.has(0)).toBe(false);
   });
 
+  it('stops redrawing a shoved car once it has come to rest (no version bump every frame)', () => {
+    const { pool, poses, run } = setup([car(10, 0)]);
+    run([0, 0], 0.1);
+    pool.bodies.get(0)!.applyImpulse({ x: 4000, y: 0, z: 0 }, true);
+    run([0, 0], 4);
+    expect(poses.moved.has(0)).toBe(true);
+    const version = poses.version;
+    run([0, 0], 1);
+    expect(poses.version).toBe(version);
+  });
+
   it("doesn't put a car back on its spot while the player is standing there", () => {
     const { pool, poses, run } = setup([car(10, 0)]);
     run([0, 0], 0.1);

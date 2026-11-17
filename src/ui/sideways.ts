@@ -1,5 +1,5 @@
 /**
- * Phones play sideways. If the phone is held upright while driving, the game is drawn
+ * Phones play sideways. If the phone is held upright, the game (menu and drive) is drawn
  * turned 90 degrees clockwise, so turning the phone to the left shows it the right way up,
  * with no warning screen and no orientation lock (which also works with rotation lock on).
  */

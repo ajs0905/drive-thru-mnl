@@ -49,6 +49,7 @@ import { seeded } from '../map/hash';
 import type { Point } from '../map/types';
 import { stronglyConnected, type GraphEdge, type RoadGraph } from '../routing/graph';
 import { IDM, idmAccel } from './idm';
+import { internalEdge, JUNCTION_CLUSTER, junctionGroups } from './junctions';
 import type { Signals } from './signals';
 
 export const TRAFFIC = {
@@ -64,8 +65,8 @@ export const TRAFFIC = {
   stopBack: 3,
   /** Let go of a node once this far (m) past its start, plus the car's length. */
   releasePast: 4,
-  /** Nodes joined by a road with less than this (m) between the junction polygons at its ends are one junction (the links across a divided avenue's median). */
-  cluster: 15,
+  /** Nodes joined by a road with less than this (m) between the junction polygons at its ends are one junction (traffic/junctions.ts). */
+  cluster: JUNCTION_CLUSTER,
   /** Speed through a turn (m/s), and from how far before it (m) to slow down. */
   turnSpeed: 6,
   turnFrom: 30,
@@ -117,15 +118,24 @@ export const TRAFFIC = {
    * Getting out of the way of the player's car coming at it: head-on in its lane less than
    * `evadeTime` s from meeting, or closing in from behind in its lane `evadeClosing` m/s
    * faster within `evadeBehind` m. The driver brakes (down to `evadeSpeed` m/s, or 70% of
-   * its speed) and moves toward the curb, up to `evadeMax` m, over at least `evadeLen` m,
-   * for `evadeFor` s after the threat was last seen, then eases back.
+   * its speed) and, if moving at `evadeFrom` m/s or more, steers away from where the player
+   * will pass (left or right, whichever has room, at least `evadeMin` m, and nobody alongside
+   * or within `evadeAhead` m ahead there), up to `evadeMax` m over at least `evadeLen` m of
+   * road (`evadePerSpeed` s of driving), for `evadeFor` s after the threat was last seen,
+   * then steers back. Both moves go with the car's travel, front wheels first.
    */
   evadeTime: 3,
   evadeClosing: 6,
   evadeBehind: 28,
   evadeSpeed: 3,
   evadeMax: 1.2,
-  evadeLen: 6,
+  evadeLen: 8,
+  /** The front wheels turn this far at most for a sideways move (rad, about 35 degrees). */
+  steerMax: 0.6,
+  evadePerSpeed: 1,
+  evadeFrom: 2,
+  evadeMin: 0.4,
+  evadeAhead: 25,
   evadeFor: 1.6,
 };
 
@@ -173,6 +183,8 @@ export interface Agent {
   rx: number;
   ry: number;
   steer: number;
+  /** How fast the car is moving over (m of shift per m of road, + left): what turns its front wheels in a sideways move. */
+  slope: number;
   /** Center, meters along the edge; speed (m/s), acceleration (m/s², negative: braking) and wanted speed. */
   s: number;
   v: number;
@@ -244,24 +256,6 @@ export interface TrafficOptions {
   room?: Map<number, [number, number]>;
   /** The junctions' traffic signals (built on the same graph), obeyed: stop on red, and on amber unless too close to stop comfortably. */
   signals?: Signals;
-}
-
-/** Is this road part of a junction: too little of it between the junction polygons at its ends to wait on? */
-export function internalEdge(e: GraphEdge): boolean {
-  return e.length - e.trimStart - e.trimEnd < TRAFFIC.cluster;
-}
-
-/**
- * The junction each graph node belongs to: nodes joined by roads too short to wait on
- * (`internalEdge`) are one junction, so a divided avenue's crossing (two or more nodes a
- * few meters apart) is reserved, and signalled, as one. Union-find; the value is a node id
- * standing for its group.
- */
-export function junctionGroups(graph: RoadGraph): Int32Array {
-  const parent = Int32Array.from(graph.nodes.keys());
-  const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x])));
-  for (const e of graph.edges) if (internalEdge(e)) parent[find(e.from)] = find(e.to);
-  return Int32Array.from(graph.nodes.keys(), (v) => find(v));
 }
 
 interface Pose {
@@ -425,23 +419,30 @@ export class TrafficSim {
         const g = along - a.len / 2 - o.half;
         if (g < gap) [gap, lead] = [Math.max(0.1, g), Math.max(0, o.speed * Math.cos(o.heading - a.heading))];
       }
-      // The player's car coming at it fast: brake, and move toward the curb for a moment.
-      if (this.threatened(a, obstacles)) {
+      // The player's car coming at it fast: brake, and steer out of its way for a moment.
+      const threat = this.threat(a, obstacles);
+      if (threat !== 0) {
+        // Which way, decided once per dodge: away from where the player will be when they meet.
+        if (this.time >= a.evadeUntil) a.evadeShift = a.v < TRAFFIC.evadeFrom ? 0 : this.dodge(a, here, threat);
         a.evadeUntil = this.time + TRAFFIC.evadeFor;
-        // Toward the curb as far as the road's edge allows, and only with nobody alongside on that side (a lane to the right).
-        a.evadeShift = this.clearOnRight(a) ? -Math.max(0, Math.min(TRAFFIC.evadeMax, this.room[a.edge][1] - here - a.width / 2 - 0.25)) : 0;
       }
       const evading = this.time < a.evadeUntil;
       if (evading) {
         v0 = Math.min(v0, Math.max(TRAFFIC.evadeSpeed, a.v * 0.7));
-        if (shiftTo === 0 && a.evadeShift < -0.2) shiftTo = a.evadeShift;
+        if (shiftTo === 0 && Math.abs(a.evadeShift) > 0.2) shiftTo = a.evadeShift;
       }
       a.shiftTo = shiftTo;
+      // A dodge, and the way back from one, is steered: it moves along the road with the car (front wheels first), never sideways at a standstill.
+      const steered = evading || (a.evadeShift !== 0 && a.latTo === a.evadeShift);
       // A new sideways move when the target grows, falls back to the lane, or shrinks a lot (small wobbles in it don't restart the curve).
-      if (a.shiftTo - a.latTo > 0.1 || a.latTo - a.shiftTo > 0.4 || (a.shiftTo === 0 && a.latTo !== 0)) this.moveOver(a, a.shiftTo, true, evading ? Math.max(TRAFFIC.evadeLen, a.v * 0.8) : undefined);
+      if (a.shiftTo - a.latTo > 0.1 || a.latTo - a.shiftTo > 0.4 || (a.shiftTo === 0 && a.latTo !== 0))
+        this.moveOver(a, a.shiftTo, !steered, steered ? Math.max(TRAFFIC.evadeLen, a.v * TRAFFIC.evadePerSpeed) : undefined);
       else if (shiftTo === 0) this.changeLane(a, lanes, ahead ? ahead[0] : Infinity, ahead ? ahead[1] : 0, v0);
       a.latP = Math.min(1, a.latP + Math.max((a.v * dt) / a.latLen, a.latCrawl ? dt / TRAFFIC.latTime : 0));
+      const was = a.shift;
       a.shift = a.latFrom + (a.latTo - a.latFrom) * smoother(a.latP);
+      // How fast it's moving over per meter of road: the front axle's path turns by that much.
+      a.slope = a.v * dt > 1e-4 ? (a.shift - was) / (a.v * dt) : 0;
       // Acceleration eases toward what the driver model wants (no jolts), except a hard stop, which comes at once.
       const want = idmAccel(a.v, v0, gap, lead);
       a.acc = want < -IDM.brake ? want : a.acc + Math.max(-TRAFFIC.jerk * dt, Math.min(TRAFFIC.jerk * dt, want - a.acc));
@@ -466,23 +467,52 @@ export class TrafficSim {
     a.latLen = length ?? Math.max(TRAFFIC.latMin, Math.min(TRAFFIC.latMax, a.v * TRAFFIC.latPerSpeed));
   }
 
-  /** Is there room alongside on the right for a car to move over by up to `evadeMax` (no other car there, ahead or behind by a car length)? */
-  private clearOnRight(a: Agent): boolean {
+  /**
+   * Which way to dodge (a shift, m: + left, - right, 0 none): away from where the player's car will be when
+   * they meet (`threat`: + it'll pass on this car's left, - on its right), else the other way, as far as
+   * the road allows up to `evadeMax`, and only with nobody in the way on that side.
+   */
+  private dodge(a: Agent, here: number, threat: number): number {
+    const [left, right] = this.room[a.edge];
+    // Room from this lane to the road's edges (a two-way road's left is the oncoming side).
+    const room = {
+      [-1]: right - here - a.width / 2 - 0.25,
+      [1]: left + here - a.width / 2 - 0.25,
+    } as Record<number, number>;
+    const first = threat > 0 ? -1 : 1;
+    for (const side of [first, -first]) {
+      const shift = Math.min(TRAFFIC.evadeMax, room[side]);
+      if (shift < TRAFFIC.evadeMin) continue;
+      if (this.clearToSide(a, side * shift)) return side * shift;
+    }
+    return 0;
+  }
+
+  /**
+   * Is the way clear for this car to move over by `shift` (m, + left): no other car where it would be, alongside or
+   * up to `evadeAhead` m ahead (oncoming traffic on a two-way road included)? Cars in its own lane, which it
+   * follows anyway, don't count.
+   */
+  private clearToSide(a: Agent, shift: number): boolean {
     const [c, s] = [Math.cos(a.path), Math.sin(a.path)];
     for (const o of this.agents) {
       if (o === a || Math.abs(o.z - a.z) > 2) continue;
       const [dx, dy] = [o.x - a.x, o.y - a.y];
       const along = dx * c + dy * s;
-      if (Math.abs(along) > (a.len + o.len) / 2 + 2) continue;
-      // Right of this car (-), within the width it would take plus the other's half.
+      if (along < -(a.len + o.len) / 2 - 2 || along > TRAFFIC.evadeAhead) continue;
       const across = -dx * s + dy * c;
-      if (across < 0 && across > -(a.width / 2 + TRAFFIC.evadeMax + o.width / 2 + 0.3)) return false;
+      const apart = (a.width + o.width) / 2 + 0.3;
+      if (Math.abs(across) >= apart - 0.5 && Math.abs(across - shift) < apart) return false;
     }
     return true;
   }
 
-  /** Is the player's car (or anything moving in `obstacles`) coming at this car fast: head-on in its lane, or from behind in its lane much faster? */
-  private threatened(a: Agent, obstacles: Obstacle[]): boolean {
+  /**
+   * Is the player's car (or anything moving in `obstacles`) coming at this car fast: head-on in its lane, or from
+   * behind in its lane much faster? 0 if not, else which side of this car it'll be on when they meet: + left, - right
+   * (from where it is and how it's moving across, `evadeTime` s ahead at most).
+   */
+  private threat(a: Agent, obstacles: Obstacle[]): number {
     const [c, s] = [Math.cos(a.path), Math.sin(a.path)];
     for (const o of obstacles) {
       if (o.speed < 4) continue;
@@ -490,10 +520,16 @@ export class TrafficSim {
       const along = dx * c + dy * s;
       const across = -dx * s + dy * c;
       const facing = Math.cos(o.heading - a.path);
-      if (facing < -0.7 && along > a.len / 2 && Math.abs(across) < a.width / 2 + (o.side ?? 1.2) + 0.6 && along / (o.speed + a.v) < TRAFFIC.evadeTime) return true;
-      if (facing > 0.7 && along < -a.len / 2 && along > -TRAFFIC.evadeBehind && Math.abs(across) < 2 && o.speed * facing - a.v > TRAFFIC.evadeClosing) return true;
+      const headOn = facing < -0.7 && along > a.len / 2 && Math.abs(across) < a.width / 2 + (o.side ?? 1.2) + 0.6 && along / (o.speed + a.v) < TRAFFIC.evadeTime;
+      const behind = facing > 0.7 && along < -a.len / 2 && along > -TRAFFIC.evadeBehind && Math.abs(across) < 2 && o.speed * facing - a.v > TRAFFIC.evadeClosing;
+      if (!headOn && !behind) continue;
+      // Where it'll be across this car's path when they meet.
+      const closing = Math.abs(o.speed * facing - a.v);
+      const meet = Math.min(TRAFFIC.evadeTime, Math.abs(along) / Math.max(1, closing));
+      const later = across + o.speed * Math.sin(o.heading - a.path) * meet;
+      return later >= 0 ? 1 : -1;
     }
-    return false;
+    return 0;
   }
 
   /**
@@ -727,6 +763,7 @@ export class TrafficSim {
         rx: at.x - (Math.cos(at.heading) * wb) / 2,
         ry: at.y - (Math.sin(at.heading) * wb) / 2,
         steer: 0,
+        slope: 0,
         path: at.heading,
       };
       a.next = this.chooseNext(ei, a);
@@ -1108,7 +1145,8 @@ export class TrafficSim {
    * car's place on it, the rear axle dragged after it (a tractrix: it moves toward the
    * front axle, keeping the wheelbase). The body points from rear to front, so it turns
    * with the turning radius instead of spinning about its middle, and the front wheels'
-   * angle is the path's direction there against the body's.
+   * angle is the way the front axle goes (the path's direction there, turned by a sideways
+   * move) against the body's.
    */
   private place(a: Agent) {
     const f = this.pathAt(a, a.s + a.wb / 2, FRONT);
@@ -1123,7 +1161,8 @@ export class TrafficSim {
     a.y = f.y - (dy * a.wb) / 2;
     a.pitch = f.pitch;
     a.z = f.z - Math.sin(f.pitch) * (a.wb / 2);
-    a.steer = wrap(f.heading - a.heading);
+    // The front wheels point the way the front axle goes: along the lane, turned by a sideways move.
+    a.steer = wrap(f.heading + Math.max(-TRAFFIC.steerMax, Math.min(TRAFFIC.steerMax, Math.atan(a.slope))) - a.heading);
     a.path = f.heading;
   }
 }

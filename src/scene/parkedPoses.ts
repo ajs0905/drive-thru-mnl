@@ -32,7 +32,10 @@ export class ParkedPoses {
   /** Bumped on every change, so the renderer knows to redraw. */
   version = 0;
 
+  /** Records where moved car (or prop) `i` is; a pose that hasn't changed (a body at rest) is no change, so nothing redraws for it. */
   set(i: number, pose: Pose) {
+    const was = this.moved.get(i);
+    if (was && same(was, pose)) return;
     this.moved.set(i, pose);
     this.version++;
   }
@@ -45,4 +48,10 @@ export class ParkedPoses {
     if (this.moved.size) this.version++;
     this.moved.clear();
   }
+}
+
+/** Within a millimeter and a hair of a degree: the same pose as far as drawing goes. */
+function same(a: Pose, b: Pose): boolean {
+  const near = (u: number, v: number, e: number) => Math.abs(u - v) < e;
+  return near(a.x, b.x, 1e-3) && near(a.y, b.y, 1e-3) && near(a.z, b.z, 1e-3) && near(a.qx, b.qx, 1e-4) && near(a.qy, b.qy, 1e-4) && near(a.qz, b.qz, 1e-4) && near(a.qw, b.qw, 1e-4);
 }

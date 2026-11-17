@@ -355,4 +355,67 @@ describe('traffic on the real map', () => {
     expect(tried).toBeGreaterThan(0);
     expect(dodged).toBeGreaterThan(0);
   });
+
+  /** A car well into a long edge and moving, and the player coming at it head-on from 40 m, `across` m to its left (- right), drifting across at `drift` m/s. */
+  function headOn(seed: string, across: number, drift: number, stopped = false) {
+    const sim = new TrafficSim(graph, { count: 6, models: MODELS, paints: PAINTS, room, seed });
+    const p = pointOnRoute(route, 0).p;
+    for (let i = 0; i < 120; i++) sim.step(1 / 60, p);
+    const a = sim.agents.find((x) => x.v > 5 && graph.edges[x.edge].length - x.s > 60 && !graph.edges[x.edge].roundabout);
+    if (!a) return undefined;
+    if (stopped) [a.v, a.acc] = [0, 0];
+    const [c, sn] = [Math.cos(a.path), Math.sin(a.path)];
+    const [lx, ly] = [-sn, c];
+    const player = { p: [a.x + c * 40 + lx * across, a.y + sn * 40 + ly * across] as Point, speed: 15, heading: a.path + Math.PI - Math.atan2(drift, 15), half: 2.25 };
+    const frames: { shift: number; turn: number; steer: number; v: number }[] = [];
+    for (let i = 0; i < 60 * 1.5; i++) {
+      player.p = [player.p[0] + Math.cos(player.heading) * (15 / 60), player.p[1] + Math.sin(player.heading) * (15 / 60)];
+      sim.step(1 / 60, p, [player]);
+      frames.push({ shift: a.shift, turn: Math.atan2(Math.sin(a.heading - a.path), Math.cos(a.heading - a.path)), steer: a.steer, v: a.v });
+    }
+    return frames;
+  }
+
+  it('dodges away from where the player will pass: right when it comes down the middle or its left, left when it comes down its right', () => {
+    const seeds = ['dodge-a', 'dodge-b', 'dodge-c', 'dodge-d', 'dodge-e', 'dodge-f'];
+    let [rights, lefts] = [0, 0];
+    for (const seed of seeds) {
+      const middle = headOn(seed, 0.6, 0);
+      if (middle) {
+        // Never toward the player's side.
+        expect(Math.max(...middle.map((f) => f.shift)), seed).toBeLessThan(0.05);
+        if (Math.min(...middle.map((f) => f.shift)) < -0.2) rights++;
+      }
+      const right = headOn(seed, -1.4, -0.5);
+      if (right) {
+        expect(Math.min(...right.map((f) => f.shift)), seed).toBeGreaterThan(-0.05);
+        if (Math.max(...right.map((f) => f.shift)) > 0.2) lefts++;
+      }
+    }
+    expect(rights).toBeGreaterThan(0);
+    expect(lefts).toBeGreaterThan(0);
+  });
+
+  it("steers into a dodge nose first, and doesn't slide sideways when stopped", () => {
+    let checked = 0;
+    for (const seed of ['dodge-a', 'dodge-b', 'dodge-c', 'dodge-d']) {
+      const frames = headOn(seed, 0.6, 0);
+      if (!frames) continue;
+      const start = frames.findIndex((f) => Math.abs(f.shift) > 0.05);
+      if (start < 0) continue;
+      checked++;
+      const side = Math.sign(frames[start + 10]?.shift ?? frames[start].shift);
+      // The front wheels turn toward the dodge first, and the body turns with them before it has moved over much.
+      expect(Math.sign(frames[start].steer), seed).toBe(side);
+      const turned = frames.findIndex((f) => Math.sign(f.turn) === side && Math.abs(f.turn) > 0.02);
+      expect(turned, seed).toBeGreaterThanOrEqual(0);
+      expect(Math.abs(frames[turned].shift), seed).toBeLessThan(0.4);
+      // Sideways only while moving: about as far as a car turning that much covers.
+      for (let i = start; i < frames.length; i++) if (frames[i].v < 0.05) expect(Math.abs(frames[i].shift - frames[i - 1].shift), seed).toBeLessThan(1e-6);
+      const still = headOn(seed, 0.6, 0, true)!;
+      // Stopped when the player came at it: it brakes and stays put.
+      expect(Math.max(...still.map((f) => Math.abs(f.shift))), seed).toBeLessThan(0.05);
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
 });

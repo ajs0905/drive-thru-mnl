@@ -23,6 +23,13 @@ function importsOf(file: string): string[] {
   return specs.map((s) => (s.startsWith('.') ? relative(ROOT, resolve(ROOT, file, '..', s)).replaceAll('\\', '/') : s));
 }
 
+/** Like `importsOf`, without type-only imports (erased from the build). */
+function valueImportsOf(file: string): string[] {
+  const text = readFileSync(join(ROOT, file), 'utf8');
+  const specs = [...text.matchAll(/^\s*(?:import|export)(?!\s+type\b)[^'"]*?from\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]);
+  return specs.map((s) => (s.startsWith('.') ? relative(ROOT, resolve(ROOT, file, '..', s)).replaceAll('\\', '/') : s));
+}
+
 const RENDERING = /^(three|three\/.*|@react-three\/.*|react|react-dom|react\/.*)$/;
 const NODE = /^node:|^(fs|path|url|child_process|os)$/;
 
@@ -50,6 +57,12 @@ describe('module boundaries', () => {
 
   it('never lets runtime code import the pipeline or Node built-ins', () => {
     expect(violations(src, (s) => s.startsWith('pipeline') || NODE.test(s))).toEqual([]);
+  });
+
+  it('keeps the traffic sim out of the main bundle: the game, the UI and the modules they load only import its types', () => {
+    const main = src.filter((f) => /^src\/(game|ui)\/|^src\/App\.tsx$|^src\/traffic\/(signals|junctions|tiers)\.ts$/.test(f.replaceAll('\\', '/')));
+    expect(main.length).toBeGreaterThan(5);
+    expect(main.flatMap((f) => valueImportsOf(f).filter((s) => s === 'src/traffic/sim').map((s) => `${f} imports ${s}`))).toEqual([]);
   });
 
   it('keeps the pipeline away from rendering code', () => {

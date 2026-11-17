@@ -41,7 +41,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Metric | Value | Notes |
 | :--- | :--- | :--- |
 | **Build & Bundle** | | |
-| Main / Drive bundle | 418 KB / 867 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
+| Main / Drive bundle | 410 KB / 875 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
 | Map file (`bgc.json`) | 3.35 MB (806 KB gzipped) | Deterministic: CI rebuilds it from the raw data and fails if a byte differs |
 | Pipeline | 18 steps, a few seconds | Node + TypeScript, offline |
 | **World Data** | | |
@@ -55,7 +55,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
 | Frame rate (phones) | 60+ FPS on Low and Medium | On a low-mid range Android phone (30 to 50 on High); a newer mid-range one holds 62 on High |
 | Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
-| Automated tests | 760 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 764 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 33 automated checks | A CI gate: counts can only go down |
 
 ## How It Works
@@ -86,7 +86,7 @@ Free-roam arcade driving on BGC's real streets, with less traffic than the real 
 - Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, walled-off lots, street furniture you can knock over or smash through, parked cars and roadblocks you can push around
 - UI: a road sign menu, loading screens, a how-to-play card, a road sign HUD with a heading-up minimap and a full map with the area's name, a pause menu, touch controls for phones; menus and cards laid out to fit a landscape phone without scrolling, and kept light when a phone forces dark mode
 - Modes: cargo runs (courier and vault) between curbside loading bays and landmarks, routed by A* with landmarks, with checkpoints, a cargo integrity rating, a delivery receipt and a peso wallet saved in the browser; a CARS tab with pictures drawn from the models
-- Traffic on the avenues and streets: 24 to 40 cars around the player by quality tier, steering and leaning like cars, changing lanes with the signal on, finding their way off roundabouts, easing round stopped cars, stopping at red lights (you don't have to), braking and pulling over when you come at them fast, and getting shoved aside when you bump them before getting back in line
+- Traffic on the avenues and streets: 24 to 40 cars around the player by quality tier, steering and leaning like cars, changing lanes with the signal on, finding their way off roundabouts, easing round stopped cars, stopping at red lights (you don't have to), braking and steering out of your way, left or right, when you come at them fast, and getting shoved aside when you bump them before getting back in line
 - Traffic lights that cycle with lit lenses, and stop, one-way and speed limit signs along the streets, all of which you can knock over
 
 ## Planned

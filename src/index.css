@@ -24,6 +24,12 @@ body,
 
 .app {
   position: relative;
+  /*
+   * The app is the container the layouts ask about (container queries in ui.css), not the
+   * window: on a phone held upright the app is turned sideways (ui/sideways.ts), so the
+   * window is tall while the app is wide.
+   */
+  container: app / size;
   /* A game, not a page: dragging doesn't select text, and a long press on a phone doesn't open the copy/save menu. */
   user-select: none;
   -webkit-user-select: none;
