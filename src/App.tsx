@@ -446,8 +446,8 @@ export default function App() {
     [map, buildNow, onBuilt, settings, mapView, built, roadblocks, blockPoses, moved, debris, poses],
   );
 
-  // Phones held upright: the whole game (menu and drive) is drawn turned a quarter, so it's always landscape.
-  const sideways = useSideways(TOUCH);
+  // Phones held upright: the drive is drawn turned a quarter (it's played sideways); the main menu stays upright.
+  const sideways = useSideways(driving && TOUCH);
   const view = map ? initialView(map) : null;
   const stats = map?.stats ?? null;
   const estimated = map ? map.buildings.filter((b) => b.hSrc === 'estimate').length : 0;
@@ -619,7 +619,7 @@ export default function App() {
       {panel === 'settings' && <SettingsPanel quality={quality} onQuality={pickQuality} stats={showStats} onStats={pickStats} onClose={() => setPanel(null)} />}
       {panel === 'about' && <AboutPanel map={map} onClose={() => setPanel(null)} />}
 
-      {statsOn && perf && (
+      {statsOn && perf && (DEBUG || driving) && (
         <div className={screen === 'map' ? 'perf' : 'perf debug'}>
           {perf.idle ? 'idle (draws only when something changes)' : `${perf.fps.toFixed(0)} fps`} · {perf.calls} draw calls · {fmt(perf.triangles)} tris
           {built && ` · built in ${built.ms.toFixed(0)} ms`}

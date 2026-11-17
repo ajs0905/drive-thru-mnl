@@ -14,6 +14,7 @@
  */
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { BREAKAWAY, DEBRIS, DRESSING, dressingCorners, type DebrisPart } from '../geometry/dressing';
+import { seeded } from '../map/hash';
 import type { Dressing, Point } from '../map/types';
 import type { OnScreen } from './parkedPool';
 import type { ParkedPoses, Pose } from './parkedPoses';
@@ -79,6 +80,9 @@ export class Breakaways {
   private readonly store: DebrisStore;
   private readonly groundY: number;
 
+  /** The debris' scatter: seeded, so the same knock throws the same pieces (and tests don't depend on luck). */
+  private readonly rand = seeded('debris');
+
   constructor(rapier: typeof RAPIER, world: RAPIER.World, pieces: Dressing[], poses: ParkedPoses, store: DebrisStore, groundY: number) {
     this.rapier = rapier;
     this.world = world;
@@ -131,8 +135,8 @@ export class Breakaways {
         this.rapier.RigidBodyDesc.dynamic()
           .setTranslation(mx, this.groundY + ay, -my)
           .setRotation(q)
-          .setLinvel(v.x * BREAK.carry + (Math.random() - 0.5) * 2, BREAK.hop + Math.random() * 2, v.z * BREAK.carry + (Math.random() - 0.5) * 2)
-          .setAngvel({ x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.5) * 4, z: (Math.random() - 0.5) * 4 })
+          .setLinvel(v.x * BREAK.carry + (this.rand() - 0.5) * 2, BREAK.hop + this.rand() * 2, v.z * BREAK.carry + (this.rand() - 0.5) * 2)
+          .setAngvel({ x: (this.rand() - 0.5) * 4, y: (this.rand() - 0.5) * 4, z: (this.rand() - 0.5) * 4 })
           .setLinearDamping(0.2)
           .setAngularDamping(0.4)
           .setCanSleep(true),

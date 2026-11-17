@@ -4,7 +4,11 @@
  * (private modes) just doesn't remember.
  */
 
-const KEYS = { stats: 'drive-thru-mnl.show-stats' };
+/**
+ * The stats switch was renamed once (`.v2`): a phone that had it on from testing an earlier
+ * build starts with it off again.
+ */
+const KEYS = { stats: 'drive-thru-mnl.show-stats.v2' };
 
 function read(key: string): string | null {
   try {
@@ -22,7 +26,7 @@ function write(key: string, value: string) {
   }
 }
 
-/** Whether the frame rate and render stats line shows while driving (off unless turned on). */
+/** Whether the frame rate and render stats line shows while driving (off unless turned on; `?debug` shows it too). */
 export function loadShowStats(): boolean {
   return read(KEYS.stats) === 'on';
 }

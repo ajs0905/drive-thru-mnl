@@ -67,6 +67,7 @@ describe('signals on the real map', () => {
     const at: [number, number] = [0, 0];
     const last = new Map<number, number>();
     let [entries, onRed, waiting] = [0, 0, 0];
+    // Four minutes: five cycles (46 s each), enough junction entries to count.
     for (let i = 0; i < 60 * 240; i++) {
       signals.advance(1 / 60);
       sim.step(1 / 60, at, []);

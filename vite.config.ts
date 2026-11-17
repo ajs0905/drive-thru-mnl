@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -9,5 +9,10 @@ export default defineConfig({
     // start driving, re-bundle its dependencies mid-session and break the page (two
     // copies of React). Listing them bundles them up front.
     include: ['@react-three/rapier'],
+  },
+  test: {
+    // Some tests drive minutes of traffic or physics on the real map: a few seconds each on
+    // the development laptop, more on a slower or busier machine. The default 5 s is too tight.
+    testTimeout: 30_000,
   },
 })
