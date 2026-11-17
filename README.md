@@ -13,12 +13,13 @@ Real Metro Manila map data, streamed into the browser as a drivable low-poly 3D 
 
 ## The game
 
-Free-roam arcade driving on BGC's real streets, with less traffic than the real thing (hence the name, and the question mark). Runs in the browser on desktops and phones, nothing to install.
+Free-roam low-poly arcade driving across Metro Manila's real streets, starting in BGC, Taguig. Runs straight in the browser on desktop and mobile with nothing to install.
 
-- **Drive** a low-poly city built from the map: drift the circles, take the flyovers, knock over street lights and signs, smash through waiting sheds, send the roadblocks at the edge flying.
-- **Cargo runs** between curbside loading bays and landmarks, with a GPS route, a cargo integrity rating and a delivery receipt (12% VAT and 5% withholding tax included) that pays into a peso wallet.
-- **Traffic** that follows the road graph, changes lanes with the signal on, queues at cycling traffic lights, finds its way off roundabouts and dodges you when you come at it fast.
-- **Phones** too: touch controls, the drive turns sideways on an upright phone, and three quality tiers.
+**Explore the city:** Drive around a 3D city generated from OpenStreetMap data.
+
+**Cargo runs:** Pick up deliveries between areas around the city using GPS routing, keep the cargo intact, and earn peso payouts (with tax included, of course).
+
+**Traffic & mobile support:** Share the road with roaming traffic, or play on your phone with touch controls and automatic landscape mode.
 
 W A S D or the arrow keys to drive, Space for the handbrake, R to reset, M for the map, Esc to pause. All controls, the modes and the testing options: [Controls & modes](docs/PLAYING.md).
 
@@ -185,14 +186,14 @@ More: [Architecture](docs/ARCHITECTURE.md) (module boundaries, data contract, re
 ## Planned
 
 - **Next district:** Makati CBD and Ayala, joined to BGC by the roads between them (Kalayaan Avenue, EDSA), with tile streaming so phones only load what's near
-- **Kamote Mode (police pursuit):** you're the reckless driver; violations raise the heat, patrols route to cut you off with roadblocks at junctions, a busted meter fills when you're boxed in, and you escape by staying out of sight (or hiding in a covered car park)
-- **More modes:** time trials, checkpoint sprints and more courier jobs
+- **Kamote Mode (police pursuit):** TBD
+- **More modes:** TBD
 - **Environment:** more building variety, cleaner road markings (stop lines, arrows, diagonal zebras), smoother flyover ramps, fixes for the remaining road errors, and landmarks at street level
 - **More natural traffic:** smoother multi-lane flow, yielding at junctions, and better reactions to other cars and to you
 - **More roaming traffic:** more cars, and traffic on the roads that don't have any yet
 - **Time of day and weather:** afternoon, night (headlights, lit windows, street lights) and rain
 - **Car modifications and upgrades:** the Cargo Van, Muscle Car and Sports Coupe, plus tuning parts, handling setups and looks, bought with the pesos you earn
-- **Music and sound:** engine and exhaust, tire screech, crashes, UI sounds and the city around you
+- **Music and sound:** engine and exhaust, tire screech, crashes, UI sounds and etc.
 - **More optimization:** tile streaming, building the city in a Web Worker, binary map data, far-detail reduction, and Rapier's separate WebAssembly build (about 220 KB smaller)
 
 ## Contributing
