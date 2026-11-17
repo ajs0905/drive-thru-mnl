@@ -55,7 +55,7 @@ Real Metro Manila map data, streamed into the browser as a drivable 3D city. A N
 | Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
 | Frame rate (phones) | 60+ FPS on Low and Medium | On a low-mid range Android phone (30 to 50 on High); a newer mid-range one holds 62 on High |
 | Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
-| Automated tests | 764 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 767 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 33 automated checks | A CI gate: counts can only go down |
 
 ## How It Works
@@ -124,7 +124,8 @@ The BGC map data is already in the repo, so that's all you need.
 | `npm test` | Unit tests |
 | `npm run pipeline` | Rebuild `public/data/bgc.json` from the raw export |
 | `npm run qa` | Scan the map for known problems, with camera links |
-| `npm run check` | Everything CI runs: typecheck, lint, tests, data in sync, QA gate |
+| `npm run size` | Production build, with each chunk's gzipped size checked against its budget |
+| `npm run check` | Everything CI runs: typecheck, lint, tests, data in sync, QA gate, build size |
 
 ## Docs
 

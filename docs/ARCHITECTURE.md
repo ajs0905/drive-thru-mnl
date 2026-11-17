@@ -362,7 +362,7 @@ GitHub Actions (`.github/workflows/ci.yml`) on every push and pull request:
 3. Unit tests (`vitest`)
 4. **Map data in sync:** re-run the pipeline and fail if `public/data/bgc.json` changes (the committed data must match the code)
 5. **Map QA gate:** fail if any problem count rises above `data/qa-baseline.json`
-6. Production build (`vite build`)
+6. **Production build within its size budgets** (`npm run size`: `vite build`, then each chunk gzipped against its budget in `tools/bundleBudget.ts`, a few percent over its size when set: main 430 kB, Drive 900 kB, CSS 9 kB, anything else 25 kB). Vite's own 500 kB warning is raised to 2,600 kB in `vite.config.ts`: a 3D game's chunks are past the website rule of thumb by design, and the budgets are the real limit.
 
 Deployment (planned): Vercel builds from `main` and serves `dist/` as static files with compression.
 

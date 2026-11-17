@@ -19,7 +19,8 @@
     "replay": "tsx tools/replay.ts",
     "thumbs": "tsx tools/car-thumbs.ts",
     "data:check": "tsx pipeline/build.ts && git diff --exit-code -- public/data/bgc.json",
-    "check": "npm run typecheck && npm run lint && npm test && npm run data:check && npm run qa:check"
+    "size": "vite build && tsx tools/bundle-size.ts",
+    "check": "npm run typecheck && npm run lint && npm test && npm run data:check && npm run qa:check && npm run size"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.19.2",

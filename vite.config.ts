@@ -10,6 +10,12 @@ export default defineConfig({
     // copies of React). Listing them bundles them up front.
     include: ['@react-three/rapier'],
   },
+  build: {
+    // Vite warns past 500 kB, a rule of thumb for websites; a 3D game's main and Drive
+    // chunks are past it by design. Their real limits are the gzipped budgets in
+    // tools/bundleBudget.ts (npm run size); this only flags a chunk far past those.
+    chunkSizeWarningLimit: 2600,
+  },
   test: {
     // Some tests drive minutes of traffic or physics on the real map: a few seconds each on
     // the development laptop, more on a slower or busier machine. The default 5 s is too tight.

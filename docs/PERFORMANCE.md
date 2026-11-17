@@ -16,6 +16,8 @@ Targets the game should meet once tiles and tiers are in. "Phone" means a low-mi
 | First view (4G, cold cache) | ≤ 3 s | ≤ 3 s | ≤ 2 s |
 | Longest main-thread stall while driving | ≤ 50 ms | ≤ 50 ms | ≤ 33 ms |
 
+Download budgets, checked on every build (`npm run size`, `tools/bundleBudget.ts`), gzipped: main chunk 430 kB (three.js, React and the 3D libraries, the menus and the map building), Drive chunk 900 kB (about 836 kB of it is the Rapier physics engine; its compat build packs the WebAssembly into the JavaScript), CSS 9 kB, any other chunk 25 kB. Set a few percent over the sizes on 2026-11-17, so an accidental import shows up (the traffic sim slipping into the main chunk added 8 kB). The map data (806 kB gzipped) isn't a chunk; `data:check` keeps it to what the pipeline builds. A later step: Rapier's build that ships the engine as a separate `.wasm` file, about 220 kB smaller gzipped (its WebAssembly is 803 kB gzipped as base64 text, 586 kB as a binary file) and cached on its own.
+
 ## Measured
 
 ### 2026-11-14, before tiles (whole map at once)
