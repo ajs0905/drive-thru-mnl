@@ -80,7 +80,8 @@ src/
   ui/         menu, loading screens, HUD, maps, pause menu       DOM and 2D canvas, no three.js
   App.tsx     screens, drive mode, wiring
 pipeline/     offline steps + CLI (build.ts) + map QA (qa.ts)    Node only
-tools/        one-off asset tools (car FBX -> GLB)               Node only, run by hand
+tools/        asset tools (car FBX -> GLB), build checks and     Node only; build steps run
+              build steps for dependencies                       inside Vite (vite.config.ts)
 data/         raw OSM export, Overpass query, playable area
 public/data/  processed map the game loads
 public/models/ car models (GLB)
@@ -351,6 +352,7 @@ Budgets per tier: [PERFORMANCE.md](PERFORMANCE.md).
 | Saves | Valid fields kept, the rest defaults; hostile saves (prototype keys, NaN and huge numbers, wrong types, junk ids) read back as a working save with nothing leaking onto prototypes | `src/game/save.test.ts` |
 | Hosting | The security headers on every file, the content security policy's directives, and which files are cached for good (only hashed ones) | `tests/vercel.test.ts` |
 | Build size | Each chunk's gzipped size against its budget (after `vite build`, in `npm run size`) | `tools/bundleBudget.test.ts`, `tools/bundle-size.ts` |
+| No deprecated APIs | The build steps that keep dependencies off deprecated APIs: Fiber's clock swapped for a Timer-based one (which behaves like Clock), Rapier's init called the current way, and physics starting in the tests without the deprecation warning | `tools/fiberClock.test.ts`, `tools/rapierInit.test.ts`, `src/scene/frameClock.test.ts` |
 | Visual | Camera links (`?cam=x,y,z,tx,ty,tz`) to known spots, screenshots before and after changes | manual |
 | Devices | Desktop + a low-mid range Android phone via `chrome://inspect` remote DevTools | [PERFORMANCE.md](PERFORMANCE.md) |
 
@@ -405,6 +407,7 @@ One page each in [decisions/](decisions/):
 | [0028](decisions/0028-traffic-lights-and-road-signs.md) | Traffic lights that cycle, road signs by rule | Accepted |
 | [0029](decisions/0029-phone-layouts-steered-dodges-pose-churn.md) | Layouts by the app's size, dodges that steer, no redraws for props at rest | Accepted |
 | [0030](decisions/0030-static-hosting-security-headers-caching.md) | Static hosting on Vercel: security headers, caching, guards against bad saves and lost graphics | Accepted |
+| [0031](decisions/0031-no-deprecated-apis-from-dependencies.md) | No deprecated APIs, including the ones dependencies call (Rapier kept at 0.19.2 for size) | Accepted |
 
 ## 12. Roadmap through the architecture
 

@@ -32,6 +32,13 @@ describe('vercel.json', () => {
     }
   });
 
+  it('turns off only features browsers know (an unknown name logs a console warning on every page)', () => {
+    // Chrome's permissions policy names for these; it doesn't know "bluetooth", for one.
+    const known = ['camera', 'microphone', 'geolocation', 'payment', 'usb', 'serial', 'hid'];
+    const listed = headersFor('/')['permissions-policy'].split(',').map((f) => f.trim().split('=')[0]);
+    expect(listed.filter((f) => !known.includes(f))).toEqual([]);
+  });
+
   it('has a content security policy that lets the game run and nothing else in', () => {
     const csp = Object.fromEntries(
       headersFor('/')['content-security-policy']
