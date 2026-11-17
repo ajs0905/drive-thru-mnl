@@ -15,7 +15,6 @@
  *
  * Numbers depend on the machine; the expanded counts don't.
  */
-import RAPIER from '@dimforge/rapier3d-compat';
 import { readdirSync, readFileSync } from 'node:fs';
 import { playReplay } from '../src/sim/headless';
 import { PARKED_MODELS, PARKED_PAINTS } from '../src/car/parked';
@@ -31,6 +30,7 @@ import type { MapData } from '../src/map/types';
 import { buildRoadGraph } from '../src/routing/graph';
 import { altHeuristic, buildLandmarks } from '../src/routing/landmarks';
 import { euclidean, shortestPath, type Heuristic } from '../src/routing/search';
+import { loadRapier } from './rapierNode';
 
 const map = JSON.parse(readFileSync(process.argv[2] ?? 'public/data/bgc.json', 'utf8')) as MapData;
 const ms = (t0: number) => performance.now() - t0;
@@ -87,7 +87,7 @@ console.log(disagree ? `\n${disagree} routes where the methods disagree: a bug` 
 if (disagree) process.exitCode = 1;
 
 // --- Physics, headless.
-await RAPIER.init();
+const RAPIER = await loadRapier();
 console.log('\nphysics, golden replays played headless (map collision included):');
 for (const f of readdirSync('tests/replays').filter((x) => x.endsWith('.json'))) {
   const replay = JSON.parse(readFileSync(`tests/replays/${f}`, 'utf8')) as Replay;

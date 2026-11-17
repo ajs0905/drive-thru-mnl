@@ -133,6 +133,18 @@ The street furniture left the static collision meshes (125k to 99k triangles) fo
 
 Hip roofs, podium towers and shopfronts ([ADR 0020](decisions/0020-building-forms.md)) are built into the same merged building cells: no new draw calls. Same Medium views as above: 58 / 236k, 107 / 499k, 80 / 385k (4k to 27k more triangles, mostly the hip roofs at 6 each). The shopfronts are a branch in the building shader for the ground floor only. The city build took about 40 to 90 ms longer in the headless browser (each building's form is worked out once and cached; the roof props reuse it). Main bundle 389 KB gzipped (was 387).
 
+### Drive start per tier (2026-11-17)
+
+Headless Chrome, 1280 x 720, the build as deployed, `?debug` read once a second for 16 s from the start of a drive at the start spot (traffic, parked cars and props in view; the software renderer runs at 1 to 2 FPS, so only the counts mean anything). City build in the browser: 470 to 530 ms in that 2-core machine.
+
+| Tier | Draw calls | Triangles |
+| --- | --- | --- |
+| Low | 73 to 77 | 248k to 250k |
+| Medium | 78 to 122 | 300k to 506k |
+| High | 84 to 124 | 328k to 537k |
+
+Against the budgets: Low is over its 60 draw calls and 150k triangles (traffic, signals and signs since the budgets were set), while the low-mid range phone held 60+ FPS on Low (measured before traffic; the first traffic counts made no visible difference there, the current ones are still to measure). Tile streaming and distance detail (below) are the planned fixes. Medium and High are within theirs. `npm run bench` in the same machine: traffic 94 / 114 / 154 µs per step for 24 / 32 / 40 cars, the golden replays' physics at 36k to 60k steps a second (60 needed).
+
 ### Desktop with a GPU
 
 Run `npm run dev`, open the page with `?debug` at the end of the address, and read the overlay (FPS, draw calls, triangles, build time): top middle on the menu and while driving, bottom left in the map view (`?view=map`). On laptops with two GPUs, check that the browser runs on the dedicated one (`chrome://gpu`, or Windows Settings > Display > Graphics > browser > High performance).

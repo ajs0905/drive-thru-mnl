@@ -16,7 +16,7 @@ How Drive Thru MNL is put together, why, and where it's going.
 - [12. Roadmap through the architecture](#12-roadmap-through-the-architecture)
 - [13. Glossary](#13-glossary)
 
-Related: [DATA.md](DATA.md) (how the map data is made), [PERFORMANCE.md](PERFORMANCE.md) (budgets and measurements), [decisions/](decisions/) (one page per big decision).
+Related: [DATA.md](DATA.md) (how the map data is made), [ALGORITHMS.md](ALGORITHMS.md) (every algorithm and where it runs), [PLAYING.md](PLAYING.md) (controls and modes), [PERFORMANCE.md](PERFORMANCE.md) (budgets and measurements), [decisions/](decisions/) (one page per big decision), [all docs](README.md).
 
 ## 1. Goals and constraints
 
@@ -41,7 +41,7 @@ flowchart LR
   RAW2 --> PIPE
   PA[data/playable-area.geojson<br/>drawn in geojson.io] --> PIPE
   RAW --> PIPE[Offline pipeline<br/>pipeline/*.ts, Node]
-  PIPE --> OUT[public/data/bgc.json<br/>3.0 MB, 723 KB gzipped]
+  PIPE --> OUT[public/data/bgc.json<br/>3.35 MB, 806 KB gzipped]
   PIPE --> QA[npm run qa<br/>map problem counts]
   OUT --> CDN[Vercel static hosting]
   CDN --> RT[Browser runtime<br/>React Three Fiber]
@@ -79,6 +79,7 @@ src/
   scene/      three.js / React Three Fiber components            the only place that knows about rendering
   ui/         menu, loading screens, HUD, maps, pause menu       DOM and 2D canvas, no three.js
   App.tsx     screens, drive mode, wiring
+  analytics.ts visit counts, deployed site only                  no three.js, no React
 pipeline/     offline steps + CLI (build.ts) + map QA (qa.ts)    Node only
 tools/        asset tools (car FBX -> GLB), build checks and     Node only; build steps run
               build steps for dependencies                       inside Vite (vite.config.ts)
@@ -351,6 +352,7 @@ Budgets per tier: [PERFORMANCE.md](PERFORMANCE.md).
 | Architecture | Import rules from section 3, and the traffic sim kept out of the main bundle (the game, UI and signals import its types only) | `tests/architecture.test.ts` |
 | Saves | Valid fields kept, the rest defaults; hostile saves (prototype keys, NaN and huge numbers, wrong types, junk ids) read back as a working save with nothing leaking onto prototypes | `src/game/save.test.ts` |
 | Hosting | The security headers on every file, the content security policy's directives, and which files are cached for good (only hashed ones) | `tests/vercel.test.ts` |
+| Page and analytics | The description and link preview tags with a 1200 x 630 picture that ships with the site; visits counted only on the deployed production build, pages reported without their query string | `tests/pageMeta.test.ts`, `src/analytics.test.ts` |
 | Build size | Each chunk's gzipped size against its budget (after `vite build`, in `npm run size`) | `tools/bundleBudget.test.ts`, `tools/bundle-size.ts` |
 | No deprecated APIs | The build steps that keep dependencies off deprecated APIs: Fiber's clock swapped for a Timer-based one (which behaves like Clock), Rapier's init called the current way, and physics starting in the tests without the deprecation warning | `tools/fiberClock.test.ts`, `tools/rapierInit.test.ts`, `src/scene/frameClock.test.ts` |
 | Visual | Camera links (`?cam=x,y,z,tx,ty,tz`) to known spots, screenshots before and after changes | manual |
@@ -369,7 +371,7 @@ GitHub Actions (`.github/workflows/ci.yml`) on every push and pull request:
 5. **Map QA gate:** fail if any problem count rises above `data/qa-baseline.json`
 6. **Production build within its size budgets** (`npm run size`: `vite build`, then each chunk gzipped against its budget in `tools/bundleBudget.ts`, a few percent over its size when set: main 430 kB, Drive 900 kB, CSS 9 kB, anything else 25 kB). Vite's own 500 kB warning is raised to 2,600 kB in `vite.config.ts`: a 3D game's chunks are past the website rule of thumb by design, and the budgets are the real limit.
 
-Deployment: Vercel builds from `main` and serves `dist/` as static files with compression; there's no server code. `vercel.json` sets the headers ([ADR 0030](decisions/0030-static-hosting-security-headers-caching.md)), checked by `tests/vercel.test.ts`: a content security policy (only the site's own files; `'wasm-unsafe-eval'` for Rapier's WebAssembly and no other eval; no frames, objects, forms or base changes), `nosniff`, no framing, a strict referrer policy, camera, microphone, location and other device APIs off, an isolated browsing context, and HTTPS only. Vite's hashed `/assets` are cached for a year as immutable; everything else (the page, the map file, the models and pictures, which keep their names between releases) is re-checked with the server on each visit, so nobody is left on an old map or old code.
+Deployment: live at https://drive-thru-mnl.vercel.app/. Vercel builds from `main` on every push and serves `dist/` as static files with compression; there's no server code. Visits are counted by Vercel Web Analytics, only on the deployed production build, through the site's own address ([ADR 0032](decisions/0032-visitor-analytics-and-link-previews.md)); `index.html` carries the description and link preview tags. `vercel.json` sets the headers ([ADR 0030](decisions/0030-static-hosting-security-headers-caching.md)), checked by `tests/vercel.test.ts`: a content security policy (only the site's own files; `'wasm-unsafe-eval'` for Rapier's WebAssembly and no other eval; no frames, objects, forms or base changes), `nosniff`, no framing, a strict referrer policy, camera, microphone, location and other device APIs off, an isolated browsing context, and HTTPS only. Vite's hashed `/assets` are cached for a year as immutable; everything else (the page, the map file, the models and pictures, which keep their names between releases) is re-checked with the server on each visit, so nobody is left on an old map or old code.
 
 ## 11. Decisions
 
@@ -408,6 +410,7 @@ One page each in [decisions/](decisions/):
 | [0029](decisions/0029-phone-layouts-steered-dodges-pose-churn.md) | Layouts by the app's size, dodges that steer, no redraws for props at rest | Accepted |
 | [0030](decisions/0030-static-hosting-security-headers-caching.md) | Static hosting on Vercel: security headers, caching, guards against bad saves and lost graphics | Accepted |
 | [0031](decisions/0031-no-deprecated-apis-from-dependencies.md) | No deprecated APIs, including the ones dependencies call (Rapier kept at 0.19.2 for size) | Accepted |
+| [0032](decisions/0032-visitor-analytics-and-link-previews.md) | Visitor analytics (production only, same origin) and link previews | Accepted |
 
 ## 12. Roadmap through the architecture
 

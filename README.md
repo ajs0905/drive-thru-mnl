@@ -1,157 +1,187 @@
 # Drive Thru MNL: No Traffic Edition?
 
+[![Play live](https://img.shields.io/badge/play-live-ec7a2c.svg)](https://drive-thru-mnl.vercel.app/)
 [![CI](https://github.com/ajs0905/drive-thru-mnl/actions/workflows/ci.yml/badge.svg)](https://github.com/ajs0905/drive-thru-mnl/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Map data: ODbL](https://img.shields.io/badge/map%20data-ODbL-green.svg)](https://www.openstreetmap.org/copyright)
 
-Real Metro Manila map data, streamed into the browser as a drivable 3D city. A Node pipeline turns raw OpenStreetMap exports into one compact map file; the browser builds the geometry, collision meshes and physics from it at load time. **Bonifacio Global City (BGC), Taguig** is the first district. The plan is to connect the districts around it and the highways between them, which is where browser geometry, streaming and physics budgets really get tested.
+Real Metro Manila map data, streamed into the browser as a drivable low-poly 3D city. A build-time Node pipeline turns raw OpenStreetMap exports into one compact static map file; the browser builds the low-poly geometry, collision meshes and physics from it at load time. **Bonifacio Global City (BGC), Taguig** is the first district. The plan is to connect the districts around it and the highways between them, which is where browser geometry, streaming and physics budgets really get tested.
 
-![Overtaking traffic on University Parkway, BGC, in a city generated from OpenStreetMap data](docs/images/hero.jpg)
+**[Play live](https://drive-thru-mnl.vercel.app/)** · [Architecture](docs/ARCHITECTURE.md) · [Map pipeline & data](docs/DATA.md) · [Controls & modes](docs/PLAYING.md) · [All docs](docs/README.md)
 
-## Core Algorithms
-
-**Computational geometry and mesh generation**
-- Equirectangular projection, verified against Haversine distances: turns lat/long into local meters
-- Sutherland-Hodgman polygon clipping and earcut triangulation: cuts footprints to the map, cuts building walls back off the roads, fills roofs, land use and road surfaces
-- Polyline offsetting, mitred deck joints and convex-hull junction stitching: road ribbons, flyover decks without cracks, one polygon per junction
-- Catmull-Rom splines: round the flyovers' and ramps' curves
-- Contour tracing, Ramer-Douglas-Peucker simplification and a breadth-first distance transform: wall off empty lots at the back of the sidewalk
-- Rotating calipers (minimum-area rectangles) and polygon scaling: hip roofs on houses and towers stepped back from their podiums
-- Separating Axis Theorem (SAT) overlap tests: keep parked cars, roadblocks, street furniture and reset spots clear of obstacles
-
-**Spatial indexing and graph algorithms**
-- 2D spatial hash grids: fast "what's near this" lookups for every placement, footprint test and culling pass
-- Union-find and road graph walks: merge nearby junctions of divided roads, follow roads through junctions
-- Greedy graph coloring: give overlapping roads at interchanges a draw order, so nothing flickers
-- Constrained placement search: pillars out of the lanes below, cars along the curbs, the nearest open road for a reset
-- A directed road graph with Tarjan's strongly connected components, and routes by an edge-based A* with ALT landmark bounds: about 180 states expanded per route against Dijkstra's 1,450 (`npm run bench`)
-- Deterministic headless simulation: golden replays of cargo runs driven by a pure-pursuit autopilot in the real physics, played back in CI (`npm run replay` records them)
-- Traffic by the Intelligent Driver Model on the road graph, with junctions clustered by union-find and reserved one movement at a time, lanes fitted into the room parked cars leave, cubic Bézier curves through every junction (arc-length paced), a kinematic bicycle model on the path (the rear axle a tractrix of the front, the front wheels turning into every sideways move), lane changes in the spirit of MOBIL as quintic S-curves, exits picked on entering a roundabout, and fixed-time two-phase traffic lights per junction cluster that the cars queue at: about 85 µs per step for 24 cars, measured overlap-free in tests
-- Evasive steering: the player's car projected to the moment it meets a traffic car decides which way that car dodges, left or right, checked for room and for anyone alongside or oncoming on that side
-- Rule-based placement from road attributes: stop signs before unsignalized junctions with a bigger road, one-way signs facing the cross traffic, speed limits from `maxspeed` tags, kept clear of driveways, crossings and other furniture
-
-**Rendering, physics and automated QA**
-- Rasterization and flood fill: find unpaved holes in the road network, then pave them with the same detector
-- GLSL shader injection: lane markings, zebras, windows and the car's Fresnel reflections from per-vertex data, no textures
-- Ray-cast vehicle physics with slip-angle drift assists, and a collider-filtered ray that keeps the camera out of walls
-- LRU tile caching for the minimap and big map, and view frustum and distance culling for the instanced props and cars
-- Instanced traffic with wheels split off the merged models to spin and steer, bodies that lean on a spring, lit lamps, brake lights and turn signals, box cars past a distance by tier, and per-frame shadows cast from the sun's direction for anything moving
-- Bumps as two-car collisions: a kinematic car hit by the player turns dynamic and gets the impulse of the hit at the contact point, so it's shoved and spun, then rejoins its lane once it settles
-
-## Results & Benchmarks
-
-| Metric | Value | Notes |
-| :--- | :--- | :--- |
-| **Build & Bundle** | | |
-| Main / Drive bundle | 411 KB / 875 KB gzipped | The physics chunk (Rapier) loads only when you start driving; the font is bundled |
-| Map file (`bgc.json`) | 3.35 MB (806 KB gzipped) | Deterministic: CI rebuilds it from the raw data and fails if a byte differs |
-| First visit | About 2.4 MB compressed | Scripts, map, models and the menu picture; size budgets per chunk are checked in CI, and return visits re-download only what changed |
-| Pipeline | 18 steps, a few seconds | Node + TypeScript, run at build time by the developer, never by players |
-| **World Data** | | |
-| Input | 25,930 OpenStreetMap features | A 19 MB GeoJSON export, plus 1,634 more for walls, trees and street fixtures |
-| Output | 11,685 buildings, 3,536 roads, 1,384 junctions | Plus 511 zebras, 70 raised flyover and footbridge pieces on 279 pillars, 162 far-side traffic lights at 49 intersections, 1,195 street lights, 552 road signs (stop, one-way, speed limit), 938 trees, 51 walled-off lots, 2,731 pieces of street and lot furniture, 1,106 parked cars |
-| Filled in by rules | 97% of building heights | OSM also has no bridge heights or ramps, no street parking and only outlines for empty lots |
-| **Physics & Collision** | | |
-| Collision meshes | 99k triangles, about 0.2 to 0.3 s to build | Walls and drivable decks built from the same data the renderer draws; street furniture is pooled bodies near the player instead (at most 28 knockable, 30 debris) |
-| Fixed-step physics | 60 Hz | The same step function runs in the game and in headless tests |
-| **Performance & Quality** | | |
-| Frame rate (High) | 23 FPS to the 144 Hz screen limit | On the development laptop, after two measured passes ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
-| Frame rate (phones) | 60+ FPS on Low and Medium | On a low-mid range Android phone (30 to 50 on High); a newer mid-range one holds 62 on High |
-| Draw calls | About 55 to 110 per view | The whole city, built in the browser in about 0.4 to 0.5 s; an idle view costs nothing |
-| Automated tests | 790 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
-| Map QA | 33 automated checks | A CI gate: counts can only go down |
-
-## How It Works
-
-1. **Build-time map pipeline** (`pipeline/`): run once by the developer whenever the map data or the rules change, not by players and not on a server. It compiles the raw OpenStreetMap GeoJSON export into one static, deterministic, versioned map file, `public/data/bgc.json`, which is checked into the repository (CI rebuilds it and fails if a single byte differs). On the way it works out building heights and forms, flyover heights and ramps, junction polygons, zebras, walls and lots, traffic lights, street lights, stop, one-way and speed limit signs, street furniture and parked cars, then runs 33 map QA checks.
-2. **Static files in the browser**: the deployed game (on Vercel) is only static files on a CDN. There's no backend: opening the page downloads the scripts, the pre-built map file and a few 3D models, and the browser builds everything else from them. Hashed build files are cached for good, the map and models are re-checked on each visit, and every response carries strict security headers (`vercel.json`).
-3. **Procedural 3D city** (`src/geometry/`, `src/scene/`): the browser builds road ribbons, flyover decks, buildings (hip-roofed houses, podium towers, shopfronts), trees and barriers from the map file, merged into 1.2 km grid cells, with GPU instancing for repeated props and GLSL shaders for markings, windows and car paint.
-4. **Physics and vehicle** (`src/car/`): Rapier at a fixed 60 Hz, with arcade assists (slip-angle drift control, anti-spin, a hysteresis gearbox) and camera ray clipping. Parked cars, roadblock pieces and street furniture become physics bodies only near the player, from capped pools, so you can knock over lamp posts and smash through waiting sheds without the whole map in the physics world. The car code doesn't touch React or three.js, so the same step function runs in headless Vitest suites. A car that goes somewhere it can't be (off the map, or numbers the physics lost) is put back where it last was fine.
-5. **Game systems** (`src/routing/`, `src/traffic/`, `src/game/`): a directed road graph with A* routes for the cargo runs and the GPS line; traffic simulated in plain TypeScript (car following, junction reservations, signals, lane changes, dodging) and only drawn and given physics bodies near the player; the game session (runs, pay, wallet, cars) saved in the browser and read back through a validator, so a damaged or edited save can't break the game.
-6. **Render on demand, adaptive quality**: frames are drawn only when something changes, shadows re-render on a throttle, the pixel ratio follows the frame rate, and the 2D maps paste cached tiles. Low, Medium and High tiers aim at desktops and low-mid range Android phones. If the graphics are lost (a driver reset, a phone reclaiming memory), the game pauses and recovers when the browser restores them.
-
-![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags, over hip-roofed houses and an empty lot closed off with hoarding](docs/images/flyover.jpg)
-
-![A junction with far-side traffic lights, zebra crossings, lane markings, street lights and parked cars, all generated from OSM data](docs/images/streets.jpg)
-
-![Hip-roofed houses, rooftop water tanks and palm-lined streets in a barangay, with shopfronts along the ground floors and the BGC towers behind](docs/images/buildings.jpg)
+![Overtaking traffic on University Parkway, BGC, in a low-poly city generated from OpenStreetMap data](docs/images/hero.jpg)
 
 ## The game
 
-Free-roam arcade driving on BGC's real streets, with less traffic than the real thing (hence the name, and the question mark). Drift the corners, take the flyovers, send the roadblocks at the edge flying. Take cargo runs between curbside loading bays and landmarks for pesos: on time and without denting the cargo, with a GPS route on the minimap and the full map, and a delivery receipt at the end. Traffic drives the avenues and streets, changing lanes and working its way round the circles, and you can bump it into a spin. Police chases are next. Runs in the browser on desktops and phones, nothing to install.
+Free-roam arcade driving on BGC's real streets, with less traffic than the real thing (hence the name, and the question mark). Runs in the browser on desktops and phones, nothing to install.
 
-**Controls:** W A S D or the arrow keys to drive, Space for the handbrake, R to reset the car, M for the map, Esc to pause, MODES / CARS at the top right. On a phone, hold it sideways and use the buttons on screen.
+- **Drive** a low-poly city built from the map: drift the circles, take the flyovers, knock over street lights and signs, smash through waiting sheds, send the roadblocks at the edge flying.
+- **Cargo runs** between curbside loading bays and landmarks, with a GPS route, a cargo integrity rating and a delivery receipt (12% VAT and 5% withholding tax included) that pays into a peso wallet.
+- **Traffic** that follows the road graph, changes lanes with the signal on, queues at cycling traffic lights, finds its way off roundabouts and dodges you when you come at it fast.
+- **Phones** too: touch controls, the drive turns sideways on an upright phone, and three quality tiers.
 
-## What's built
+W A S D or the arrow keys to drive, Space for the handbrake, R to reset, M for the map, Esc to pause. All controls, the modes and the testing options: [Controls & modes](docs/PLAYING.md).
 
-- Map pipeline: OSM export to one compact, deterministic map file at build time, with heights, building forms, flyovers, junctions, crossings, trees, walls, walled-off lots, mast-arm and pole traffic lights, street lights, road signs, street furniture and parked cars worked out by rule
-- Map QA: 33 checks run in CI, each with a baseline that can only go down
-- 3D city: buildings with windows, shopfronts, hip roofs, podium towers and roof details, painted roads with clean intersections, a physically based sky, shadows, and filler city and real skylines past the edge
-- Performance: three quality tiers, adaptive resolution, grid culling, render on demand, reversed depth
-- Driving: Rapier physics with arcade handling (drift assist, speed-sensitive steering), a chase camera, solid buildings, drivable flyovers, walled-off lots, street furniture and signs you can knock over, waiting sheds you can smash through, parked cars and roadblocks you can push around, and a reset to the nearest open road
-- UI: a road sign menu, loading screens, a how-to-play card with the keyboard or touch controls (whichever you have), a road sign HUD with a heading-up minimap and a full map with the area's name, a pause menu (also when you leave the tab), touch controls for phones; the drive turns sideways on an upright phone, menus and cards fit a landscape phone without scrolling, and stay light when a phone forces dark mode
-- Modes: cargo runs (courier and vault) between curbside loading bays and landmarks, routed by A* with landmarks, with checkpoints, a cargo integrity rating, an itemized delivery receipt (base and distance fee, integrity bonus, 12% VAT and 5% withholding tax) and a peso wallet saved in the browser; a CARS tab with pictures drawn from the models and prices to save up for
-- Traffic on the avenues and streets: 24 to 40 cars around the player by quality tier, steering and leaning like cars, changing lanes with the signal on, finding their way off roundabouts, easing round stopped cars, stopping at red lights (you don't have to), braking and steering out of your way, left or right, when you come at them fast, and getting shoved aside when you bump them before getting back in line
-- Traffic lights that cycle with lit lenses, and stop, one-way and speed limit signs along the streets, all of which you can knock over
-- Hosting-ready: static build with size budgets checked in CI, a content security policy and other security headers, caching that never strands a player on old files, and no third-party scripts, fonts or CDNs
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph BUILD["1. Build time: pipeline/ (Node, run by the developer)"]
+    direction LR
+    OSM[("OpenStreetMap<br/>GeoJSON exports")] --> STEPS["18 steps: clip, heights,<br/>flyovers, junctions, lots,<br/>parking, lights, signs"]
+    STEPS --> QA{{"Map QA<br/>33 checks"}}
+    QA --> MAP[("public/data/bgc.json<br/>806 KB gzipped,<br/>committed to Git")]
+  end
+  subgraph HOST["2. Static hosting: GitHub to Vercel"]
+    direction LR
+    GH["GitHub main"] --> CI["CI: types, lint, tests,<br/>data in sync, QA, sizes"]
+    CI --> VB["Vercel:<br/>npm run build"]
+    VB --> DIST["dist/ on a CDN<br/>static files, no backend"]
+  end
+  subgraph WEB["3. Browser runtime: src/"]
+    direction LR
+    LOAD["map/loadMap.ts"] --> GEO["geometry/ + scene/<br/>low-poly roads, buildings,<br/>instanced props, shaders"]
+    LOAD --> SIM["routing/ + traffic/ + game/<br/>road graph, A* routes,<br/>traffic sim, cargo runs"]
+    LOAD --> PHYS["car/ + Drive chunk<br/>Rapier physics on demand,<br/>pooled bodies near you"]
+    GEO --> GL["React Three Fiber<br/>WebGL"]
+    PHYS --> GL
+    SIM --> GL
+    SIM --> UI["ui/: HUD, minimap,<br/>full map, menus"]
+  end
+  BUILD -->|"git push"| HOST
+  HOST -->|"page, scripts, map file, models"| WEB
+```
+
+- **Build time:** the expensive, careful work (projection, cleanup, heights, flyovers, placement by rule) happens once on the developer's machine. The output is deterministic: CI rebuilds the map and fails if a single byte differs, and map QA counts can only go down.
+- **Hosting:** only static files. Hashed scripts are cached for good, the map and models are re-checked on each visit, every response carries strict security headers, and visits are counted without cookies through the site's own address.
+- **Browser:** the city is built from the map file in about half a second, merged into grid cells and drawn on demand. Physics loads only when you start driving, and only what's near the player becomes a physics body.
+
+More: [Architecture](docs/ARCHITECTURE.md) (module boundaries, data contract, rendering, testing) and [Decisions](docs/decisions/) (32 records).
+
+## Algorithms
+
+- **Geometry:** equirectangular projection checked against Haversine, Sutherland-Hodgman clipping and earcut triangulation, low-poly extrusion with hip roofs and podium towers, polyline offsetting and convex-hull junction polygons, Catmull-Rom flyover curves, SAT overlap tests for every placed object
+- **Spatial indexing:** 2D spatial hash grids for placement, physics pools and culling; union-find to merge junctions and group traffic lights; greedy graph coloring for a flicker-free road draw order
+- **Routing:** a directed road graph (Tarjan's strongly connected components) and edge-based A\* with ALT landmarks: 179 states expanded per route against Dijkstra's 1,447
+- **Traffic:** Intelligent Driver Model car-following, junction reservations, signal compliance at fixed-time lights, a kinematic bicycle model on Bézier paths, MOBIL-style lane changes as quintic S-curves, evasive steering
+- **Physics:** a ray-cast vehicle on Rapier at a fixed 60 Hz with slip-angle drift assists, static collision meshes built from the same shapes the renderer draws, bumps as impulses at the contact point
+- **Rendering:** merged grid cells, GPU instancing with frustum and distance culling, shader-drawn markings and windows from per-vertex data, render on demand, adaptive resolution
+- **QA and determinism:** rasterization and flood fill to find unpaved holes, 33 deterministic map QA geometry checks, golden replays of cargo runs played back in CI
+
+Each one, where it runs and its numbers: [Algorithms](docs/ALGORITHMS.md).
+
+## Results & Benchmarks
+
+**Build and payload**
+
+| Metric | Value | Notes |
+| :--- | :--- | :--- |
+| Main chunk | 412 KB gzipped | three.js, React, the menus and the city builder; budget 430 kB, checked in CI |
+| Drive chunk | 875 KB gzipped | Rapier physics, loaded only when you start driving |
+| Map file (`bgc.json`) | 3.35 MB, 806 KB gzipped | Rebuilt byte for byte in CI |
+| First visit | About 2.4 MB compressed | Scripts, map, models and the menu picture; return visits re-download only what changed |
+| Pipeline | 18 steps, under 15 s | Node + TypeScript, run by the developer, never by players |
+
+**World data**
+
+| Metric | Value | Notes |
+| :--- | :--- | :--- |
+| Input | 25,930 OpenStreetMap features | A 19 MB GeoJSON export, plus 1,634 more for walls, trees and street fixtures |
+| Buildings | 11,685 | 6,354 drivable around, 5,331 scenery; heights filled in by rule for 97% |
+| Roads | 3,536 ways, 13,992 shape points | 1,384 junction polygons, 511 zebras, 70 raised flyover and footbridge pieces on 279 pillars |
+| Road graph | 1,706 nodes, 3,062 directed edges | Built in the browser in about 0.1 s |
+| Placed by rule | 1,106 parked cars, 1,195 street lights, 552 road signs | Plus 162 far-side traffic lights at 49 intersections, 938 trees, 2,731 pieces of street and lot furniture |
+| Collision meshes | 98,615 triangles | 64k walls and 35k drivable decks and posts, built when driving starts |
+
+**Runtime frame budget and scale**
+
+| Metric | Value | Notes |
+| :--- | :--- | :--- |
+| Frame rate targets | Low 30, Medium 45 to 60, High 60 FPS | Budgets per tier in [Performance](docs/PERFORMANCE.md) |
+| Desktop | 144 FPS on High (the screen's limit) | Development laptop; 23 FPS before two measured performance passes |
+| Phones | 60+ FPS on Low and Medium | A low-mid range Android phone (30 to 50 on High); a newer mid-range one holds 62 on High |
+| Draw calls / triangles | Low 73 to 77 / 250k, Medium 78 to 122 / 300k to 506k, High 84 to 124 / 328k to 537k | Driving from the start spot with traffic, 1280 x 720 |
+| City build in the browser | About 0.4 to 0.7 s | 428 to 695 ms on the two phones |
+| Physics | Fixed 60 Hz | 36k to 60k steps a second headless with the map's collision |
+| Traffic | 24 / 32 / 40 cars by tier | About 0.1 to 0.15 ms per simulation step, no overlaps in five simulated minutes |
+| Physics pools | Parked cars within 70 m, 28 knockable props within 35 m, 30 debris pieces | Only what's near the player is a body |
+
+**Tests and QA**
+
+| Metric | Value | Notes |
+| :--- | :--- | :--- |
+| Automated tests | 795 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Map QA | 33 checks | A CI gate: counts can only go down |
+| Golden replays | 3 cargo runs | Played back in the real physics in CI, must end within 5 cm |
+
+Measured with `npm run size`, `npm run bench`, the pipeline's output and the `?debug` overlay; details and dates in [Performance](docs/PERFORMANCE.md).
+
+| | | |
+| :---: | :---: | :---: |
+| ![The Lawton Avenue viaduct, raised by the pipeline from OSM bridge tags, over hip-roofed houses and an empty lot closed off with hoarding](docs/images/flyover.jpg) | ![A junction with far-side traffic lights, zebra crossings, lane markings, street lights and parked cars, all generated from OSM data](docs/images/streets.jpg) | ![Hip-roofed houses, rooftop water tanks and palm-lined streets, with shopfronts along the ground floors and the BGC towers behind](docs/images/buildings.jpg) |
+| Flyovers raised from OSM bridge tags | Junctions, lights and parking by rule | Low-poly building forms |
+
+## Known issues
+
+- **Road markings:** lane markings at complex junctions and slip lanes don't line up cleanly yet; zebras are always square to the road, and there are no stop lines or lane arrows.
+- **Flyover ramps:** some slopes change abruptly at speed, 3 ramps overlap a road running alongside them (map QA `ramp-in-lanes`), and underpasses are drawn at ground level.
+- **Roaming traffic:** steering, lane changes and dodging still look unnatural at times, around tight corners and roundabouts most of all; a car spun far off its lane leaves instead of rejoining, and far box cars pop into full models as they come near.
+- **Map data:** about 40 driveways and access roads run into malls, towers and car parks as mapped, 27 small unpaved gaps between roads are left as islands, and building heights are estimates for 97% of buildings.
+- **Phones:** the Low tier draws more than its budget since traffic, signals and signs arrived, and High is a desktop tier (30 to 50 FPS on a low-mid range phone).
+- **One district:** the whole city sits on the GPU at once, and the drivable area ends at roadblocks around BGC; tile streaming is what lets the map grow.
+- **Not there yet:** sound, night time and the cars other than the Sedan; windows assume 3.2 m floors on every building.
 
 ## Planned
 
-- First deploy on Vercel (the config is in the repo), with a live link here
-- Modes: Kamote Mode (police chases), and the van, muscle car, coupe and police cars from the vehicle pack
-- Rapier's build with a separate WebAssembly file (about 220 KB smaller to download)
-- Utility poles and more building detail (balconies, materials, signage)
-- Later: engine, tire and crash sounds, ambience and music
-- Tile streaming, then more of Metro Manila: the districts around BGC and the highways between them
+- **Next district:** Makati CBD and Ayala, joined to BGC by the roads between them (Kalayaan Avenue, EDSA), with tile streaming so phones only load what's near
+- **Kamote Mode (police pursuit):** you're the reckless driver; violations raise the heat, patrols route to cut you off with roadblocks at junctions, a busted meter fills when you're boxed in, and you escape by staying out of sight (or hiding in a covered car park)
+- **More modes:** time trials, checkpoint sprints and more courier jobs
+- **Environment:** more building variety, cleaner road markings (stop lines, arrows, diagonal zebras), smoother flyover ramps, fixes for the remaining road errors, and landmarks at street level
+- **More natural traffic:** smoother multi-lane flow, yielding at junctions, and better reactions to other cars and to you
+- **More roaming traffic:** more cars, and traffic on the roads that don't have any yet
+- **Time of day and weather:** afternoon, night (headlights, lit windows, street lights) and rain
+- **Car modifications and upgrades:** the Cargo Van, Muscle Car and Sports Coupe, plus tuning parts, handling setups and looks, bought with the pesos you earn
+- **Music and sound:** engine and exhaust, tire screech, crashes, UI sounds and the city around you
+- **More optimization:** tile streaming, building the city in a Web Worker, binary map data, far-detail reduction, and Rapier's separate WebAssembly build (about 220 KB smaller)
 
-## Known issues and fixes
+## Contributing
 
-- 3 ramps still overlap a road running alongside them (map QA `ramp-in-lanes`); needs per-ramp width fitting
-- Underpasses are drawn at ground level
-- Zebras are always square to the road, and there are no stop lines or lane arrows yet
-- About 40 driveways and access roads still run into malls, towers and car parks as mapped (map QA counts)
-- 27 small unpaved gaps between roads are left as islands (map QA `paving-hole`)
-- Windows assume 3.2 m floors on every building, and it's always daytime
-- The whole city sits on the GPU at once; tile streaming (planned) is what lets the map grow
+Issues and pull requests are welcome: bug reports with a screenshot and the `?cam=` part of the address, road errors you spot on the map, ideas for the planned list.
 
-## Getting started
-
-Requires Node 22 or newer.
+**Run it locally** (Node 22.15 or newer, any current LTS):
 
 ```bash
 npm install
-npm run dev
+npm run dev     # the game at http://localhost:5173
+npm test        # unit and physics tests
+npm run check   # everything CI runs, before you open a pull request
 ```
 
-The BGC map data is already in the repo, so that's all you need.
+The BGC map data is already in the repo, so that's all you need to play and work on the game.
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Start the game locally (add `?q=low`, `?q=medium` or `?q=high` to the URL to force a quality tier, `?debug` for the frame rate, `?view=map` for the free camera map view that map QA's links open) |
-| `npm test` | Unit tests |
-| `npm run pipeline` | Rebuild `public/data/bgc.json` from the raw export |
+| `npm run dev` | Start the game locally (`?q=low` / `medium` / `high`, `?debug`, `?view=map`: see [testing options](docs/PLAYING.md#options-for-testing)) |
+| `npm test` | Unit and physics tests |
+| `npm run pipeline` | Rebuild `public/data/bgc.json` from the raw export (same as `npx tsx pipeline/build.ts`) |
 | `npm run qa` | Scan the map for known problems, with camera links |
+| `npm run bench` | Routing, physics and traffic benchmarks |
+| `npm run replay` | Record the golden replays again (only when a physics or map change is meant to change them) |
 | `npm run size` | Production build, with each chunk's gzipped size checked against its budget |
 | `npm run check` | Everything CI runs: typecheck, lint, tests, data in sync, QA gate, build size |
 
-## Docs
+**Changing the map:** edit the steps in `pipeline/`, run `npm run pipeline`, and commit `public/data/bgc.json` with your change (CI fails until the committed file matches what the pipeline builds). If a fix lowers a map QA count, lower it in `data/qa-baseline.json` too; a count that rises fails CI. Each step and its numbers are in [Map pipeline & data](docs/DATA.md).
 
-- [Architecture](docs/ARCHITECTURE.md): how it's built, module boundaries, data contract, rendering, quality tiers, testing, roadmap
-- [Map data](docs/DATA.md): sources, refreshing the data, each pipeline step with its numbers, building heights, map QA
-- [Performance](docs/PERFORMANCE.md): budgets per quality tier, measured numbers, how to profile on a phone
-- [Decisions](docs/decisions/): one page per big decision and its trade-offs
+**Pull requests:** keep them focused, with tests for new behavior and `npm run check` passing. Module boundaries (for example, no three.js or React in `src/car` and `src/traffic`) are enforced by `tests/architecture.test.ts`; see [Architecture](docs/ARCHITECTURE.md#3-repository-layout-and-module-boundaries). For a big change, open an issue first so it can be talked through.
 
 ## Stack
 
-- Three.js via React Three Fiber, TypeScript, Vite
-- Rapier physics via `@react-three/rapier`, loaded on demand
-- Node + TypeScript data pipeline (`pipeline/`)
-- Vitest, oxlint, GitHub Actions
+Three.js via React Three Fiber, TypeScript and Vite; Rapier physics via `@react-three/rapier`, loaded on demand; a Node + TypeScript data pipeline; Vitest, oxlint and GitHub Actions; hosted on Vercel.
 
-## Credits and license
+## License and credits
 
-- Code: [MIT](LICENSE), Adrian Joseph B. Salva
-- Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the Open Database License (ODbL)
+- Code: **MIT License**, see [LICENSE](LICENSE)
+- Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the Open Database License (ODbL); the processed map in `public/data/` is a derived database under the same license
 - Polygon triangulation: [earcut](https://github.com/mapbox/earcut)
 - Cars: the Sedan you drive and six parked models from the [Free Low Poly Vehicles Pack](https://rgsdev.itch.io/free-low-poly-vehicles-pack) by Rgsdev (CC0), converted with `tools/car-to-glb.ts` and `tools/parked-cars-to-glb.ts`
 - Traffic cone and concrete barrier: [City Kit Roads](https://kenney.nl/assets/city-kit-roads) by Kenney (CC0), baked with `tools/kenney-to-ts.ts`

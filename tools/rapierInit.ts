@@ -6,7 +6,7 @@
  * are 1.3 to 2 times the download (0.21: 1.65 MB gzipped against 0.86 MB), too much for
  * phones (docs/decisions/0031). So the build makes that same one-call change in the
  * pinned 0.19.2: in the production build, the dev server's pre-bundling and the tests
- * (vite.config.ts).
+ * (vite.config.ts), and in the Node scripts through a module load hook (tools/rapierNode.ts).
  *
  * If a Rapier update already calls it the current way, this does nothing. If it calls it a
  * way this doesn't know, the build fails instead of keeping the deprecated call.

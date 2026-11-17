@@ -4,6 +4,9 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/overpass'
 import './index.css'
 import App from './App.tsx'
+import { startAnalytics } from './analytics'
+
+startAnalytics()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

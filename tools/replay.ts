@@ -8,7 +8,6 @@
  * setup, the collision meshes or the map shows up there. When the change is meant, record
  * them again (and say why in the commit).
  */
-import RAPIER from '@dimforge/rapier3d-compat';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { NO_KEYS } from '../src/car/controls';
 import { GameSession } from '../src/game/session';
@@ -16,11 +15,12 @@ import type { MapData } from '../src/map/types';
 import { drive, newPilot } from '../src/sim/autopilot';
 import { createSim, startAt, stepSim } from '../src/sim/headless';
 import { mapId, Recorder } from '../src/sim/replay';
+import { loadRapier } from './rapierNode';
 
 /** The runs recorded: short ones the autopilot drives clean (it doesn't steer around things). */
 const GOLDEN_RUNS = ['morning-parcels', 'fresh-produce', 'gallery-pieces'];
 
-await RAPIER.init();
+const RAPIER = await loadRapier();
 const map = JSON.parse(readFileSync('public/data/bgc.json', 'utf8')) as MapData;
 const game = new GameSession(null);
 game.setMap(map);
