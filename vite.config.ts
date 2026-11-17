@@ -32,5 +32,7 @@ export default defineConfig({
     // Tests load Rapier straight from node_modules, which Vitest normally hands to Node
     // untouched: inlined, it gets the rapierInit fix like the game does.
     server: { deps: { inline: ['@dimforge/rapier3d-compat'] } },
+    // Any deprecation warning while a test file runs fails it (ADR 0031, ADR 0033).
+    setupFiles: ['tests/setup/noDeprecations.ts'],
   },
 })

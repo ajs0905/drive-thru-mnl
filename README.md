@@ -126,7 +126,7 @@ What each algorithm is used for. Where they run and their numbers: [Algorithms](
 
 | Metric | Value | Notes |
 | :--- | :--- | :--- |
-| Automated tests | 795 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
+| Automated tests | 797 unit and physics tests | Including an autopilot that drives up a real flyover ramp in Rapier |
 | Map QA | 33 checks | A CI gate: counts can only go down |
 | Golden replays | 3 cargo runs | Played back in the real physics in CI, must end within 5 cm |
 
@@ -168,7 +168,7 @@ flowchart LR
 - **Hosting:** only static files. Hashed scripts are cached for good, the map and models are re-checked on each visit, every response carries strict security headers, and visits are counted without cookies through the site's own address.
 - **Browser:** the city is built from the map file in about half a second, merged into grid cells and drawn on demand. Physics loads only when you start driving, and only what's near the player becomes a physics body.
 
-More: [Architecture](docs/ARCHITECTURE.md) (module boundaries, data contract, rendering, testing) and [Decisions](docs/decisions/) (32 records).
+More: [Architecture](docs/ARCHITECTURE.md) (module boundaries, data contract, rendering, testing) and [Decisions](docs/decisions/) (33 records).
 
 ## Known issues
 
@@ -197,7 +197,7 @@ More: [Architecture](docs/ARCHITECTURE.md) (module boundaries, data contract, re
 
 Issues and pull requests are welcome: bug reports with a screenshot and the `?cam=` part of the address, road errors you spot on the map, ideas for the planned list.
 
-**Run it locally** (Node 22.15 or newer, any current LTS):
+**Run it locally** (Node 26, the version in `.nvmrc`; 22.15 or newer also works):
 
 ```bash
 npm install

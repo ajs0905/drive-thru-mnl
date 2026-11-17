@@ -1,0 +1,34 @@
+# Update pull requests for the npm packages and the GitHub Actions (ADR 0033). Every one runs
+# through CI, deprecation checks included; nothing changes until it's merged by hand.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "09:00"
+      timezone: Asia/Manila
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    groups:
+      # Patch and minor updates together in one pull request; each major gets its own.
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Kept at 0.19.2 on purpose: 0.20 and later double the physics download (ADR 0031).
+      # @react-three/rapier pins the same version; an update of it that moves Rapier still
+      # comes through, and the size budget in CI decides.
+      - dependency-name: "@dimforge/rapier3d-compat"
+      # The Node types follow the Node version in .nvmrc, not the newest Node.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Asia/Manila
+    commit-message:
+      prefix: ci

@@ -354,7 +354,7 @@ Budgets per tier: [PERFORMANCE.md](PERFORMANCE.md).
 | Hosting | The security headers on every file, the content security policy's directives, and which files are cached for good (only hashed ones) | `tests/vercel.test.ts` |
 | Page and analytics | The description and link preview tags with a 1200 x 630 picture that ships with the site; visits counted only on the deployed production build, pages reported without their query string | `tests/pageMeta.test.ts`, `src/analytics.test.ts` |
 | Build size | Each chunk's gzipped size against its budget (after `vite build`, in `npm run size`) | `tools/bundleBudget.test.ts`, `tools/bundle-size.ts` |
-| No deprecated APIs | The build steps that keep dependencies off deprecated APIs: Fiber's clock swapped for a Timer-based one (which behaves like Clock), Rapier's init called the current way, and physics starting in the tests without the deprecation warning | `tools/fiberClock.test.ts`, `tools/rapierInit.test.ts`, `src/scene/frameClock.test.ts` |
+| No deprecated APIs | The build steps that keep dependencies off deprecated APIs: Fiber's clock swapped for a Timer-based one (which behaves like Clock), Rapier's init called the current way, and physics starting in the tests without the deprecation warning; every test file fails on any deprecation warning, and so does the build | `tools/fiberClock.test.ts`, `tools/rapierInit.test.ts`, `src/scene/frameClock.test.ts`, `tools/deprecations.test.ts`, `tests/setup/noDeprecations.ts` |
 | Visual | Camera links (`?cam=x,y,z,tx,ty,tz`) to known spots, screenshots before and after changes | manual |
 | Devices | Desktop + a low-mid range Android phone via `chrome://inspect` remote DevTools | [PERFORMANCE.md](PERFORMANCE.md) |
 
@@ -362,16 +362,18 @@ Bugs found by looking at the map become QA checks, so they can't quietly come ba
 
 ## 10. CI and deployment
 
-GitHub Actions (`.github/workflows/ci.yml`) on every push and pull request:
+GitHub Actions (`.github/workflows/ci.yml`) on every push and pull request, on the Node version in `.nvmrc` (26, the same as Vercel's through `engines`; [ADR 0033](decisions/0033-pinned-node-dependabot-deprecation-gate.md)):
 
-1. `npm ci`
+1. `npm ci`, failing on any deprecated package
 2. Typecheck (`tsc -b`) and lint (`oxlint`)
-3. Unit tests (`vitest`)
+3. Unit tests (`vitest`), each test file failing on any deprecation warning printed while it runs (`tests/setup/noDeprecations.ts`)
 4. **Map data in sync:** re-run the pipeline and fail if `public/data/bgc.json` changes (the committed data must match the code)
 5. **Map QA gate:** fail if any problem count rises above `data/qa-baseline.json`
-6. **Production build within its size budgets** (`npm run size`: `vite build`, then each chunk gzipped against its budget in `tools/bundleBudget.ts`, a few percent over its size when set: main 430 kB, Drive 900 kB, CSS 9 kB, anything else 25 kB). Vite's own 500 kB warning is raised to 2,600 kB in `vite.config.ts`: a 3D game's chunks are past the website rule of thumb by design, and the budgets are the real limit.
+6. **Production build within its size budgets** (`npm run size`: `vite build`, then each chunk gzipped against its budget in `tools/bundleBudget.ts`; the build itself fails on any deprecation warning, `tools/deprecations.ts`; a few percent over its size when set: main 430 kB, Drive 900 kB, CSS 9 kB, anything else 25 kB). Vite's own 500 kB warning is raised to 2,600 kB in `vite.config.ts`: a 3D game's chunks are past the website rule of thumb by design, and the budgets are the real limit.
 
-Deployment: live at https://drive-thru-mnl.vercel.app/. Vercel builds from `main` on every push and serves `dist/` as static files with compression; there's no server code. Visits are counted by Vercel Web Analytics, only on the deployed production build, through the site's own address ([ADR 0032](decisions/0032-visitor-analytics-and-link-previews.md)); `index.html` carries the description and link preview tags. `vercel.json` sets the headers ([ADR 0030](decisions/0030-static-hosting-security-headers-caching.md)), checked by `tests/vercel.test.ts`: a content security policy (only the site's own files; `'wasm-unsafe-eval'` for Rapier's WebAssembly and no other eval; no frames, objects, forms or base changes), `nosniff`, no framing, a strict referrer policy, camera, microphone, location and other device APIs off, an isolated browsing context, and HTTPS only. Vite's hashed `/assets` are cached for a year as immutable; everything else (the page, the map file, the models and pictures, which keep their names between releases) is re-checked with the server on each visit, so nobody is left on an old map or old code.
+Dependabot (`.github/dependabot.yml`) opens update pull requests weekly for npm packages (minor and patch grouped) and monthly for GitHub Actions; they go through the same CI.
+
+Deployment: live at https://drive-thru-mnl.vercel.app/. Vercel builds from `main` on every push, holds the build until CI passes (Deployment Checks), and serves `dist/` as static files with compression; there's no server code. Visits are counted by Vercel Web Analytics, only on the deployed production build, through the site's own address ([ADR 0032](decisions/0032-visitor-analytics-and-link-previews.md)); `index.html` carries the description and link preview tags. `vercel.json` sets the headers ([ADR 0030](decisions/0030-static-hosting-security-headers-caching.md)), checked by `tests/vercel.test.ts`: a content security policy (only the site's own files; `'wasm-unsafe-eval'` for Rapier's WebAssembly and no other eval; no frames, objects, forms or base changes), `nosniff`, no framing, a strict referrer policy, camera, microphone, location and other device APIs off, an isolated browsing context, and HTTPS only. Vite's hashed `/assets` are cached for a year as immutable; everything else (the page, the map file, the models and pictures, which keep their names between releases) is re-checked with the server on each visit, so nobody is left on an old map or old code.
 
 ## 11. Decisions
 
@@ -411,6 +413,7 @@ One page each in [decisions/](decisions/):
 | [0030](decisions/0030-static-hosting-security-headers-caching.md) | Static hosting on Vercel: security headers, caching, guards against bad saves and lost graphics | Accepted |
 | [0031](decisions/0031-no-deprecated-apis-from-dependencies.md) | No deprecated APIs, including the ones dependencies call (Rapier kept at 0.19.2 for size) | Accepted |
 | [0032](decisions/0032-visitor-analytics-and-link-previews.md) | Visitor analytics (production only, same origin) and link previews | Accepted |
+| [0033](decisions/0033-pinned-node-dependabot-deprecation-gate.md) | One pinned Node version, Dependabot, and a deprecation gate in CI | Accepted |
 
 ## 12. Roadmap through the architecture
 

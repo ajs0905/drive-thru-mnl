@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": "26.x"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -19,7 +22,7 @@
     "replay": "tsx tools/replay.ts",
     "thumbs": "tsx tools/car-thumbs.ts",
     "data:check": "tsx pipeline/build.ts && git diff --exit-code -- public/data/bgc.json",
-    "size": "vite build && tsx tools/bundle-size.ts",
+    "size": "tsx tools/deprecations.ts vite build && tsx tools/bundle-size.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run data:check && npm run qa:check && npm run size"
   },
   "dependencies": {
@@ -36,7 +39,7 @@
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",
-    "@types/node": "^24.19.2",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.187.0",

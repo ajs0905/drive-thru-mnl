@@ -14,11 +14,16 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          # The project's Node version, the same as Vercel's (package.json engines): a new
+          # Node release changes nothing until .nvmrc does.
+          node-version-file: .nvmrc
           cache: npm
 
-      - name: Install
-        run: npm ci
+      # No deprecated packages (ADR 0031, ADR 0033): fails if npm warns about any.
+      - name: Install, no deprecated packages
+        run: |
+          npm ci 2>&1 | tee install.log
+          if grep -i "npm warn deprecated" install.log; then exit 1; fi
 
       - name: Typecheck
         run: npm run typecheck
@@ -26,7 +31,7 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Unit tests
+      - name: Unit tests (fail on any deprecation warning)
         run: npm test
 
       - name: Map data matches the pipeline
@@ -35,5 +40,5 @@ jobs:
       - name: Map QA has no regressions
         run: npm run qa:check
 
-      - name: Production build, within the size budgets
+      - name: Production build, within the size budgets and without deprecation warnings
         run: npm run size
